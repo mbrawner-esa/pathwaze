@@ -5,15 +5,18 @@ export default async function ProjectsPage() {
   const supabase = await createClient()
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: projects } = await supabase
-    .from('projects')
-    .select(`
-      id, project_number, name, stage, deal_health, system_kwdc,
-      city, state, tranche, region, assignee_id,
-      users!assignee_id(full_name),
-      milestones(label, completed, sort_order)
-    `)
-    .order('name') as unknown as { data: any[] | null }
+  const [{ data: projects }, { data: users }] = await Promise.all([
+    supabase
+      .from('projects')
+      .select(`
+        id, project_number, name, stage, deal_health, system_kwdc,
+        city, state, tranche, region, assignee_id,
+        users!assignee_id(full_name),
+        milestones(label, completed, sort_order)
+      `)
+      .order('name') as unknown as { data: any[] | null },
+    supabase.from('users').select('id, full_name').order('full_name'),
+  ])
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const mapped = (projects ?? []).map((p: any) => {
@@ -39,5 +42,5 @@ export default async function ProjectsPage() {
     }
   })
 
-  return <ProjectsClient projects={mapped} />
+  return <ProjectsClient projects={mapped} users={users ?? []} />
 }
