@@ -1,6 +1,6 @@
 'use client'
 import { useState, useMemo, useEffect, useCallback } from 'react'
-import { Search, List, LayoutGrid, ChevronRight, X, Plus, Send, MessageSquare, CheckCircle } from 'lucide-react'
+import { Search, List, LayoutGrid, X, Plus, Send, MessageSquare, CheckCircle } from 'lucide-react'
 import { formatDate } from '@/lib/utils'
 import { Avatar } from '@/components/ui/Avatar'
 import { useRouter } from 'next/navigation'

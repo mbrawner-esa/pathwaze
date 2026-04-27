@@ -9,14 +9,17 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const { id } = await params
   const body = await req.json()
 
-  const update: Record<string, unknown> = { completed: body.completed }
-  if (body.completed) {
-    update.completed_at = new Date().toISOString()
-  } else {
-    update.completed_at = null
-  }
+  const completed = Boolean(body.completed)
+  const completed_at = completed ? new Date().toISOString() : null
 
-  const { data, error } = await supabase.from('milestones').update(update).eq('id', id).select().single()
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await supabase
+    .from('milestones')
+    .update({ completed, completed_at } as any)
+    .eq('id', id)
+    .select()
+    .single()
+
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   return NextResponse.json(data)
 }
