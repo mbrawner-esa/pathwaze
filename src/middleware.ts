@@ -21,16 +21,18 @@ export async function middleware(request: NextRequest) {
     }
   )
 
-  const { data: { user } } = await supabase.auth.getUser()
+  // Use getSession (reads JWT from cookie, no network call) for middleware route protection.
+  // Individual API routes use getUser() for verified server-side checks.
+  const { data: { session } } = await supabase.auth.getSession()
 
   const { pathname } = request.nextUrl
   const isAuth = pathname.startsWith('/auth')
   const isPublic = pathname.startsWith('/investor')
 
-  if (!user && !isAuth && !isPublic) {
+  if (!session && !isAuth && !isPublic) {
     return NextResponse.redirect(new URL('/auth/login', request.url))
   }
-  if (user && isAuth) {
+  if (session && isAuth) {
     return NextResponse.redirect(new URL('/dashboard', request.url))
   }
 
@@ -38,5 +40,6 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/((?!_next/static|_next/image|favicon.ico|api/auth).*)'],
+  // Exclude: Next.js internals, static files, API routes (they auth themselves), and favicon
+  matcher: ['/((?!_next/static|_next/image|favicon.ico|api/).*)'],
 }
