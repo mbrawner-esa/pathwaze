@@ -25,8 +25,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const { id } = await params
   const { message } = await req.json()
 
-  const { data, error } = await supabase
-    .from('task_threads')
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (supabase.from('task_threads') as any)
     .insert({ task_id: id, user_id: user.id, message })
     .select('*, user:users(full_name)')
     .single()

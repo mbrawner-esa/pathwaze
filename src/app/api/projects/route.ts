@@ -24,7 +24,8 @@ export async function POST(req: NextRequest) {
   const body = await req.json()
 
   // Create the project
-  const { data: project, error: projErr } = await supabase.from('projects').insert({
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: project, error: projErr } = await (supabase.from('projects') as any).insert({
     project_number: body.project_number || `NEW-${Date.now()}`,
     name: body.name,
     customer: body.customer || 'AdventHealth',
@@ -56,10 +57,12 @@ export async function POST(req: NextRequest) {
     completed: false,
     target_date: null,
   }))
-  await supabase.from('milestones').insert(milestones)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  await (supabase.from('milestones') as any).insert(milestones)
 
   // Create empty financials row
-  await supabase.from('project_financials').insert({
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  await (supabase.from('project_financials') as any).insert({
     project_id: project.id,
     total_cost: 0,
   })

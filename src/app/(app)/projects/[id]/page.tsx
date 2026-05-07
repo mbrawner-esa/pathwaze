@@ -8,17 +8,18 @@ import { Avatar } from '@/components/ui/Avatar'
 import { ProjectDetailClient } from '@/components/project/ProjectDetailClient'
 import { formatNumber } from '@/lib/utils'
 
-export default async function ProjectDetailPage({ params }: { params: { id: string } }) {
+export default async function ProjectDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const supabase = await createClient()
+  const { id } = await params
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const results = await Promise.all([
-    supabase.from('projects').select('*, users!assignee_id(full_name)').eq('id', params.id).single(),
-    supabase.from('project_financials').select('*').eq('project_id', params.id).single(),
-    supabase.from('milestones').select('*').eq('project_id', params.id).order('sort_order'),
-    supabase.from('stakeholders').select('*').eq('project_id', params.id),
-    supabase.from('permits').select('*').eq('project_id', params.id),
-    supabase.from('dataroom_docs').select('*').eq('project_id', params.id),
+    supabase.from('projects').select('*, users!assignee_id(full_name)').eq('id', id).single(),
+    supabase.from('project_financials').select('*').eq('project_id', id).single(),
+    supabase.from('milestones').select('*').eq('project_id', id).order('sort_order'),
+    supabase.from('stakeholders').select('*').eq('project_id', id),
+    supabase.from('permits').select('*').eq('project_id', id),
+    supabase.from('dataroom_docs').select('*').eq('project_id', id),
   ]) as unknown as [any, any, any, any, any, any]
   const [{ data: project }, { data: financials }, { data: milestones }, { data: stakeholders }, { data: permits }, { data: docs }] = results
 

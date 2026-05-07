@@ -7,7 +7,8 @@ export async function POST(req: NextRequest) {
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const body = await req.json()
-  const { data, error } = await supabase.from('stakeholders').insert({
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (supabase.from('stakeholders') as any).insert({
     project_id: body.project_id || null,
     name: body.name,
     title: body.title || null,

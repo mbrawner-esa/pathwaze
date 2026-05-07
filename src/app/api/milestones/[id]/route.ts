@@ -13,9 +13,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const completed_at = completed ? new Date().toISOString() : null
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data, error } = await supabase
-    .from('milestones')
-    .update({ completed, completed_at } as any)
+  const { data, error } = await (supabase.from('milestones') as any)
+    .update({ completed, completed_at })
     .eq('id', id)
     .select()
     .single()
