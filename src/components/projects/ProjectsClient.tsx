@@ -43,7 +43,7 @@ const FACILITY_TYPES = ['Acute Care Center', 'Medical Office', 'Distribution Cen
 
 function fmtKw(kwdc: number) {
   if (!kwdc) return '—'
-  return `${kwdc.toLocaleString()} kWdc`
+  return kwdc.toLocaleString()
 }
 
 
@@ -61,7 +61,7 @@ interface ColumnDef {
 const ALL_COLUMNS: ColumnDef[] = [
   { id: 'project',        label: 'Project',         alwaysVisible: true, defaultVisible: true, width: 'px-6' },
   { id: 'stage',          label: 'Stage',           defaultVisible: true },
-  { id: 'size',           label: 'Size',            defaultVisible: true },
+  { id: 'size',           label: 'Size kWdc',       defaultVisible: true },
   { id: 'contract_value', label: 'Contract Value',  defaultVisible: true },
   { id: 'utility',        label: 'Utility',         defaultVisible: true },
   { id: 'target_cod',     label: 'Target COD',      defaultVisible: true },
