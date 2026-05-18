@@ -24,14 +24,44 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
     supabase.from('buildings').select('*').eq('project_id', id).order('created_at'),
     supabase.from('meters').select('*').eq('project_id', id).order('created_at'),
     supabase.from('systems').select('*').eq('project_id', id).order('created_at'),
-  ]) as unknown as [any, any, any, any, any, any, any, any, any, any]
+    supabase.from('project_threads').select('*').eq('project_id', id).order('created_at', { ascending: true }),
+  ]) as unknown as [any, any, any, any, any, any, any, any, any, any, any]
   const [
     { data: project }, { data: financials }, { data: milestones },
     { data: stakeholders }, { data: permits }, { data: docs }, { data: users },
     { data: buildings }, { data: meters }, { data: systems },
+    { data: threads },
   ] = results
 
   if (!project) notFound()
+
+  // Build the project activity feed:
+  // - activity_log entries where entity_id = this project OR metadata.project_id = this project
+  // - project_threads (each is treated as a "message" entry)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: actLog } = await supabase
+    .from('activity_log')
+    .select('id, entity_type, entity_id, action, metadata, created_at, user_id, users(full_name, avatar_url)')
+    .or(`entity_id.eq.${id},metadata->>project_id.eq.${id}`)
+    .order('created_at', { ascending: false })
+    .limit(100) as any
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const activity = [
+    ...((actLog ?? []) as any[]).map(a => ({
+      id: `act-${a.id}`, kind: 'system' as const,
+      entity_type: a.entity_type, action: a.action, metadata: a.metadata,
+      user_name: a.users?.full_name ?? null,
+      user_avatar_url: a.users?.avatar_url ?? null,
+      created_at: a.created_at,
+    })),
+    ...((threads ?? []) as any[]).map(t => ({
+      id: `thr-${t.id}`, kind: 'message' as const,
+      message: t.message, user_name: t.user_name,
+      user_avatar_url: t.user_avatar_url,
+      created_at: t.created_at,
+    })),
+  ].sort((a, b) => (a.created_at < b.created_at ? 1 : -1))
 
   const assigneeName = project.users?.full_name ?? null
   const assigneeAvatarUrl = project.users?.avatar_url ?? null
@@ -114,6 +144,8 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
         buildings={buildings ?? []}
         meters={meters ?? []}
         systems={systems ?? []}
+        threads={threads ?? []}
+        activity={activity}
       />
     </div>
   )

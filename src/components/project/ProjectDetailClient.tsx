@@ -8,6 +8,8 @@ import { TechnicalTab } from './TechnicalTab'
 import { FinancialTab } from './FinancialTab'
 import { ScheduleTab } from './ScheduleTab'
 import { DataRoomTab } from './DataRoomTab'
+import { ThreadsTab } from './ThreadsTab'
+import { ProjectActivityFeed, type ActivityEntry } from './ProjectActivityFeed'
 
 const TABS = [
   { id: 'site', label: 'Site' },
@@ -16,13 +18,14 @@ const TABS = [
   { id: 'permitting', label: 'Permitting' },
   { id: 'technical', label: 'Technical' },
   { id: 'financial', label: 'Financial' },
+  { id: 'threads', label: 'Threads' },
   // Schedule + Data Room hidden until each is fully defined
   // { id: 'schedule', label: 'Schedule' },
   // { id: 'dataroom', label: 'Data Room' },
 ]
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function ProjectDetailClient({ project, financials, milestones, stakeholders, permits, docs, buildings, meters, systems }: any) {
+export function ProjectDetailClient({ project, financials, milestones, stakeholders, permits, docs, buildings, meters, systems, threads = [], activity = [] }: any) {
   const [activeTab, setActiveTab] = useState('site')
 
   return (
@@ -58,6 +61,12 @@ export function ProjectDetailClient({ project, financials, milestones, stakehold
         {activeTab === 'financial' && <FinancialTab financials={financials} projectId={project.id} systemKwdc={project.system_kwdc} />}
         {activeTab === 'schedule' && <ScheduleTab milestones={milestones} />}
         {activeTab === 'dataroom' && <DataRoomTab docs={docs} projectId={project.id} />}
+        {activeTab === 'threads' && <ThreadsTab threads={threads} channelLinked={!!project.slack_channel_id} />}
+      </div>
+
+      {/* Activity feed — bottom of every project page */}
+      <div className="px-8 pb-10">
+        <ProjectActivityFeed entries={activity as ActivityEntry[]} />
       </div>
     </div>
   )

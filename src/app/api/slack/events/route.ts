@@ -54,20 +54,17 @@ export async function POST(req: NextRequest) {
   // Event callback
   if (body.type === 'event_callback' && body.event) {
     const e = body.event
-    // We only care about DM (channel type 'im') messages that are threaded replies
-    // and not bot messages (avoid loops echoing our own outbound posts)
-    if (
-      e.type === 'message' &&
-      e.channel_type === 'im' &&
-      e.thread_ts &&
-      e.thread_ts !== e.ts &&    // ignore the parent message itself
-      !e.bot_id &&                // ignore Pathwaze's own outbound DMs
-      e.subtype !== 'bot_message'
-    ) {
-      try {
-        const supabase = serviceClient()
 
-        // Find the task this DM thread is anchored to
+    // Common guard: ignore bot messages so we don't echo our own posts
+    if (e.type !== 'message' || e.bot_id || e.subtype === 'bot_message') {
+      return NextResponse.json({ ok: true })
+    }
+
+    try {
+      const supabase = serviceClient()
+
+      // ── (1) DM thread reply → task_threads (existing behavior) ──
+      if (e.channel_type === 'im' && e.thread_ts && e.thread_ts !== e.ts) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const { data: task } = await supabase
           .from('tasks')
@@ -75,16 +72,13 @@ export async function POST(req: NextRequest) {
           .eq('slack_dm_channel', e.channel)
           .eq('slack_dm_ts', e.thread_ts)
           .single() as any
-
         if (task) {
-          // Resolve Pathwaze user_id by Slack user_id (best effort; fall back to NULL)
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const { data: user } = await supabase
             .from('users')
             .select('id')
             .eq('slack_user_id', e.user)
             .single() as any
-
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           await (supabase.from('task_threads') as any).insert({
             task_id: task.id,
@@ -92,10 +86,43 @@ export async function POST(req: NextRequest) {
             message: e.text || '',
           })
         }
-      } catch (err) {
-        console.warn('[slack events] thread sync failed:', err)
       }
+
+      // ── (2) Channel message → project_threads (new) ──
+      if (e.channel_type === 'channel' || e.channel_type === 'group') {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { data: project } = await supabase
+          .from('projects')
+          .select('id')
+          .eq('slack_channel_id', e.channel)
+          .single() as any
+        if (project) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const { data: matchedUser } = await supabase
+            .from('users')
+            .select('id, full_name, avatar_url')
+            .eq('slack_user_id', e.user)
+            .single() as any
+
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          await (supabase.from('project_threads') as any).insert({
+            project_id: project.id,
+            slack_channel_id: e.channel,
+            slack_ts: e.ts,
+            slack_thread_ts: e.thread_ts ?? null,
+            slack_user_id: e.user ?? null,
+            user_id: matchedUser?.id ?? null,
+            user_name: matchedUser?.full_name ?? null,
+            user_avatar_url: matchedUser?.avatar_url ?? null,
+            message: e.text || '',
+            raw_payload: e,
+          })
+        }
+      }
+    } catch (err) {
+      console.warn('[slack events] handler failed:', err)
     }
+
     return NextResponse.json({ ok: true })
   }
 
