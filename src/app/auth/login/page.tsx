@@ -37,17 +37,11 @@ function LoginInner() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center px-4 relative overflow-hidden"
-      style={{
-        background: 'linear-gradient(135deg, #F1F5F9 0%, #E8EFF6 50%, #DCE7F2 100%)',
-      }}>
-      {/* Soft brand accent glows */}
-      <div className="absolute -top-32 -left-32 w-96 h-96 rounded-full opacity-30 blur-3xl" style={{ background: '#70A0D0' }} />
-      <div className="absolute -bottom-32 -right-32 w-96 h-96 rounded-full opacity-20 blur-3xl" style={{ background: '#F8D068' }} />
-
-      <div className="relative bg-white rounded-2xl shadow-xl border border-white p-10 w-full max-w-md">
-        <div className="flex flex-col items-center mb-8">
-          <PathwazeLogo style={{ height: 48, width: 'auto' }} />
+    <main className="min-h-screen w-full flex items-center justify-center px-4 bg-cover bg-center bg-no-repeat"
+      style={{ backgroundColor: '#0F1B26', backgroundImage: "url(/pathwaze-login-bg.svg)" }}>
+      <div className="w-full max-w-[400px] rounded-xl shadow-2xl p-9" style={{ backgroundColor: '#F4F7FA' }}>
+        <div className="flex flex-col items-center mb-7">
+          <PathwazeLogo style={{ height: 44, width: 'auto' }} />
         </div>
 
         {(error || initialError) && (
@@ -104,13 +98,13 @@ function LoginInner() {
           )}
         </div>
       </div>
-    </div>
+    </main>
   )
 }
 
 export default function LoginPage() {
   return (
-    <Suspense fallback={<div className="min-h-screen" style={{ background: 'linear-gradient(135deg, #F1F5F9 0%, #DCE7F2 100%)' }} />}>
+    <Suspense fallback={<div className="min-h-screen" style={{ background: '#0F1B26' }} />}>
       <LoginInner />
     </Suspense>
   )
