@@ -71,7 +71,10 @@ export async function POST(req: NextRequest) {
   const form = new URLSearchParams(rawBody)
   const text = (form.get('text') || '').trim()
   const slackUserId = form.get('user_id') || ''
+  const slackUserName = form.get('user_name') || ''
   const slackChannelId = form.get('channel_id') || ''
+  const slackChannelName = form.get('channel_name') || ''
+  const teamDomain = form.get('team_domain') || ''
 
   // Parse subcommand. Currently only: `project <name|number>`
   const [sub, ...rest] = text.split(/\s+/)
@@ -116,14 +119,38 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ response_type: 'ephemeral', text: `No project found matching *${arg}*.` })
     }
 
-    // Log a "mentioned in slack" activity entry for the project
+    // Record the mention in two places so it shows up in:
+    //   - Activity feed (activity_log row)
+    //   - Threads tab (project_threads row — visible Slack-style message)
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { data: matchedUser } = await supabase
         .from('users')
-        .select('id, full_name')
+        .select('id, full_name, avatar_url')
         .eq('slack_user_id', slackUserId)
         .single() as any
+
+      // Build a human-readable mention message
+      const channelDisplay = slackChannelName ? `#${slackChannelName}` : `another channel`
+      const channelDeepLink = teamDomain ? `https://${teamDomain}.slack.com/archives/${slackChannelId}` : ''
+      const userDisplay = matchedUser?.full_name || slackUserName || 'Someone'
+      const mentionMsg = `${userDisplay} referenced this project in ${channelDisplay}${channelDeepLink ? ` — ${channelDeepLink}` : ''}`
+
+      // Synthetic Slack ts (we don't get one for slash commands). Random suffix for uniqueness.
+      const syntheticTs = `${Date.now()}.${Math.floor(Math.random() * 1e6)}`
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await (supabase.from('project_threads') as any).insert({
+        project_id: project.id,
+        slack_channel_id: slackChannelId,
+        slack_ts: syntheticTs,
+        slack_user_id: slackUserId,
+        user_id: matchedUser?.id ?? null,
+        user_name: userDisplay,
+        user_avatar_url: matchedUser?.avatar_url ?? null,
+        message: mentionMsg,
+        raw_payload: { via: 'slash_command', channel_name: slackChannelName, team_domain: teamDomain, text },
+      })
 
       if (matchedUser?.id) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -135,13 +162,15 @@ export async function POST(req: NextRequest) {
           metadata: {
             project_id: project.id,
             from_channel: slackChannelId,
+            from_channel_name: slackChannelName,
+            channel_deep_link: channelDeepLink,
             slack_user_id: slackUserId,
             via: 'slash_command',
           },
         })
       }
     } catch (err) {
-      console.warn('[slack commands] activity log failed:', err)
+      console.warn('[slack commands] mention record failed:', err)
     }
 
     return NextResponse.json(projectCard(project))
