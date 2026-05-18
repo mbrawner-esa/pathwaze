@@ -77,7 +77,7 @@ export function ProjectActionsMenu({ projectId, projectName, slackChannelId, sta
         setModal(null); router.refresh()
       }} />}
       {modal === 'unarchive' && <ConfirmModal title="Unarchive project?" body={`"${projectName}" will be moved back to the Prospecting stage. You can update the stage as needed.`} confirmLabel="Unarchive" onClose={() => setModal(null)} onConfirm={async () => {
-        await fetch(`/api/projects/${projectId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ stage: 'Prospecting' }) })
+        await fetch(`/api/projects/${projectId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ stage: 'Pre-Planning' }) })
         setModal(null); router.refresh()
       }} />}
       {modal === 'delete' && <ConfirmModal title="Delete project?" body={`"${projectName}" and all its tasks, areas, meters, systems, permits, stakeholders, and documents will be permanently deleted. This cannot be undone.`} confirmLabel="Yes I'm sure — delete" danger onClose={() => setModal(null)} onConfirm={async () => {

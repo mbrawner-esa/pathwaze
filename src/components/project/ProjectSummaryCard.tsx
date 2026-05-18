@@ -7,7 +7,7 @@ import { Avatar } from '@/components/ui/Avatar'
 import { formatNumber, formatDate } from '@/lib/utils'
 import { FieldGrid, Field, FieldInput, FieldSelect } from './_editFields'
 
-const STAGES = ['Prospecting', 'Proposal', 'Contracting', 'Permitting', 'Construction', 'Operations', 'Archived']
+const STAGES = ['Archived', 'Pre-Planning', 'Design Development', 'Bidding', 'Late Stage Development', 'Pre-Closing', 'NTP', 'Pre-Construction', 'Active Construction', 'Post Construction', 'Closeout', 'Operating']
 const TRANCHES = ['TR01 - GLR', 'TR02 - WFD', 'TR03 - CFD', 'TR04 - EFD', 'TR05 - CORP']
 
 interface Project {
@@ -21,13 +21,15 @@ interface Project {
   address: string
   zip: string
   tranche?: string
-  region?: string
+  region?: string  // deprecated — kept for backward compat
+  primary_stakeholder_id?: string | null
   target_cod?: string
   assignee_id?: string
   slack_channel_id?: string
 }
 
 interface User { id: string; full_name: string; avatar_url?: string | null }
+interface Stakeholder { id: string; name: string; title?: string | null; role?: string | null }
 
 interface Milestone { label: string; target_date: string | null; completed: boolean }
 
@@ -38,6 +40,7 @@ export function ProjectSummaryCard({
   nextMilestone,
   lastUpdated,
   users,
+  stakeholders = [],
 }: {
   project: Project
   assigneeName: string | null
@@ -45,6 +48,7 @@ export function ProjectSummaryCard({
   nextMilestone: Milestone | undefined
   lastUpdated: string
   users: User[]
+  stakeholders?: Stakeholder[]
 }) {
   const router = useRouter()
   const [editing, setEditing] = useState(false)
@@ -54,14 +58,14 @@ export function ProjectSummaryCard({
     project_number: project.project_number ?? '',
     system_kwdc: project.system_kwdc ?? 0,
     tranche: project.tranche ?? '',
-    region: project.region ?? '',
-    stage: project.stage ?? 'Prospecting',
+    stage: project.stage ?? 'Pre-Planning',
     address: project.address ?? '',
     city: project.city ?? '',
     state: project.state ?? '',
     zip: project.zip ?? '',
     target_cod: project.target_cod ? String(project.target_cod).slice(0, 10) : '',
     assignee_id: project.assignee_id ?? '',
+    primary_stakeholder_id: project.primary_stakeholder_id ?? '',
   })
 
   function startEdit() {
@@ -69,14 +73,14 @@ export function ProjectSummaryCard({
       project_number: project.project_number ?? '',
       system_kwdc: project.system_kwdc ?? 0,
       tranche: project.tranche ?? '',
-      region: project.region ?? '',
-      stage: project.stage ?? 'Prospecting',
+      stage: project.stage ?? 'Pre-Planning',
       address: project.address ?? '',
       city: project.city ?? '',
       state: project.state ?? '',
       zip: project.zip ?? '',
       target_cod: project.target_cod ? String(project.target_cod).slice(0, 10) : '',
       assignee_id: project.assignee_id ?? '',
+      primary_stakeholder_id: project.primary_stakeholder_id ?? '',
     })
     setEditing(true)
     setError(null)
@@ -92,7 +96,7 @@ export function ProjectSummaryCard({
         body: JSON.stringify({
           system_kwdc: Number(form.system_kwdc) || 0,
           tranche: form.tranche || null,
-          region: form.region || null,
+          primary_stakeholder_id: form.primary_stakeholder_id || null,
           stage: form.stage,
           address: form.address,
           city: form.city,
@@ -158,10 +162,26 @@ export function ProjectSummaryCard({
             ? <FieldSelect value={form.tranche} options={TRANCHES} onChange={v => setForm(f => ({ ...f, tranche: v }))} placeholder="— Tranche —" />
             : (project.tranche || '—')}
         </Field>
-        <Field label="Region">
-          {editing
-            ? <FieldInput value={form.region} onChange={v => setForm(f => ({ ...f, region: v }))} placeholder="Region" />
-            : (project.region || '—')}
+        <Field label="Project Contact">
+          {editing ? (
+            <FieldSelect
+              value={stakeholders.find(s => s.id === form.primary_stakeholder_id)?.name ?? ''}
+              options={stakeholders.map(s => s.name)}
+              onChange={v => {
+                const s = stakeholders.find(x => x.name === v)
+                setForm(f => ({ ...f, primary_stakeholder_id: s?.id ?? '' }))
+              }}
+              placeholder={stakeholders.length === 0 ? 'No stakeholders yet — add on the Stakeholders tab' : '— No contact —'}
+            />
+          ) : (() => {
+            const contact = stakeholders.find(s => s.id === project.primary_stakeholder_id)
+            return contact ? (
+              <span className="inline-flex items-center gap-1.5">
+                <span className="font-medium">{contact.name}</span>
+                {contact.title && <span className="text-[#706E6B]">· {contact.title}</span>}
+              </span>
+            ) : <span className="text-[#706E6B]">—</span>
+          })()}
         </Field>
 
         <Field label="Development Stage" full>

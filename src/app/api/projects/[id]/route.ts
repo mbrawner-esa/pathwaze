@@ -18,7 +18,7 @@ const ALLOWED_FIELDS = new Set([
   'assignee_id', 'facility_type', 'site_type', 'site_acres', 'roof_type',
   'modules', 'inverters', 'monitoring', 'azimuth', 'tilt',
   'start_date', 'target_cod', 'tranche', 'region',
-  'slack_channel_id', 'archived_at',
+  'slack_channel_id', 'archived_at', 'primary_stakeholder_id',
 ])
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {

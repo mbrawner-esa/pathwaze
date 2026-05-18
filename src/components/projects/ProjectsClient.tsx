@@ -30,7 +30,7 @@ interface ProjectsClientProps {
   users?: { id: string; full_name: string }[]
 }
 
-const STAGES = ['All', 'Prospecting', 'Proposal', 'Contracting', 'Permitting', 'Construction', 'Operations', 'Archived']
+const STAGES = ['All', 'Archived', 'Pre-Planning', 'Design Development', 'Bidding', 'Late Stage Development', 'Pre-Closing', 'NTP', 'Pre-Construction', 'Active Construction', 'Post Construction', 'Closeout', 'Operating']
 const STATES = ['All', 'FL', 'IL']
 const GROUP_OPTIONS: { value: string; label: string }[] = [
   { value: 'none', label: 'None' },

@@ -16,7 +16,7 @@ export default async function ProjectsPage() {
         milestones(label, completed, sort_order)
       `)
       .order('name') as unknown as { data: any[] | null },
-    supabase.from('users').select('id, full_name').order('full_name'),
+    supabase.from('users').select('id, full_name').eq('status', 'active').order('full_name'),
   ])
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
