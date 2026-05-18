@@ -45,9 +45,6 @@ function fmtKw(kwdc: number) {
   return `${kwdc.toLocaleString()} kWdc`
 }
 
-function fmtMw(kwdc: number) {
-  return kwdc.toLocaleString()
-}
 
 // ── Column definitions ────────────────────────────────────────────────────
 type ColumnId = 'project' | 'stage' | 'size' | 'contract_value' | 'utility' | 'target_cod' | 'assignee' | 'tranche' | 'region' | 'deal_health' | 'next_milestone'

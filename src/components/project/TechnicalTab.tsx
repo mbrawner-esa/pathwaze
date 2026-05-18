@@ -20,9 +20,7 @@ export function TechnicalTab({ project, buildings = [], meters = [], systems = [
   const p = project as {
     id: string
     system_kwdc?: number; system_kwac?: number; annual_production_kwh?: number
-    _financials?: { yield_kwh_kwp?: number; energy_gen_year1_mwh?: number; system_type?: string }
   }
-  const fin = p._financials
 
   const [editMode, setEditMode] = useState(false)
   const [saving, setSaving] = useState(false)

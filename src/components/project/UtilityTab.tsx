@@ -6,9 +6,6 @@ import { MetersTable, type Meter } from './MetersTable'
 import type { Building } from './BuildingsTable'
 
 const RATE_TYPES = ['TOU', 'Non-TOU']
-const IX_STATUSES = ['Not Started', 'Submitted', 'In Review', 'Approved', 'Denied']
-const IX_VOLTAGES = ['TBD', '120/240V', '208V', '277/480V', '480V', '4.16kV', '12.47kV', '13.2kV', '13.8kV', '23kV', '34.5kV']
-const IX_FEASIBILITIES = ['TBD', 'Feasible', 'Likely Feasible', 'Under Review', 'At Risk', 'Infeasible']
 const NEM_PROGRAMS = ['TBD', 'Net Metering 2.0', 'Net Billing', 'Standard NEM', 'Aggregate NEM', 'Distributed Generation Rebate', 'No NEM Available']
 
 type Section = 'utility' | 'ix'
@@ -100,7 +97,6 @@ export function UtilityTab({ project, buildings = [], meters = [] }: { project: 
   }
 
   const isEditingUtility = editingSection === 'utility'
-  const isEditingIx = editingSection === 'ix'
 
   return (
     <div className="space-y-5">
