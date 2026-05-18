@@ -21,6 +21,7 @@ interface Project {
   utility?: string
   target_cod?: string
   assignee_name?: string
+  assignee_avatar_url?: string | null
   next_milestone?: string
 }
 
@@ -239,7 +240,7 @@ export function ProjectsClient({ projects, users = [] }: ProjectsClientProps) {
       case 'assignee':
         return (
           <td key="assignee" className="px-4 py-3">
-            {p.assignee_name ? <Avatar name={p.assignee_name} size="sm" /> : <span className="text-xs text-[#A8A8A8]">—</span>}
+            {p.assignee_name ? <Avatar name={p.assignee_name} imageUrl={p.assignee_avatar_url} size="sm" /> : <span className="text-xs text-[#A8A8A8]">—</span>}
           </td>
         )
       case 'tranche':

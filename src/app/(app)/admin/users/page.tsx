@@ -12,7 +12,7 @@ export default async function AdminUsersPage() {
 
   const { data: users } = await supabase
     .from('users')
-    .select('id, email, full_name, role, status, created_at')
+    .select('id, email, full_name, role, status, avatar_url, created_at')
     .order('created_at', { ascending: false }) as unknown as { data: AdminUserRow[] | null }
 
   const { data: invites } = await supabase

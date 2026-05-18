@@ -606,11 +606,11 @@ export function TasksClient({ tasks: initialTasks, projects, users }: { tasks: a
                             <span className="px-2 py-0.5 rounded text-xs font-medium" style={{ backgroundColor: sc.bg, color: sc.text }}>{task.status}</span>
                           </td>
                           <td className="px-3 py-3">
-                            {task.assignee?.full_name ? <Avatar name={task.assignee.full_name} size="sm" /> : <span className="text-xs text-[#A8A8A8]">—</span>}
+                            {task.assignee?.full_name ? <Avatar name={task.assignee.full_name} imageUrl={task.assignee.avatar_url} size="sm" /> : <span className="text-xs text-[#A8A8A8]">—</span>}
                           </td>
                           <td className="px-3 py-3">
                             {task.requires_approval && task.approver?.full_name
-                              ? <Avatar name={task.approver.full_name} size="sm" />
+                              ? <Avatar name={task.approver.full_name} imageUrl={task.approver.avatar_url} size="sm" />
                               : <span className="text-xs text-[#A8A8A8]">—</span>}
                           </td>
                           <td className="px-3 py-3 text-xs text-[#3E3E3C]">{formatDate(task.due_date)}</td>
@@ -743,7 +743,7 @@ export function TasksClient({ tasks: initialTasks, projects, users }: { tasks: a
                             <div className="flex items-center justify-between">
                               <span className="text-xs text-[#706E6B] truncate">{task.project?.name}</span>
                               <div className="flex items-center gap-1 flex-shrink-0">
-                                {task.assignee?.full_name && <Avatar name={task.assignee.full_name} size="sm" />}
+                                {task.assignee?.full_name && <Avatar name={task.assignee.full_name} imageUrl={task.assignee.avatar_url} size="sm" />}
                               </div>
                             </div>
                           </div>
@@ -1002,7 +1002,7 @@ export function TasksClient({ tasks: initialTasks, projects, users }: { tasks: a
                         <p className="label mb-1">Assignee</p>
                         {selected.assignee?.full_name ? (
                           <div className="flex items-center gap-2">
-                            <Avatar name={selected.assignee.full_name} size="sm" />
+                            <Avatar name={selected.assignee.full_name} imageUrl={selected.assignee.avatar_url} size="sm" />
                             <span className="text-sm text-[#181818] font-medium">{selected.assignee.full_name}</span>
                           </div>
                         ) : <span className="text-sm text-[#706E6B]">Unassigned</span>}
@@ -1011,7 +1011,7 @@ export function TasksClient({ tasks: initialTasks, projects, users }: { tasks: a
                         <p className="label mb-1">Approver</p>
                         {selected.requires_approval && selected.approver?.full_name ? (
                           <div className="flex items-center gap-2">
-                            <Avatar name={selected.approver.full_name} size="sm" />
+                            <Avatar name={selected.approver.full_name} imageUrl={selected.approver.avatar_url} size="sm" />
                             <span className="text-sm text-[#181818] font-medium">{selected.approver.full_name}</span>
                           </div>
                         ) : <span className="text-sm text-[#A8A8A8] italic">Not required</span>}
@@ -1242,7 +1242,7 @@ export function TasksClient({ tasks: initialTasks, projects, users }: { tasks: a
                     <div className="space-y-3 mb-3">
                       {comments.map(c => (
                         <div key={c.id} className="flex gap-2.5">
-                          <Avatar name={c.user?.full_name ?? 'User'} size="sm" />
+                          <Avatar name={c.user?.full_name ?? 'User'} imageUrl={c.user?.avatar_url} size="sm" />
                           <div className="flex-1 min-w-0">
                             <div className="flex items-baseline gap-2">
                               <span className="text-[13px] font-semibold text-[#181818]">{c.user?.full_name ?? 'User'}</span>

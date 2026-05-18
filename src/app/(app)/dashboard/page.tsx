@@ -39,8 +39,9 @@ export default async function DashboardPage() {
   if (!user) return null
 
   // Pull profile for full name (falls back to email)
-  const { data: profile } = await supabase.from('users').select('full_name').eq('id', user.id).single() as { data: { full_name?: string } | null }
+  const { data: profile } = await supabase.from('users').select('full_name, avatar_url').eq('id', user.id).single() as { data: { full_name?: string; avatar_url?: string | null } | null }
   const fullName = profile?.full_name || user.email?.split('@')[0] || 'there'
+  const avatarUrl = profile?.avatar_url ?? null
   const firstName = fullName.split(' ')[0]
 
   const now = new Date()
@@ -314,7 +315,7 @@ export default async function DashboardPage() {
                   if (!task) return null
                   return (
                     <Link key={t.id} href="/tasks" className="flex items-start gap-3 px-4 py-3 rounded-lg hover:bg-[#fafbfc] transition-colors">
-                      <Avatar name={fullName} size="sm" />
+                      <Avatar name={fullName} imageUrl={avatarUrl} size="sm" />
                       <div className="flex-1 min-w-0">
                         <p className="text-[13.5px] font-medium text-[#181818] truncate">{task.title}</p>
                         <p className="text-[12px] text-[#3E3E3C] line-clamp-1 mt-0.5">&ldquo;{t.message}&rdquo;</p>

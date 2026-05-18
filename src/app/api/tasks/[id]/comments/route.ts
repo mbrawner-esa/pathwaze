@@ -10,7 +10,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   const { id } = await params
   const { data, error } = await supabase
     .from('task_threads')
-    .select('*, user:users(full_name)')
+    .select('*, user:users(full_name, avatar_url)')
     .eq('task_id', id)
     .order('created_at', { ascending: true })
 
@@ -29,7 +29,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data, error } = await (supabase.from('task_threads') as any)
     .insert({ task_id: id, user_id: user.id, message })
-    .select('*, user:users(full_name)')
+    .select('*, user:users(full_name, avatar_url)')
     .single()
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })

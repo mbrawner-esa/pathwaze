@@ -12,7 +12,7 @@ export default async function ProjectsPage() {
         id, project_number, name, stage, deal_health, system_kwdc,
         city, state, tranche, region, assignee_id,
         utility, target_cod,
-        users!assignee_id(full_name),
+        users!assignee_id(full_name, avatar_url),
         milestones(label, completed, sort_order)
       `)
       .order('name') as unknown as { data: any[] | null },
@@ -23,6 +23,7 @@ export default async function ProjectsPage() {
   const mapped = (projects ?? []).map((p: any) => {
     const u = p.users
     const assignee_name = u?.full_name ?? undefined
+    const assignee_avatar_url = u?.avatar_url ?? null
     const milestones = (p.milestones ?? []) as { label: string; completed: boolean; sort_order: number }[]
     const next = milestones
       .filter(m => !m.completed)
@@ -41,6 +42,7 @@ export default async function ProjectsPage() {
       utility: p.utility,
       target_cod: p.target_cod,
       assignee_name,
+      assignee_avatar_url,
       next_milestone: next?.label,
     }
   })

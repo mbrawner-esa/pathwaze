@@ -14,13 +14,13 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const results = await Promise.all([
-    supabase.from('projects').select('*, users!assignee_id(full_name)').eq('id', id).single(),
+    supabase.from('projects').select('*, users!assignee_id(full_name, avatar_url)').eq('id', id).single(),
     supabase.from('project_financials').select('*').eq('project_id', id).single(),
     supabase.from('milestones').select('*').eq('project_id', id).order('sort_order'),
     supabase.from('stakeholders').select('*').eq('project_id', id),
     supabase.from('permits').select('*').eq('project_id', id),
     supabase.from('dataroom_docs').select('*').eq('project_id', id),
-    supabase.from('users').select('id, full_name').order('full_name'),
+    supabase.from('users').select('id, full_name, avatar_url').order('full_name'),
     supabase.from('buildings').select('*').eq('project_id', id).order('created_at'),
     supabase.from('meters').select('*').eq('project_id', id).order('created_at'),
     supabase.from('systems').select('*').eq('project_id', id).order('created_at'),
@@ -34,6 +34,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
   if (!project) notFound()
 
   const assigneeName = project.users?.full_name ?? null
+  const assigneeAvatarUrl = project.users?.avatar_url ?? null
   const nextMilestone = (milestones ?? []).find((m: any) => !m.completed)
   const lastUpdated = formatDate(new Date().toISOString())
 
@@ -95,6 +96,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
         <ProjectSummaryCard
           project={project}
           assigneeName={assigneeName}
+          assigneeAvatarUrl={assigneeAvatarUrl}
           nextMilestone={nextMilestone}
           lastUpdated={lastUpdated}
           users={users ?? []}

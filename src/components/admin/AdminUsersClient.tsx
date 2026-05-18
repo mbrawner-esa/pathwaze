@@ -10,6 +10,7 @@ export interface AdminUserRow {
   full_name: string
   role: 'admin' | 'team' | 'investor' | string
   status: 'pending' | 'active' | 'disabled' | string
+  avatar_url: string | null
   created_at: string
 }
 
@@ -274,7 +275,7 @@ function Table({ users, busy, onPatch, actions }: {
             <tr key={u.id} className="border-b border-[#f1f5f9]">
               <td className="px-4 py-3">
                 <div className="flex items-center gap-2.5">
-                  <Avatar name={u.full_name || u.email} size="sm" />
+                  <Avatar name={u.full_name || u.email} imageUrl={u.avatar_url} size="sm" />
                   <span className="font-medium text-[#181818]">{u.full_name || '—'}</span>
                 </div>
               </td>

@@ -27,19 +27,21 @@ interface Project {
   slack_channel_id?: string
 }
 
-interface User { id: string; full_name: string }
+interface User { id: string; full_name: string; avatar_url?: string | null }
 
 interface Milestone { label: string; target_date: string | null; completed: boolean }
 
 export function ProjectSummaryCard({
   project,
   assigneeName,
+  assigneeAvatarUrl,
   nextMilestone,
   lastUpdated,
   users,
 }: {
   project: Project
   assigneeName: string | null
+  assigneeAvatarUrl?: string | null
   nextMilestone: Milestone | undefined
   lastUpdated: string
   users: User[]
@@ -210,7 +212,7 @@ export function ProjectSummaryCard({
             />
           ) : assigneeName ? (
             <span className="flex items-center gap-1.5">
-              <Avatar name={assigneeName} size="sm" />
+              <Avatar name={assigneeName} imageUrl={assigneeAvatarUrl} size="sm" />
               {assigneeName}
             </span>
           ) : (

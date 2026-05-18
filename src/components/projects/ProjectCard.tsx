@@ -15,6 +15,7 @@ interface ProjectCardProps {
     city: string
     state: string
     assignee_name?: string
+    assignee_avatar_url?: string | null
     next_milestone?: string
   }
 }
@@ -51,7 +52,7 @@ export function ProjectCard({ project }: ProjectCardProps) {
 
         <div className="flex items-center justify-between">
           {project.assignee_name && (
-            <Avatar name={project.assignee_name} size="sm" />
+            <Avatar name={project.assignee_name} imageUrl={project.assignee_avatar_url} size="sm" />
           )}
           {project.next_milestone && (
             <p className="text-[10px] text-[#706E6B] truncate max-w-[160px]">{project.next_milestone}</p>
