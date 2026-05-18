@@ -7,7 +7,7 @@ import { Avatar } from '@/components/ui/Avatar'
 import { formatNumber, formatDate } from '@/lib/utils'
 import { FieldGrid, Field, FieldInput, FieldSelect } from './_editFields'
 
-const STAGES = ['Prospecting', 'Proposal', 'Contracting', 'Permitting', 'Construction', 'Operations']
+const STAGES = ['Prospecting', 'Proposal', 'Contracting', 'Permitting', 'Construction', 'Operations', 'Archived']
 const TRANCHES = ['TR01 - GLR', 'TR02 - WFD', 'TR03 - CFD', 'TR04 - EFD', 'TR05 - CORP']
 
 interface Project {

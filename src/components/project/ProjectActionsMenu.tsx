@@ -7,13 +7,13 @@ interface Props {
   projectId: string
   projectName: string
   slackChannelId: string | null
-  archivedAt: string | null
+  stage: string | null
   userRole: 'admin' | 'team' | 'investor' | string
 }
 
 type ModalKind = 'rename' | 'slack' | 'duplicate' | 'archive' | 'unarchive' | 'delete' | null
 
-export function ProjectActionsMenu({ projectId, projectName, slackChannelId, archivedAt, userRole }: Props) {
+export function ProjectActionsMenu({ projectId, projectName, slackChannelId, stage, userRole }: Props) {
   const router = useRouter()
   const [open, setOpen] = useState(false)
   const [modal, setModal] = useState<ModalKind>(null)
@@ -29,7 +29,7 @@ export function ProjectActionsMenu({ projectId, projectName, slackChannelId, arc
     return () => document.removeEventListener('mousedown', onClick)
   }, [open])
 
-  const isArchived = !!archivedAt
+  const isArchived = stage === 'Archived'
   const isAdmin = userRole === 'admin'
 
   return (
@@ -72,13 +72,12 @@ export function ProjectActionsMenu({ projectId, projectName, slackChannelId, arc
       {modal === 'rename' && <RenameModal projectId={projectId} initialName={projectName} onClose={() => setModal(null)} onDone={() => { setModal(null); router.refresh() }} />}
       {modal === 'slack' && <SlackChannelModal projectId={projectId} currentChannelId={slackChannelId} onClose={() => setModal(null)} onDone={() => { setModal(null); router.refresh() }} />}
       {modal === 'duplicate' && <DuplicateModal projectId={projectId} projectName={projectName} onClose={() => setModal(null)} />}
-      {modal === 'archive' && <ConfirmModal title="Archive project?" body={`"${projectName}" will be hidden from the active project list. You can unarchive at any time.`} confirmLabel="Archive" onClose={() => setModal(null)} onConfirm={async () => {
-        await fetch(`/api/projects/${projectId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ archived_at: new Date().toISOString() }) })
-        setModal(null)
-        router.push('/projects')
+      {modal === 'archive' && <ConfirmModal title="Archive project?" body={`"${projectName}" will be moved to the Archived stage and removed from active work. You can change the stage back at any time.`} confirmLabel="Archive" onClose={() => setModal(null)} onConfirm={async () => {
+        await fetch(`/api/projects/${projectId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ stage: 'Archived' }) })
+        setModal(null); router.refresh()
       }} />}
-      {modal === 'unarchive' && <ConfirmModal title="Unarchive project?" body={`"${projectName}" will return to the active project list.`} confirmLabel="Unarchive" onClose={() => setModal(null)} onConfirm={async () => {
-        await fetch(`/api/projects/${projectId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ archived_at: null }) })
+      {modal === 'unarchive' && <ConfirmModal title="Unarchive project?" body={`"${projectName}" will be moved back to the Prospecting stage. You can update the stage as needed.`} confirmLabel="Unarchive" onClose={() => setModal(null)} onConfirm={async () => {
+        await fetch(`/api/projects/${projectId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ stage: 'Prospecting' }) })
         setModal(null); router.refresh()
       }} />}
       {modal === 'delete' && <ConfirmModal title="Delete project?" body={`"${projectName}" and all its tasks, areas, meters, systems, permits, stakeholders, and documents will be permanently deleted. This cannot be undone.`} confirmLabel="Yes I'm sure — delete" danger onClose={() => setModal(null)} onConfirm={async () => {

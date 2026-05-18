@@ -16,8 +16,9 @@ const TABS = [
   { id: 'permitting', label: 'Permitting' },
   { id: 'technical', label: 'Technical' },
   { id: 'financial', label: 'Financial' },
-  { id: 'schedule', label: 'Schedule' },
-  { id: 'dataroom', label: 'Data Room' },
+  // Schedule + Data Room hidden until each is fully defined
+  // { id: 'schedule', label: 'Schedule' },
+  // { id: 'dataroom', label: 'Data Room' },
 ]
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

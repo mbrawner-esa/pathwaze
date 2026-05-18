@@ -5,6 +5,7 @@ const STAGE_COLORS: Record<string, { bg: string; text: string; dot: string }> = 
   'Permitting': { bg: '#FFFBEB', text: '#92400e', dot: '#f59e0b' },
   'Construction': { bg: '#FEF2F2', text: '#991b1b', dot: '#ef4444' },
   'Operations': { bg: '#F0FDF4', text: '#166534', dot: '#22c55e' },
+  'Archived': { bg: '#F1F5F9', text: '#475569', dot: '#94a3b8' },
 }
 
 export function StageBadge({ stage }: { stage: string }) {

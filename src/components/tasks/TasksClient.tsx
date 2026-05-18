@@ -1231,8 +1231,8 @@ export function TasksClient({ tasks: initialTasks, projects, users }: { tasks: a
                     <span className="text-[13px] font-semibold text-[#181818]">Threads</span>
                     <span className="text-[11px] text-[#706E6B]">{comments.length}</span>
                   </div>
-                  <span className="flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded bg-[#F4ECE7] text-[#611f69]" title="Slack sync coming soon">
-                    <Slack size={10} /> Slack — soon
+                  <span className="flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded bg-[#E8F5EA] text-[#1E7B3A]" title="This thread mirrors into Slack">
+                    <Slack size={10} /> Slack linked
                   </span>
                 </div>
                 <div className="px-4 py-3">

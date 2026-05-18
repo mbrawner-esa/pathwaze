@@ -66,16 +66,11 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
             projectId={project.id}
             projectName={project.name}
             slackChannelId={project.slack_channel_id ?? null}
-            archivedAt={project.archived_at ?? null}
+            stage={project.stage ?? null}
             userRole={userRole}
           />
         </div>
       </div>
-      {project.archived_at && (
-        <div className="bg-[#fef3c7] border-b border-[#fde68a] px-8 py-2 text-[12.5px] text-[#92400e] flex items-center gap-2">
-          <strong>Archived</strong> · This project is hidden from the active list. Use the menu to unarchive.
-        </div>
-      )}
 
       {/* Map + Summary card */}
       <div className="px-8 pt-7 grid gap-6" style={{ gridTemplateColumns: '30% 1fr' }}>

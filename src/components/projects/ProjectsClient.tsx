@@ -27,10 +27,9 @@ interface Project {
 interface ProjectsClientProps {
   projects: Project[]
   users?: { id: string; full_name: string }[]
-  showArchived?: boolean
 }
 
-const STAGES = ['All', 'Prospecting', 'Proposal', 'Contracting', 'Permitting', 'Construction', 'Operations']
+const STAGES = ['All', 'Prospecting', 'Proposal', 'Contracting', 'Permitting', 'Construction', 'Operations', 'Archived']
 const STATES = ['All', 'FL', 'IL']
 const GROUP_OPTIONS: { value: string; label: string }[] = [
   { value: 'none', label: 'None' },
@@ -75,7 +74,7 @@ const ALL_COLUMNS: ColumnDef[] = [
 const DEFAULT_VISIBLE_COLS: ColumnId[] = ALL_COLUMNS.filter(c => c.defaultVisible).map(c => c.id)
 const STORAGE_KEY = 'pathwaze.projects.columns'
 
-export function ProjectsClient({ projects, users = [], showArchived = false }: ProjectsClientProps) {
+export function ProjectsClient({ projects, users = [] }: ProjectsClientProps) {
   const router = useRouter()
   const [search, setSearch] = useState('')
   const [stageFilter, setStageFilter] = useState('All')
@@ -291,28 +290,12 @@ export function ProjectsClient({ projects, users = [], showArchived = false }: P
           <div className="text-xl font-bold text-[#3E3E3C]">Portfolio Overview</div>
           <div className="text-[13px] text-[#3E3E3C] mt-0.5">{projects.length} projects · {totalMw} kWdc total</div>
         </div>
-        <div className="flex items-center gap-3">
-          <label className="flex items-center gap-1.5 text-[12px] text-[#3E3E3C] cursor-pointer">
-            <input
-              type="checkbox"
-              checked={showArchived}
-              onChange={e => {
-                const url = new URL(window.location.href)
-                if (e.target.checked) url.searchParams.set('archived', '1')
-                else url.searchParams.delete('archived')
-                window.location.href = url.toString()
-              }}
-              className="rounded"
-            />
-            Show archived
-          </label>
-          <button
-            onClick={() => setShowNewModal(true)}
-            className="flex items-center gap-1.5 px-3.5 py-2 bg-[#70A0D0] text-white rounded-lg text-sm font-medium hover:bg-[#2C5485] transition-colors"
-          >
-            <Plus size={14} /> New Project
-          </button>
-        </div>
+        <button
+          onClick={() => setShowNewModal(true)}
+          className="flex items-center gap-1.5 px-3.5 py-2 bg-[#70A0D0] text-white rounded-lg text-sm font-medium hover:bg-[#2C5485] transition-colors"
+        >
+          <Plus size={14} /> New Project
+        </button>
       </div>
 
       {/* Body */}

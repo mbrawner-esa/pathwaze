@@ -65,7 +65,8 @@ const NAV_ITEMS = [
   { label: 'Projects', href: '/projects', Icon: BriefcaseIcon },
   { label: 'Tasks', href: '/tasks', Icon: ClipboardDocumentCheckIcon },
   { label: 'Stakeholders', href: '/stakeholders', Icon: UserGroupIcon },
-  { label: 'Dataroom', href: '/dataroom', Icon: FolderIcon },
+  // Dataroom hidden until Box integration is built
+  // { label: 'Dataroom', href: '/dataroom', Icon: FolderIcon },
 ]
 
 interface NavBarProps {
