@@ -1,5 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import Link from 'next/link'
+
+export const dynamic = 'force-dynamic'
 import { formatDate } from '@/lib/utils'
 import { Avatar } from '@/components/ui/Avatar'
 import { StageBadge } from '@/components/ui/StageBadge'

@@ -1,6 +1,8 @@
 import { createClient } from '@/lib/supabase/server'
 import { StakeholdersClient } from '@/components/stakeholders/StakeholdersClient'
 
+export const dynamic = 'force-dynamic'
+
 export default async function StakeholdersPage() {
   const supabase = await createClient()
 
