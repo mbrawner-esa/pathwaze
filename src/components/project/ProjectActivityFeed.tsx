@@ -1,16 +1,22 @@
 'use client'
 import { Avatar } from '@/components/ui/Avatar'
-import { Activity, MessageSquare, Tag } from 'lucide-react'
+import { Activity, MessageSquare, Tag, StickyNote, Calendar, Paperclip } from 'lucide-react'
 
 export interface ActivityEntry {
   id: string
-  kind: 'system' | 'message'
+  kind: 'system' | 'message' | 'note'
   // System (activity_log)
   entity_type?: string
   action?: string
   metadata?: Record<string, unknown>
   // Message (project_thread)
   message?: string
+  // Note (project_notes)
+  note_type?: 'note' | 'event' | 'file'
+  title?: string | null
+  body?: string | null
+  event_date?: string | null
+  file_name?: string | null
   // Common
   user_name: string | null
   user_avatar_url: string | null
@@ -53,28 +59,38 @@ export function ProjectActivityFeed({ entries }: { entries: ActivityEntry[] }) {
         <div className="px-6 py-12 text-center text-[13px] text-[#706E6B]">No activity yet.</div>
       ) : (
         <div className="px-6 py-5 space-y-3">
-          {entries.map(e => (
-            <div key={e.id} className="flex items-start gap-2.5">
-              <Avatar name={e.user_name ?? 'System'} imageUrl={e.user_avatar_url} size="sm" />
-              <div className="flex-1 min-w-0">
-                <p className="text-[12.5px] text-[#181818] leading-snug">
-                  <span className="font-semibold">{e.user_name ?? 'Someone'}</span>{' '}
-                  {e.kind === 'message' ? (
-                    <span className="text-[#3E3E3C]">posted in Slack: </span>
-                  ) : (
-                    <span className="text-[#3E3E3C]">{describeSystem(e)}</span>
+          {entries.map(e => {
+            const noteIcon = e.note_type === 'event' ? <Calendar size={9} /> : e.note_type === 'file' ? <Paperclip size={9} /> : <StickyNote size={9} />
+            return (
+              <div key={e.id} className="flex items-start gap-2.5">
+                <Avatar name={e.user_name ?? 'System'} imageUrl={e.user_avatar_url} size="sm" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-[12.5px] text-[#181818] leading-snug">
+                    <span className="font-semibold">{e.user_name ?? 'Someone'}</span>{' '}
+                    {e.kind === 'message' ? <span className="text-[#3E3E3C]">posted in Slack:</span>
+                      : e.kind === 'note' ? <span className="text-[#3E3E3C]">{e.note_type === 'event' ? 'added an event' : e.note_type === 'file' ? 'attached a file' : 'added a note'}{e.title ? `: "${e.title}"` : ''}</span>
+                      : <span className="text-[#3E3E3C]">{describeSystem(e)}</span>}
+                  </p>
+                  {e.kind === 'message' && e.message && (
+                    <p className="text-[12.5px] text-[#3E3E3C] mt-0.5 line-clamp-2 italic">&ldquo;{e.message}&rdquo;</p>
                   )}
-                </p>
-                {e.kind === 'message' && e.message && (
-                  <p className="text-[12.5px] text-[#3E3E3C] mt-0.5 line-clamp-2 italic">&ldquo;{e.message}&rdquo;</p>
-                )}
-                <div className="flex items-center gap-1.5 mt-0.5 text-[10.5px] text-[#94a3b8]">
-                  {e.kind === 'message' ? <MessageSquare size={9} /> : <Tag size={9} />}
-                  <span>{tsToWhen(e.created_at)}</span>
+                  {e.kind === 'note' && e.body && (
+                    <p className="text-[12.5px] text-[#3E3E3C] mt-0.5 whitespace-pre-wrap line-clamp-3">{e.body}</p>
+                  )}
+                  {e.kind === 'note' && e.note_type === 'event' && e.event_date && (
+                    <p className="text-[11.5px] text-[#706E6B] mt-0.5">📅 {new Date(e.event_date).toLocaleDateString()}</p>
+                  )}
+                  {e.kind === 'note' && e.note_type === 'file' && e.file_name && (
+                    <p className="text-[11.5px] text-[#706E6B] mt-0.5">📎 {e.file_name}</p>
+                  )}
+                  <div className="flex items-center gap-1.5 mt-0.5 text-[10.5px] text-[#94a3b8]">
+                    {e.kind === 'message' ? <MessageSquare size={9} /> : e.kind === 'note' ? noteIcon : <Tag size={9} />}
+                    <span>{tsToWhen(e.created_at)}</span>
+                  </div>
                 </div>
               </div>
-            </div>
-          ))}
+            )
+          })}
         </div>
       )}
     </div>

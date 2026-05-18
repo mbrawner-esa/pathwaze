@@ -10,23 +10,24 @@ import { ScheduleTab } from './ScheduleTab'
 import { DataRoomTab } from './DataRoomTab'
 import { ThreadsTab } from './ThreadsTab'
 import { ProjectActivityFeed, type ActivityEntry } from './ProjectActivityFeed'
+import { ProjectActivityActions } from './ProjectActivityActions'
 
 const TABS = [
+  { id: 'threads', label: 'Threads' },
   { id: 'site', label: 'Site' },
   { id: 'utility', label: 'Utility' },
   { id: 'stakeholders', label: 'Stakeholders' },
   { id: 'permitting', label: 'Permitting' },
   { id: 'technical', label: 'Technical' },
   { id: 'financial', label: 'Financial' },
-  { id: 'threads', label: 'Threads' },
   // Schedule + Data Room hidden until each is fully defined
   // { id: 'schedule', label: 'Schedule' },
   // { id: 'dataroom', label: 'Data Room' },
 ]
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function ProjectDetailClient({ project, financials, milestones, stakeholders, permits, docs, buildings, meters, systems, threads = [], activity = [] }: any) {
-  const [activeTab, setActiveTab] = useState('site')
+export function ProjectDetailClient({ project, financials, milestones, stakeholders, permits, docs, buildings, meters, systems, threads = [], activity = [], users = [] }: any) {
+  const [activeTab, setActiveTab] = useState('threads')
 
   return (
     <div>
@@ -64,10 +65,13 @@ export function ProjectDetailClient({ project, financials, milestones, stakehold
         {activeTab === 'threads' && <ThreadsTab threads={threads} channelLinked={!!project.slack_channel_id} />}
       </div>
 
-      {/* Activity feed — bottom of every project page */}
-      <div className="px-8 pb-10">
-        <ProjectActivityFeed entries={activity as ActivityEntry[]} />
-      </div>
+      {/* Activity feed — bottom of every project page, except when Threads tab is active */}
+      {activeTab !== 'threads' && (
+        <div className="px-8 pb-10">
+          <ProjectActivityActions projectId={project.id} projectName={project.name} users={users} />
+          <ProjectActivityFeed entries={activity as ActivityEntry[]} />
+        </div>
+      )}
     </div>
   )
 }

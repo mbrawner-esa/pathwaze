@@ -1,0 +1,193 @@
+'use client'
+import { useState } from 'react'
+import { useRouter } from 'next/navigation'
+import { createClient } from '@/lib/supabase/client'
+import { StickyNote, Calendar, Paperclip, CheckSquare, X } from 'lucide-react'
+
+interface User { id: string; full_name: string }
+
+type Action = 'task' | 'note' | 'event' | 'file' | null
+
+export function ProjectActivityActions({ projectId, projectName, users }: { projectId: string; projectName: string; users: User[] }) {
+  const [active, setActive] = useState<Action>(null)
+
+  return (
+    <div className="card overflow-hidden mb-4">
+      <div className="px-4 py-2.5 border-b border-[#f1f5f9] flex items-center gap-1 flex-wrap">
+        <ActionButton icon={<CheckSquare size={13} />} label="Add Task" active={active === 'task'} onClick={() => setActive(a => a === 'task' ? null : 'task')} />
+        <ActionButton icon={<StickyNote size={13} />} label="Add Note" active={active === 'note'} onClick={() => setActive(a => a === 'note' ? null : 'note')} />
+        <ActionButton icon={<Calendar size={13} />} label="Add Event" active={active === 'event'} onClick={() => setActive(a => a === 'event' ? null : 'event')} />
+        <ActionButton icon={<Paperclip size={13} />} label="Add File" active={active === 'file'} onClick={() => setActive(a => a === 'file' ? null : 'file')} />
+      </div>
+      {active && (
+        <div className="px-4 py-4 bg-[#fafbfc] border-b border-[#f1f5f9]">
+          {active === 'task' && <TaskForm projectId={projectId} projectName={projectName} users={users} onClose={() => setActive(null)} />}
+          {active === 'note' && <NoteForm projectId={projectId} type="note" onClose={() => setActive(null)} />}
+          {active === 'event' && <NoteForm projectId={projectId} type="event" onClose={() => setActive(null)} />}
+          {active === 'file' && <FileForm projectId={projectId} onClose={() => setActive(null)} />}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function ActionButton({ icon, label, active, onClick }: { icon: React.ReactNode; label: string; active: boolean; onClick: () => void }) {
+  return (
+    <button onClick={onClick}
+      className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-[12.5px] font-medium transition-colors ${active ? 'bg-[#EFF6FF] text-[#1d4ed8]' : 'text-[#3E3E3C] hover:bg-[#f8fafc]'}`}>
+      {icon}<span>{label}</span>
+    </button>
+  )
+}
+
+function CloseRow({ onClose, busy, onSubmit, label }: { onClose: () => void; busy: boolean; onSubmit: () => void; label: string }) {
+  return (
+    <div className="flex justify-end gap-2 mt-3">
+      <button onClick={onClose} disabled={busy} className="btn-secondary">Cancel</button>
+      <button onClick={onSubmit} disabled={busy} className="btn-primary">{busy ? 'Saving…' : label}</button>
+    </div>
+  )
+}
+
+// ── Task form: minimal inline create ─────────────────────────────────
+function TaskForm({ projectId, projectName, users, onClose }: { projectId: string; projectName: string; users: User[]; onClose: () => void }) {
+  const router = useRouter()
+  const [title, setTitle] = useState('')
+  const [assigneeId, setAssigneeId] = useState('')
+  const [dueDate, setDueDate] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+
+  async function save() {
+    if (!title.trim()) { setErr('Title required'); return }
+    setBusy(true); setErr(null)
+    const res = await fetch('/api/tasks', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        title, project_id: projectId,
+        assignee_id: assigneeId || null,
+        due_date: dueDate || null,
+        status: 'Draft',
+      }),
+    })
+    if (res.ok) { onClose(); router.refresh() }
+    else { const b = await res.json().catch(() => ({})); setErr(b?.error || 'Failed') }
+    setBusy(false)
+  }
+
+  return (
+    <div>
+      <p className="text-[11px] text-[#94a3b8] mb-2">New task on <strong>{projectName}</strong></p>
+      <input value={title} onChange={e => setTitle(e.target.value)} placeholder="Task title" autoFocus
+        className="w-full px-3 py-2 text-[13px] border border-[#e2e8f0] rounded-md focus:outline-none focus:border-[#70A0D0] mb-2" />
+      <div className="grid grid-cols-2 gap-2">
+        <select value={assigneeId} onChange={e => setAssigneeId(e.target.value)}
+          className="px-3 py-2 text-[13px] border border-[#e2e8f0] rounded-md bg-white">
+          <option value="">— Unassigned —</option>
+          {users.map(u => <option key={u.id} value={u.id}>{u.full_name}</option>)}
+        </select>
+        <input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)}
+          className="px-3 py-2 text-[13px] border border-[#e2e8f0] rounded-md" />
+      </div>
+      {err && <div className="mt-2 px-3 py-2 bg-[#fef2f2] border border-[#fecaca] rounded text-[12px] text-[#991b1b]">{err}</div>}
+      <CloseRow onClose={onClose} busy={busy} onSubmit={save} label="Create task" />
+    </div>
+  )
+}
+
+// ── Note + Event form (shared) ───────────────────────────────────────
+function NoteForm({ projectId, type, onClose }: { projectId: string; type: 'note' | 'event'; onClose: () => void }) {
+  const router = useRouter()
+  const [title, setTitle] = useState('')
+  const [body, setBody] = useState('')
+  const [eventDate, setEventDate] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+
+  async function save() {
+    if (type === 'event' && !eventDate) { setErr('Event date required'); return }
+    if (!title.trim() && !body.trim()) { setErr('Add a title or note'); return }
+    setBusy(true); setErr(null)
+    const res = await fetch(`/api/projects/${projectId}/notes`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type, title, body, event_date: type === 'event' ? eventDate : null }),
+    })
+    if (res.ok) { onClose(); router.refresh() }
+    else { const b = await res.json().catch(() => ({})); setErr(b?.error || 'Failed') }
+    setBusy(false)
+  }
+
+  return (
+    <div>
+      {type === 'event' && (
+        <input type="date" value={eventDate} onChange={e => setEventDate(e.target.value)}
+          className="w-full px-3 py-2 text-[13px] border border-[#e2e8f0] rounded-md mb-2" />
+      )}
+      <input value={title} onChange={e => setTitle(e.target.value)} placeholder={type === 'event' ? 'Event title' : 'Note title (optional)'} autoFocus
+        className="w-full px-3 py-2 text-[13px] border border-[#e2e8f0] rounded-md mb-2" />
+      <textarea value={body} onChange={e => setBody(e.target.value)} rows={3}
+        placeholder={type === 'event' ? 'Notes about this event' : 'Write a note…'}
+        className="w-full px-3 py-2 text-[13px] border border-[#e2e8f0] rounded-md resize-y" />
+      {err && <div className="mt-2 px-3 py-2 bg-[#fef2f2] border border-[#fecaca] rounded text-[12px] text-[#991b1b]">{err}</div>}
+      <CloseRow onClose={onClose} busy={busy} onSubmit={save} label={type === 'event' ? 'Add event' : 'Add note'} />
+    </div>
+  )
+}
+
+// ── File upload form ──────────────────────────────────────────────────
+function FileForm({ projectId, onClose }: { projectId: string; onClose: () => void }) {
+  const router = useRouter()
+  const supabase = createClient()
+  const [file, setFile] = useState<File | null>(null)
+  const [title, setTitle] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+
+  async function save() {
+    if (!file) { setErr('Pick a file'); return }
+    setBusy(true); setErr(null)
+    try {
+      // Upload to Supabase Storage
+      const path = `${projectId}/${Date.now()}-${file.name}`
+      const { error: upErr } = await supabase.storage.from('project-files').upload(path, file, { upsert: false })
+      if (upErr) throw upErr
+
+      const res = await fetch(`/api/projects/${projectId}/notes`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'file',
+          title: title || file.name,
+          storage_path: path,
+          file_name: file.name,
+          file_size: file.size,
+          content_type: file.type,
+        }),
+      })
+      if (!res.ok) { const b = await res.json().catch(() => ({})); throw new Error(b?.error || 'Failed') }
+      onClose(); router.refresh()
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Upload failed')
+    }
+    setBusy(false)
+  }
+
+  return (
+    <div>
+      <label className="block">
+        <span className="text-[11px] font-semibold text-[#3E3E3C]">File</span>
+        <input type="file" onChange={e => setFile(e.target.files?.[0] ?? null)}
+          className="mt-1 block w-full text-[12px] file:mr-3 file:px-3 file:py-1.5 file:rounded file:border-0 file:bg-[#EFF6FF] file:text-[#1d4ed8] file:font-semibold" />
+      </label>
+      <input value={title} onChange={e => setTitle(e.target.value)} placeholder="Label (optional)"
+        className="mt-2 w-full px-3 py-2 text-[13px] border border-[#e2e8f0] rounded-md" />
+      {err && <div className="mt-2 px-3 py-2 bg-[#fef2f2] border border-[#fecaca] rounded text-[12px] text-[#991b1b]">{err}</div>}
+      <CloseRow onClose={onClose} busy={busy} onSubmit={save} label="Upload" />
+    </div>
+  )
+}
+
+// no-op exports to avoid warnings on unused symbols if we trim later
+export { X as _IconX }

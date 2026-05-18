@@ -25,12 +25,13 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
     supabase.from('meters').select('*').eq('project_id', id).order('created_at'),
     supabase.from('systems').select('*').eq('project_id', id).order('created_at'),
     supabase.from('project_threads').select('*').eq('project_id', id).order('created_at', { ascending: true }),
-  ]) as unknown as [any, any, any, any, any, any, any, any, any, any, any]
+    supabase.from('project_notes').select('*, user:users(full_name, avatar_url)').eq('project_id', id).order('created_at', { ascending: false }),
+  ]) as unknown as [any, any, any, any, any, any, any, any, any, any, any, any]
   const [
     { data: project }, { data: financials }, { data: milestones },
     { data: stakeholders }, { data: permits }, { data: docs }, { data: users },
     { data: buildings }, { data: meters }, { data: systems },
-    { data: threads },
+    { data: threads }, { data: notes },
   ] = results
 
   if (!project) notFound()
@@ -60,6 +61,14 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
       message: t.message, user_name: t.user_name,
       user_avatar_url: t.user_avatar_url,
       created_at: t.created_at,
+    })),
+    ...((notes ?? []) as any[]).map(n => ({
+      id: `note-${n.id}`, kind: 'note' as const,
+      note_type: n.type, title: n.title, body: n.body,
+      event_date: n.event_date, file_name: n.file_name,
+      user_name: n.user?.full_name ?? null,
+      user_avatar_url: n.user?.avatar_url ?? null,
+      created_at: n.created_at,
     })),
   ].sort((a, b) => (a.created_at < b.created_at ? 1 : -1))
 
@@ -146,6 +155,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
         systems={systems ?? []}
         threads={threads ?? []}
         activity={activity}
+        users={users ?? []}
       />
     </div>
   )
