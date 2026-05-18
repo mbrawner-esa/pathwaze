@@ -38,11 +38,18 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   try {
     const { data: task } = await supabase
       .from('tasks')
-      .select('slack_dm_channel, slack_dm_ts')
+      .select('slack_dm_channel, slack_dm_ts, assignee_id')
       .eq('id', id)
-      .single() as { data: { slack_dm_channel: string | null; slack_dm_ts: string | null } | null }
+      .single() as { data: { slack_dm_channel: string | null; slack_dm_ts: string | null; assignee_id: string | null } | null }
 
-    if (task?.slack_dm_channel && task?.slack_dm_ts) {
+    // Skip if the assignee has thread DMs turned off (they own this DM thread)
+    let allowed = true
+    if (task?.assignee_id) {
+      const { data: r } = await supabase.from('users').select('notify_slack_task_threads').eq('id', task.assignee_id).single() as { data: { notify_slack_task_threads?: boolean } | null }
+      if (r?.notify_slack_task_threads === false) allowed = false
+    }
+
+    if (allowed && task?.slack_dm_channel && task?.slack_dm_ts) {
       const authorName = user.user_metadata?.full_name || user.email?.split('@')[0] || 'Someone'
       const r = await replyInThread(
         task.slack_dm_channel,

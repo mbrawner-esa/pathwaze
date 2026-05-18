@@ -98,7 +98,14 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     }
     const taskPath = `/tasks?id=${id}`
 
-    if (wasReassigned && newAssigneeId && notSelf(newAssigneeId)) {
+    // Check recipient's notification preferences before sending Slack DMs
+    let recipientPrefs: { notify_slack_task_assigned?: boolean; notify_slack_task_status?: boolean } = {}
+    if (newAssigneeId && notSelf(newAssigneeId)) {
+      const { data: r } = await supabase.from('users').select('notify_slack_task_assigned, notify_slack_task_status').eq('id', newAssigneeId).single() as { data: typeof recipientPrefs | null }
+      recipientPrefs = r ?? {}
+    }
+
+    if (wasReassigned && newAssigneeId && notSelf(newAssigneeId) && recipientPrefs.notify_slack_task_assigned !== false) {
       const { text, blocks } = taskAssignedBlocks({
         title: data.title, projectName, dueDate: data.due_date, priority: data.priority,
         type: data.type, description: data.description, assignedBy: actorName, taskPath,
@@ -114,7 +121,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       }
     }
 
-    if (statusChanged && newAssigneeId && notSelf(newAssigneeId)) {
+    if (statusChanged && newAssigneeId && notSelf(newAssigneeId) && recipientPrefs.notify_slack_task_status !== false) {
       const { text, blocks } = taskStatusChangedBlocks({
         title: data.title, projectName, from: before.status, to: body.status,
         changedBy: actorName, taskPath,
