@@ -39,7 +39,7 @@ export default async function DashboardPage() {
   if (!user) return null
 
   // Pull profile for full name (falls back to email)
-  const { data: profile } = await supabase.from('users').select('full_name').eq('id', user.id).single()
+  const { data: profile } = await supabase.from('users').select('full_name').eq('id', user.id).single() as { data: { full_name?: string } | null }
   const fullName = profile?.full_name || user.email?.split('@')[0] || 'there'
   const firstName = fullName.split(' ')[0]
 
@@ -127,7 +127,8 @@ export default async function DashboardPage() {
   const seenThreadTask = new Set<string>()
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const myRecentThreads: any[] = []
-  for (const t of (myThreadEntries ?? [])) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  for (const t of ((myThreadEntries ?? []) as any[])) {
     if (seenThreadTask.has(t.task_id)) continue
     seenThreadTask.add(t.task_id)
     myRecentThreads.push(t)
@@ -145,8 +146,10 @@ export default async function DashboardPage() {
   const threadTaskMap = new Map<string, any>((threadTasks ?? []).map(t => [t.id, t]))
 
   // Active projects: aggregate activity_log by project_id (via task/stakeholder linkage)
-  const taskActivityIds = [...new Set((recentActivity ?? []).filter(a => a.entity_type === 'task').map(a => a.entity_id))]
-  const stkActivityIds = [...new Set((recentActivity ?? []).filter(a => a.entity_type === 'stakeholder').map(a => a.entity_id))]
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const recent = (recentActivity ?? []) as any[]
+  const taskActivityIds = Array.from(new Set(recent.filter(a => a.entity_type === 'task').map(a => a.entity_id as string)))
+  const stkActivityIds  = Array.from(new Set(recent.filter(a => a.entity_type === 'stakeholder').map(a => a.entity_id as string)))
   const [{ data: taskLookup }, { data: stkLookup }] = await Promise.all([
     taskActivityIds.length > 0
       ? supabase.from('tasks').select('id, project_id').in('id', taskActivityIds) as unknown as Promise<{ data: any[] | null }>

@@ -16,7 +16,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     .select('storage_path, file_name')
     .eq('id', fileId)
     .eq('task_id', id)
-    .single()
+    .single() as { data: { storage_path: string | null; file_name: string } | null; error: { message: string } | null }
 
   if (error || !file?.storage_path) {
     return NextResponse.json({ error: 'File not found or has no storage path' }, { status: 404 })

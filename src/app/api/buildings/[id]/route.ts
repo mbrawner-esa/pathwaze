@@ -29,7 +29,7 @@ export async function DELETE(_request: NextRequest, { params }: { params: Promis
 
   const { id } = await params
   // Fetch project_id + name for the log entry before delete
-  const { data: before } = await supabase.from('buildings').select('project_id, name').eq('id', id).single()
+  const { data: before } = await supabase.from('buildings').select('project_id, name').eq('id', id).single() as { data: { project_id: string; name: string } | null }
   const { error } = await supabase.from('buildings').delete().eq('id', id)
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   if (before) await logActivity(supabase, user, { entity_type: 'building', entity_id: id, action: 'deleted', project_id: before.project_id, metadata: { name: before.name } })

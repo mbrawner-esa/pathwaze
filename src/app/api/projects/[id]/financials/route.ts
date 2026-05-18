@@ -28,7 +28,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       .from('project_financials')
       .select('estimated_epc_cost, estimated_dev_costs, estimated_ix_costs, development_fee')
       .eq('project_id', id)
-      .single()
+      .single() as { data: { estimated_epc_cost?: number; estimated_dev_costs?: number; estimated_ix_costs?: number; development_fee?: number } | null }
     const epc = Number(body.estimated_epc_cost ?? current?.estimated_epc_cost ?? 0)
     const dev = Number(body.estimated_dev_costs ?? current?.estimated_dev_costs ?? 0)
     const ix  = Number(body.estimated_ix_costs ?? current?.estimated_ix_costs ?? 0)

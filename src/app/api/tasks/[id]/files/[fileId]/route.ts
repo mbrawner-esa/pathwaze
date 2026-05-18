@@ -14,7 +14,7 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
     .select('storage_path')
     .eq('id', fileId)
     .eq('task_id', id)
-    .single()
+    .single() as { data: { storage_path: string | null } | null }
 
   // Delete the row
   const { error } = await supabase.from('task_files').delete().eq('id', fileId).eq('task_id', id)
