@@ -37,8 +37,14 @@ function LoginInner() {
   }
 
   return (
-    <main className="min-h-screen w-full flex items-center justify-center px-4 bg-cover bg-center bg-no-repeat"
-      style={{ backgroundColor: '#0F1B26', backgroundImage: "url(/pathwaze-login-bg.svg)" }}>
+    <main className="min-h-screen w-full flex items-center justify-center px-4"
+      style={{
+        backgroundColor: '#0F1B26',
+        backgroundImage: "url('/pathwaze-login-bg.svg')",
+        backgroundSize: 'cover',
+        backgroundPosition: 'center',
+        backgroundRepeat: 'no-repeat',
+      }}>
       <div className="w-full max-w-[400px] rounded-xl shadow-2xl p-9" style={{ backgroundColor: '#F4F7FA' }}>
         <div className="flex flex-col items-center mb-7">
           <PathwazeLogo style={{ height: 44, width: 'auto' }} />
