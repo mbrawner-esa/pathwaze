@@ -11,6 +11,7 @@ export default async function ProjectsPage() {
       .select(`
         id, project_number, name, stage, deal_health, system_kwdc,
         city, state, tranche, region, assignee_id,
+        utility, target_cod,
         users!assignee_id(full_name),
         milestones(label, completed, sort_order)
       `)
@@ -37,6 +38,8 @@ export default async function ProjectsPage() {
       state: p.state,
       tranche: p.tranche,
       region: p.region,
+      utility: p.utility,
+      target_cod: p.target_cod,
       assignee_name,
       next_milestone: next?.label,
     }

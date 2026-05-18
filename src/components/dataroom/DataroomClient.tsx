@@ -23,7 +23,7 @@ function DonutRing({ pct, color, label, size = 60 }: { pct: number; color: strin
         <circle cx={size/2} cy={size/2} r={r} fill="none" stroke={color} strokeWidth={6}
           strokeDasharray={`${dash} ${circ}`} strokeLinecap="round" />
       </svg>
-      <p className="text-[10px] text-center text-[#6E879E] max-w-[60px] leading-tight">{label}</p>
+      <p className="text-[10px] text-center text-[#3E3E3C] max-w-[60px] leading-tight">{label}</p>
       <p className="text-xs font-bold" style={{ color }}>{pct}%</p>
     </div>
   )
@@ -47,45 +47,45 @@ export function DataroomClient({
   return (
     <div className="p-6 max-w-7xl mx-auto">
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-[#2F3E50]">Dataroom Health</h1>
-        <p className="text-[#6E879E] text-sm mt-1">Portfolio document completion tracking</p>
+        <h1 className="text-2xl font-bold text-[#181818]">Dataroom Health</h1>
+        <p className="text-[#3E3E3C] text-sm mt-1">Portfolio document completion tracking</p>
       </div>
 
       {/* KPI Cards */}
       <div className="grid grid-cols-5 gap-4 mb-6">
         <div className="card p-4 col-span-1">
           <p className="label mb-1">Overall Completion</p>
-          <p className="text-3xl font-bold text-[#2F3E50]">{globalPct}%</p>
-          <p className="text-xs text-[#6E879E]">{globalUploaded} / {globalTotal}</p>
+          <p className="text-3xl font-bold text-[#181818]">{globalPct}%</p>
+          <p className="text-xs text-[#3E3E3C]">{globalUploaded} / {globalTotal}</p>
         </div>
         <div className="card p-4">
           <p className="label mb-1">Avg Per Project</p>
-          <p className="text-3xl font-bold text-[#6E879E]">{avgPct}%</p>
-          <p className="text-xs text-[#6E879E]">portfolio avg</p>
+          <p className="text-3xl font-bold text-[#3E3E3C]">{avgPct}%</p>
+          <p className="text-xs text-[#3E3E3C]">portfolio avg</p>
         </div>
         <div className="card p-4">
           <p className="label mb-1">Total Docs</p>
-          <p className="text-3xl font-bold text-[#2F3E50]">{globalTotal}</p>
-          <p className="text-xs text-[#6E879E]">across all projects</p>
+          <p className="text-3xl font-bold text-[#181818]">{globalTotal}</p>
+          <p className="text-xs text-[#3E3E3C]">across all projects</p>
         </div>
         <div className="card p-4">
           <p className="label mb-1">Fully Complete</p>
           <p className="text-3xl font-bold text-green-600">{fullyComplete}</p>
-          <p className="text-xs text-[#6E879E]">projects</p>
+          <p className="text-xs text-[#3E3E3C]">projects</p>
         </div>
         <div className="card p-4">
           <p className="label mb-1">Needs Attention</p>
           <p className="text-3xl font-bold text-red-500">{needsAttention}</p>
-          <p className="text-xs text-[#6E879E]">under 25%</p>
+          <p className="text-xs text-[#3E3E3C]">under 25%</p>
         </div>
       </div>
 
       {/* Category Donuts */}
       <div className="card p-6 mb-6">
-        <h2 className="text-sm font-bold text-[#2F3E50] mb-4 uppercase tracking-wider">Category Completion (Portfolio-Wide)</h2>
+        <h2 className="text-sm font-bold text-[#181818] mb-4 uppercase tracking-wider">Category Completion (Portfolio-Wide)</h2>
         <div className="flex gap-8 flex-wrap">
           {catPortfolioStats.map(cat => (
-            <DonutRing key={cat.id} pct={cat.pct} color={CAT_COLORS[cat.id] ?? '#6E879E'} label={cat.label} size={72} />
+            <DonutRing key={cat.id} pct={cat.pct} color={CAT_COLORS[cat.id] ?? '#70A0D0'} label={cat.label} size={72} />
           ))}
         </div>
       </div>
@@ -93,7 +93,7 @@ export function DataroomClient({
       {/* Project Matrix */}
       <div className="card overflow-hidden">
         <div className="flex items-center justify-between px-6 py-4 border-b border-[#f1f5f9]">
-          <h2 className="text-sm font-bold text-[#2F3E50] uppercase tracking-wider">Project Completion Matrix</h2>
+          <h2 className="text-sm font-bold text-[#181818] uppercase tracking-wider">Project Completion Matrix</h2>
           <select value={trancheFilter} onChange={e => setTrancheFilter(e.target.value)} className="px-3 py-1.5 border border-[#e2e8f0] rounded-lg text-sm">
             {tranches.map(t => <option key={t}>{t}</option>)}
           </select>
@@ -113,15 +113,15 @@ export function DataroomClient({
               {filtered.map(p => (
                 <tr key={p.id} className="border-b border-[#f1f5f9] hover:bg-[#f8fafc]">
                   <td className="px-4 py-2.5 sticky left-0 bg-white">
-                    <Link href={`/projects/${p.id}`} className="font-medium text-[#2F3E50] hover:underline text-xs">{p.name}</Link>
-                    <p className="text-[10px] text-[#94a3b8]">{p.tranche}</p>
+                    <Link href={`/projects/${p.id}`} className="font-medium text-[#181818] hover:underline text-xs">{p.name}</Link>
+                    <p className="text-[10px] text-[#706E6B]">{p.tranche}</p>
                   </td>
                   <td className="px-4 py-2.5">
                     <div className="flex items-center gap-2">
                       <div className="w-16 h-1.5 bg-[#f1f5f9] rounded-full overflow-hidden">
                         <div className="h-full rounded-full" style={{ width: `${p.pct}%`, backgroundColor: p.pct >= 75 ? '#22c55e' : p.pct >= 40 ? '#f59e0b' : '#ef4444' }} />
                       </div>
-                      <span className="text-[10px] font-medium text-[#6E879E]">{p.pct}%</span>
+                      <span className="text-[10px] font-medium text-[#3E3E3C]">{p.pct}%</span>
                     </div>
                   </td>
                   {p.catStats.map(cat => (

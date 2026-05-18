@@ -316,6 +316,12 @@ async function seed() {
   }
   console.log('Projects, financials, milestones, and dataroom docs seeded')
 
+  if (process.env.SEED_PROJECTS_ONLY === 'true') {
+    console.log('SEED_PROJECTS_ONLY=true → skipping stakeholders and tasks')
+    console.log('Seed complete!')
+    return
+  }
+
   // Stakeholders
   for (const s of STAKEHOLDERS) {
     const projectId = s.projectNumber ? projectIdMap[s.projectNumber] : null

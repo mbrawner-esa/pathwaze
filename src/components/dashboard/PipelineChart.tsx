@@ -16,14 +16,14 @@ export function PipelineChart({ data }: { data: { stage: string; count: number }
       <BarChart data={data} layout="vertical" margin={{ left: 80 }}>
         <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
         <XAxis type="number" tick={{ fontSize: 12, fill: '#94a3b8' }} />
-        <YAxis type="category" dataKey="stage" tick={{ fontSize: 12, fill: '#6E879E' }} width={80} />
+        <YAxis type="category" dataKey="stage" tick={{ fontSize: 12, fill: '#70A0D0' }} width={80} />
         <Tooltip
           formatter={(value) => [`${value} projects`, '']}
           contentStyle={{ fontSize: 12, border: '1px solid #f1f5f9', borderRadius: 8 }}
         />
         <Bar dataKey="count" radius={[0, 4, 4, 0]} maxBarSize={24}>
           {data.map(entry => (
-            <Cell key={entry.stage} fill={STAGE_COLORS[entry.stage] ?? '#6E879E'} />
+            <Cell key={entry.stage} fill={STAGE_COLORS[entry.stage] ?? '#70A0D0'} />
           ))}
         </Bar>
       </BarChart>

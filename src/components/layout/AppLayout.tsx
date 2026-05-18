@@ -7,11 +7,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/auth/login')
 
-  const { data: profile } = await supabase.from('users').select('full_name, role, email').eq('id', user.id).single()
+  const { data: profile } = await supabase.from('users').select('full_name, role, email, avatar_url').eq('id', user.id).single()
 
   return (
     <div className="min-h-screen bg-[#F1F5F9]">
-      <NavBar user={profile ?? { full_name: user.email ?? '', role: 'team', email: user.email ?? '' }} />
+      <NavBar user={profile ?? { full_name: user.email ?? '', role: 'team', email: user.email ?? '', avatar_url: null }} />
       <main style={{ paddingTop: 52 }}>
         {children}
       </main>

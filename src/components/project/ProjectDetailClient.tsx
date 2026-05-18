@@ -21,37 +21,43 @@ const TABS = [
 ]
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function ProjectDetailClient({ project, financials, milestones, stakeholders, permits, docs }: any) {
+export function ProjectDetailClient({ project, financials, milestones, stakeholders, permits, docs, buildings, meters, systems }: any) {
   const [activeTab, setActiveTab] = useState('site')
 
   return (
     <div>
       {/* Tab Bar */}
-      <div className="flex border-b border-[#e2e8f0] mb-6 overflow-x-auto">
-        {TABS.map(tab => (
-          <button
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id)}
-            className="px-5 py-3 text-sm font-medium whitespace-nowrap transition-colors border-b-2"
-            style={{
-              color: activeTab === tab.id ? '#2F3E50' : '#94a3b8',
-              borderBottomColor: activeTab === tab.id ? '#E6C87A' : 'transparent',
-            }}
-          >
-            {tab.label}
-          </button>
-        ))}
+      <div className="px-8 mt-6 bg-white border-b border-[#e2e8f0] flex overflow-x-auto">
+        {TABS.map(tab => {
+          const active = activeTab === tab.id
+          return (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className="px-5 py-3 text-[13px] font-medium whitespace-nowrap transition-colors -mb-px border-b-2"
+              style={{
+                color: active ? '#181818' : '#706E6B',
+                borderBottomColor: active ? '#E6C87A' : 'transparent',
+                fontWeight: active ? 600 : 500,
+              }}
+            >
+              {tab.label}
+            </button>
+          )
+        })}
       </div>
 
       {/* Tab Content */}
-      {activeTab === 'site' && <SiteTab project={project} />}
-      {activeTab === 'utility' && <UtilityTab project={project} />}
-      {activeTab === 'stakeholders' && <StakeholdersTab stakeholders={stakeholders} />}
-      {activeTab === 'permitting' && <PermittingTab project={project} permits={permits} />}
-      {activeTab === 'technical' && <TechnicalTab project={{ ...project, _financials: financials }} />}
-      {activeTab === 'financial' && <FinancialTab financials={financials} projectId={project.id} />}
-      {activeTab === 'schedule' && <ScheduleTab milestones={milestones} />}
-      {activeTab === 'dataroom' && <DataRoomTab docs={docs} projectId={project.id} />}
+      <div className="px-8 py-7">
+        {activeTab === 'site' && <SiteTab project={project} buildings={buildings} meters={meters} systems={systems} />}
+        {activeTab === 'utility' && <UtilityTab project={project} buildings={buildings} meters={meters} />}
+        {activeTab === 'stakeholders' && <StakeholdersTab stakeholders={stakeholders} projectId={project.id} />}
+        {activeTab === 'permitting' && <PermittingTab project={project} permits={permits} />}
+        {activeTab === 'technical' && <TechnicalTab project={{ ...project, _financials: financials }} buildings={buildings} meters={meters} systems={systems} />}
+        {activeTab === 'financial' && <FinancialTab financials={financials} projectId={project.id} systemKwdc={project.system_kwdc} />}
+        {activeTab === 'schedule' && <ScheduleTab milestones={milestones} />}
+        {activeTab === 'dataroom' && <DataRoomTab docs={docs} projectId={project.id} />}
+      </div>
     </div>
   )
 }

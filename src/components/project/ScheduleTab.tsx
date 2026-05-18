@@ -34,13 +34,13 @@ export function ScheduleTab({ milestones }: { milestones: Milestone[] }) {
   return (
     <div className="card p-6">
       <div className="flex items-center justify-between mb-4">
-        <h3 className="text-sm font-bold text-[#2F3E50] uppercase tracking-wider">Project Schedule</h3>
-        <span className="text-xs text-[#6E879E]">{completedCount} / {sorted.length} complete</span>
+        <h3 className="text-sm font-bold text-[#181818] uppercase tracking-wider">Project Schedule</h3>
+        <span className="text-xs text-[#3E3E3C]">{completedCount} / {sorted.length} complete</span>
       </div>
 
       {/* Progress bar */}
       <div className="w-full bg-[#f1f5f9] rounded-full h-2 mb-6">
-        <div className="bg-[#22c55e] h-2 rounded-full transition-all" style={{ width: `${sorted.length > 0 ? (completedCount / sorted.length) * 100 : 0}%` }} />
+        <div className="bg-[#7FA766] h-2 rounded-full transition-all" style={{ width: `${sorted.length > 0 ? (completedCount / sorted.length) * 100 : 0}%` }} />
       </div>
 
       <div className="relative">
@@ -55,18 +55,18 @@ export function ScheduleTab({ milestones }: { milestones: Milestone[] }) {
                 title={m.completed ? 'Mark incomplete' : 'Mark complete'}
               >
                 {m.completed ? (
-                  <CheckCircle size={18} className="text-[#22c55e] hover:text-[#16a34a]" fill="#22c55e" />
+                  <CheckCircle size={18} className="text-[#7FA766] hover:text-[#16a34a]" fill="#7FA766" />
                 ) : (
-                  <Circle size={18} className="text-[#d1d5db] hover:text-[#22c55e] transition-colors" />
+                  <Circle size={18} className="text-[#d1d5db] hover:text-[#7FA766] transition-colors" />
                 )}
               </button>
               <div className="flex-1">
-                <p className={`text-sm ${m.completed ? 'text-[#94a3b8] line-through' : 'text-[#334155] font-medium'}`}>
+                <p className={`text-sm ${m.completed ? 'text-[#706E6B] line-through' : 'text-[#181818] font-medium'}`}>
                   {m.label}
                 </p>
-                <p className="text-xs text-[#94a3b8]">{formatDate(m.target_date)}</p>
+                <p className="text-xs text-[#706E6B]">{formatDate(m.target_date)}</p>
               </div>
-              <span className={`text-xs px-2 py-0.5 rounded-full ${i === completedCount && !m.completed ? 'bg-[#E6C87A] text-[#2F3E50] font-semibold' : ''}`}>
+              <span className={`text-xs px-2 py-0.5 rounded-full ${i === completedCount && !m.completed ? 'bg-[#E6C87A] text-[#181818] font-semibold' : ''}`}>
                 {i === completedCount && !m.completed ? 'Next' : ''}
               </span>
             </div>

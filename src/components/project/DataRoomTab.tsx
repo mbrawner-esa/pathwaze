@@ -46,9 +46,9 @@ interface DrDoc {
 
 function StatusIcon({ status }: { status: string }) {
   if (status === 'uploaded' || status === 'approved') return <CheckCircle size={14} className="text-green-500" />
-  if (status === 'pending') return <Clock size={14} className="text-[#94a3b8]" />
+  if (status === 'pending') return <Clock size={14} className="text-[#706E6B]" />
   if (status === 'na') return <XCircle size={14} className="text-[#d1d5db]" />
-  return <Clock size={14} className="text-[#94a3b8]" />
+  return <Clock size={14} className="text-[#706E6B]" />
 }
 
 export function DataRoomTab({ docs, projectId }: { docs: DrDoc[]; projectId: string }) {
@@ -83,14 +83,14 @@ export function DataRoomTab({ docs, projectId }: { docs: DrDoc[]; projectId: str
             >
               <div className="flex items-center gap-3">
                 {isOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-                <span className="font-semibold text-[#2F3E50] text-sm">{cat.label}</span>
-                <span className="text-xs text-[#94a3b8]">{done}/{total}</span>
+                <span className="font-semibold text-[#181818] text-sm">{cat.label}</span>
+                <span className="text-xs text-[#706E6B]">{done}/{total}</span>
               </div>
               <div className="flex items-center gap-2">
                 <div className="w-24 h-1.5 bg-[#f1f5f9] rounded-full overflow-hidden">
-                  <div className="h-full bg-[#22c55e] rounded-full" style={{ width: `${pct}%` }} />
+                  <div className="h-full bg-[#7FA766] rounded-full" style={{ width: `${pct}%` }} />
                 </div>
-                <span className="text-xs text-[#6E879E] w-8 text-right">{pct}%</span>
+                <span className="text-xs text-[#3E3E3C] w-8 text-right">{pct}%</span>
               </div>
             </button>
             {isOpen && (
@@ -98,7 +98,7 @@ export function DataRoomTab({ docs, projectId }: { docs: DrDoc[]; projectId: str
                 {cat.subs.map(sub => (
                   <div key={sub.id}>
                     <div className="px-5 py-2 bg-[#fafbfc]">
-                      <p className="text-[10px] font-semibold uppercase tracking-wider text-[#94a3b8]">{sub.label}</p>
+                      <p className="text-[10px] font-semibold uppercase tracking-wider text-[#706E6B]">{sub.label}</p>
                     </div>
                     {sub.docs.map(docName => {
                       const doc = getDoc(cat.id, sub.id, docName)
@@ -107,15 +107,15 @@ export function DataRoomTab({ docs, projectId }: { docs: DrDoc[]; projectId: str
                         <div key={docName} className="flex items-center justify-between px-5 py-2.5 border-t border-[#f8fafc] hover:bg-[#f8fafc]">
                           <div className="flex items-center gap-2.5">
                             <StatusIcon status={status} />
-                            <span className="text-sm text-[#334155]">{docName}</span>
+                            <span className="text-sm text-[#181818]">{docName}</span>
                             {doc?.file_name && (
-                              <span className="text-xs text-[#94a3b8]">({doc.file_name})</span>
+                              <span className="text-xs text-[#706E6B]">({doc.file_name})</span>
                             )}
                           </div>
                           <div className="flex items-center gap-2">
                             {status === 'pending' && (
                               <button
-                                className="text-xs text-[#6E879E] hover:text-[#2F3E50] flex items-center gap-1"
+                                className="text-xs text-[#3E3E3C] hover:text-[#181818] flex items-center gap-1"
                                 onClick={() => {
                                   const formData = new FormData()
                                   formData.append('projectId', projectId)
@@ -129,8 +129,8 @@ export function DataRoomTab({ docs, projectId }: { docs: DrDoc[]; projectId: str
                             )}
                             <span className={`text-xs px-2 py-0.5 rounded ${
                               status === 'uploaded' || status === 'approved' ? 'bg-green-50 text-green-700' :
-                              status === 'na' ? 'bg-[#f1f5f9] text-[#94a3b8]' :
-                              'bg-[#f8fafc] text-[#94a3b8]'
+                              status === 'na' ? 'bg-[#f1f5f9] text-[#706E6B]' :
+                              'bg-[#f8fafc] text-[#706E6B]'
                             }`}>
                               {status === 'uploaded' ? 'Uploaded' : status === 'approved' ? 'Approved' : status === 'na' ? 'N/A' : 'Pending'}
                             </span>
