@@ -89,34 +89,50 @@ export async function POST(req: NextRequest) {
 
   if (sub === 'project') {
     if (!arg) {
-      return NextResponse.json({ response_type: 'ephemeral', text: 'Usage: `/pathwaze project <name or number>`' })
+      return NextResponse.json({ response_type: 'ephemeral', text: 'Usage: `/pathwaze project <name or number> [your message]`' })
     }
 
     const supabase = service()
-    // Find a project by name (case-insensitive partial) or by project_number exact match
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: byNumber } = await supabase
-      .from('projects')
-      .select('id, name, project_number, stage, city, state, system_kwdc')
-      .eq('project_number', arg)
-      .limit(1)
-      .maybeSingle() as any
 
+    // Smart parse: try progressively longer prefixes of the arg as the project,
+    // treat any unmatched trailing text as the user's comment about that project.
+    const tokens = arg.split(/\s+/)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    let project: ProjectCardArgs | null = byNumber
-    if (!project) {
+    let project: ProjectCardArgs | null = null
+    let comment = ''
+
+    for (let i = Math.min(tokens.length, 4); i > 0 && !project; i--) {
+      const candidate = tokens.slice(0, i).join(' ')
+      // 1) exact project_number
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: byNumber } = await supabase
+        .from('projects')
+        .select('id, name, project_number, stage, city, state, system_kwdc')
+        .eq('project_number', candidate)
+        .limit(1)
+        .maybeSingle() as any
+      if (byNumber) {
+        project = byNumber
+        comment = tokens.slice(i).join(' ').trim()
+        break
+      }
+      // 2) partial name match
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { data: byName } = await supabase
         .from('projects')
         .select('id, name, project_number, stage, city, state, system_kwdc')
-        .ilike('name', `%${arg}%`)
+        .ilike('name', `%${candidate}%`)
         .limit(1)
         .maybeSingle() as any
-      project = byName
+      if (byName) {
+        project = byName
+        comment = tokens.slice(i).join(' ').trim()
+        break
+      }
     }
 
     if (!project) {
-      return NextResponse.json({ response_type: 'ephemeral', text: `No project found matching *${arg}*.` })
+      return NextResponse.json({ response_type: 'ephemeral', text: `No project found matching *${arg}*. Try the project name or number.` })
     }
 
     // Record the mention in two places so it shows up in:
@@ -134,7 +150,11 @@ export async function POST(req: NextRequest) {
       const channelDisplay = slackChannelName ? `#${slackChannelName}` : `another channel`
       const channelDeepLink = teamDomain ? `https://${teamDomain}.slack.com/archives/${slackChannelId}` : ''
       const userDisplay = matchedUser?.full_name || slackUserName || 'Someone'
-      const mentionMsg = `${userDisplay} referenced this project in ${channelDisplay}${channelDeepLink ? ` — ${channelDeepLink}` : ''}`
+      // If the user typed an additional comment, that becomes the primary message;
+      // otherwise we just record the mention itself.
+      const mentionMsg = comment
+        ? `${comment}\n\n_— mentioned in ${channelDisplay}${channelDeepLink ? ` (${channelDeepLink})` : ''}_`
+        : `${userDisplay} referenced this project in ${channelDisplay}${channelDeepLink ? ` — ${channelDeepLink}` : ''}`
 
       // Synthetic Slack ts (we don't get one for slash commands). Random suffix for uniqueness.
       const syntheticTs = `${Date.now()}.${Math.floor(Math.random() * 1e6)}`
@@ -164,6 +184,7 @@ export async function POST(req: NextRequest) {
             from_channel: slackChannelId,
             from_channel_name: slackChannelName,
             channel_deep_link: channelDeepLink,
+            comment: comment || null,
             slack_user_id: slackUserId,
             via: 'slash_command',
           },
