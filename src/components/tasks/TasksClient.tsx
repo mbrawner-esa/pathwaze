@@ -809,6 +809,19 @@ export function TasksClient({ tasks: initialTasks, projects, users }: { tasks: a
                   {editingDrawer ? (
                     <>
                       <button
+                        onClick={async () => {
+                          if (!confirm(`Delete task "${selected.title}"?`)) return
+                          const res = await fetch(`/api/tasks/${selected.id}`, { method: 'DELETE' })
+                          if (res.ok) { setSelectedTask(null); router.refresh() }
+                          else { const b = await res.json().catch(() => ({})); setEditError(b?.error || 'Delete failed') }
+                        }}
+                        disabled={savingDrawer}
+                        title="Delete task"
+                        className="px-2.5 py-1 text-[12px] font-semibold text-[#dc2626] hover:bg-[#fef2f2] rounded inline-flex items-center gap-1"
+                      >
+                        <Trash2 size={12} /> Delete
+                      </button>
+                      <button
                         onClick={() => { setEditingDrawer(false); setEditError(null) }}
                         disabled={savingDrawer}
                         className="btn-secondary"

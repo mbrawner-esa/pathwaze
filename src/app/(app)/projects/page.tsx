@@ -1,21 +1,29 @@
 import { createClient } from '@/lib/supabase/server'
 import { ProjectsClient } from '@/components/projects/ProjectsClient'
 
-export default async function ProjectsPage() {
+export default async function ProjectsPage({ searchParams }: { searchParams: Promise<{ archived?: string }> }) {
   const supabase = await createClient()
+  const { archived } = await searchParams
+  const showArchived = archived === '1'
+
+  let query = supabase
+    .from('projects')
+    .select(`
+      id, project_number, name, stage, deal_health, system_kwdc,
+      city, state, tranche, region, assignee_id, archived_at,
+      utility, target_cod,
+      users!assignee_id(full_name),
+      milestones(label, completed, sort_order)
+    `)
+    .order('name')
+
+  if (!showArchived) {
+    query = query.is('archived_at', null)
+  }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [{ data: projects }, { data: users }] = await Promise.all([
-    supabase
-      .from('projects')
-      .select(`
-        id, project_number, name, stage, deal_health, system_kwdc,
-        city, state, tranche, region, assignee_id,
-        utility, target_cod,
-        users!assignee_id(full_name),
-        milestones(label, completed, sort_order)
-      `)
-      .order('name') as unknown as { data: any[] | null },
+    query as unknown as { data: any[] | null },
     supabase.from('users').select('id, full_name').order('full_name'),
   ])
 
@@ -42,8 +50,9 @@ export default async function ProjectsPage() {
       target_cod: p.target_cod,
       assignee_name,
       next_milestone: next?.label,
+      archived_at: p.archived_at ?? null,
     }
   })
 
-  return <ProjectsClient projects={mapped} users={users ?? []} />
+  return <ProjectsClient projects={mapped} users={users ?? []} showArchived={showArchived} />
 }

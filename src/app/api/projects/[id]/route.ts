@@ -18,7 +18,7 @@ const ALLOWED_FIELDS = new Set([
   'assignee_id', 'facility_type', 'site_type', 'site_acres', 'roof_type',
   'modules', 'inverters', 'monitoring', 'azimuth', 'tilt',
   'start_date', 'target_cod', 'tranche', 'region',
-  'slack_channel_id',
+  'slack_channel_id', 'archived_at',
 ])
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -72,4 +72,19 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   }
 
   return NextResponse.json(data)
+}
+
+// Hard-delete with cascade. Admin-only.
+export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  const { data: me } = await supabase.from('users').select('role').eq('id', user.id).single() as { data: { role?: string } | null }
+  if (me?.role !== 'admin') return NextResponse.json({ error: 'Only admins can delete projects' }, { status: 403 })
+
+  const { id } = await params
+  const { error } = await supabase.from('projects').delete().eq('id', id)
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  return NextResponse.json({ success: true })
 }

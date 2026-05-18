@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Pencil, X, Check } from 'lucide-react'
 import { StageBadge } from '@/components/ui/StageBadge'
@@ -60,14 +60,7 @@ export function ProjectSummaryCard({
     zip: project.zip ?? '',
     target_cod: project.target_cod ? String(project.target_cod).slice(0, 10) : '',
     assignee_id: project.assignee_id ?? '',
-    slack_channel_id: project.slack_channel_id ?? '',
   })
-  const [channels, setChannels] = useState<Array<{ id: string; name: string }>>([])
-
-  // Load bot channels once (used in display + edit modes)
-  useEffect(() => {
-    fetch('/api/slack/channels').then(r => r.json()).then(d => setChannels(d.channels || [])).catch(() => {})
-  }, [])
 
   function startEdit() {
     setForm({
@@ -82,7 +75,6 @@ export function ProjectSummaryCard({
       zip: project.zip ?? '',
       target_cod: project.target_cod ? String(project.target_cod).slice(0, 10) : '',
       assignee_id: project.assignee_id ?? '',
-      slack_channel_id: project.slack_channel_id ?? '',
     })
     setEditing(true)
     setError(null)
@@ -106,7 +98,6 @@ export function ProjectSummaryCard({
           zip: form.zip,
           target_cod: form.target_cod || null,
           assignee_id: form.assignee_id || null,
-          slack_channel_id: form.slack_channel_id || null,
         }),
       })
       if (res.ok) {
@@ -227,24 +218,6 @@ export function ProjectSummaryCard({
           )}
         </Field>
         <Field label="Last Updated">{lastUpdated}</Field>
-
-        <Field label="Slack Channel" full>
-          {editing ? (
-            <FieldSelect
-              value={channels.find(c => c.id === form.slack_channel_id)?.name ?? ''}
-              options={channels.map(c => c.name)}
-              onChange={v => {
-                const c = channels.find(x => x.name === v)
-                setForm(f => ({ ...f, slack_channel_id: c?.id ?? '' }))
-              }}
-              placeholder={channels.length === 0 ? 'Loading channels…' : '— Not linked —'}
-            />
-          ) : (
-            project.slack_channel_id
-              ? <span className="inline-flex items-center gap-1.5"><span className="text-[#4A154B]">#</span>{channels.find(c => c.id === project.slack_channel_id)?.name ?? project.slack_channel_id}</span>
-              : <span className="text-[#706E6B]">—</span>
-          )}
-        </Field>
       </FieldGrid>
 
       {error && (

@@ -5,6 +5,7 @@ import { ArrowLeft } from 'lucide-react'
 import { ProjectDetailClient } from '@/components/project/ProjectDetailClient'
 import { EditableDealHealth } from '@/components/project/EditableDealHealth'
 import { ProjectSummaryCard } from '@/components/project/ProjectSummaryCard'
+import { ProjectActionsMenu } from '@/components/project/ProjectActionsMenu'
 import { formatDate } from '@/lib/utils'
 
 export default async function ProjectDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -36,6 +37,14 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
   const nextMilestone = (milestones ?? []).find((m: any) => !m.completed)
   const lastUpdated = formatDate(new Date().toISOString())
 
+  // Fetch current user's role for admin-gated actions
+  const { data: { user } } = await supabase.auth.getUser()
+  let userRole = 'team'
+  if (user) {
+    const { data: me } = await supabase.from('users').select('role').eq('id', user.id).single() as { data: { role?: string } | null }
+    userRole = me?.role ?? 'team'
+  }
+
   return (
     <div>
       {/* Sticky breadcrumb bar */}
@@ -52,7 +61,21 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
           <span className="text-[11.5px] font-medium text-[#706E6B]">({project.project_number})</span>
         )}
         <EditableDealHealth projectId={project.id} initial={project.deal_health} />
+        <div className="ml-auto">
+          <ProjectActionsMenu
+            projectId={project.id}
+            projectName={project.name}
+            slackChannelId={project.slack_channel_id ?? null}
+            archivedAt={project.archived_at ?? null}
+            userRole={userRole}
+          />
+        </div>
       </div>
+      {project.archived_at && (
+        <div className="bg-[#fef3c7] border-b border-[#fde68a] px-8 py-2 text-[12.5px] text-[#92400e] flex items-center gap-2">
+          <strong>Archived</strong> · This project is hidden from the active list. Use the menu to unarchive.
+        </div>
+      )}
 
       {/* Map + Summary card */}
       <div className="px-8 pt-7 grid gap-6" style={{ gridTemplateColumns: '30% 1fr' }}>
