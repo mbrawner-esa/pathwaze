@@ -13,12 +13,16 @@ export async function POST(req: NextRequest) {
     title: body.title,
     description: body.description || null,
     type: body.type || 'Administrative',
-    status: 'Draft',
+    status: body.status || 'Draft',
     priority: body.priority || 'Medium',
     assignee_id: body.assignee_id || null,
     approver_id: body.approver_id || null,
     requires_approval: body.requires_approval || false,
+    start_date: body.start_date || null,
     due_date: body.due_date || null,
+    end_date: body.end_date || null,
+    show_on_schedule: body.show_on_schedule || false,
+    parent_task_id: body.parent_task_id || null,
   }).select().single()
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })

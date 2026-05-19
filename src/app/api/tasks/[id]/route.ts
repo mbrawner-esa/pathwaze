@@ -2,7 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { NextRequest, NextResponse } from 'next/server'
 import { sendDM, replyInThread, taskAssignedBlocks, taskStatusChangedBlocks } from '@/lib/slack'
 
-const TRACKED_FIELDS = ['status', 'priority', 'assignee_id', 'approver_id', 'approval_status', 'due_date', 'title']
+const TRACKED_FIELDS = ['status', 'priority', 'assignee_id', 'approver_id', 'approval_status', 'due_date', 'start_date', 'end_date', 'title', 'show_on_schedule', 'parent_task_id', 'type', 'description']
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const supabase = await createClient()

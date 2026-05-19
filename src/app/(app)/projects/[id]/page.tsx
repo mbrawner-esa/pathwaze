@@ -28,13 +28,23 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
     supabase.from('systems').select('*').eq('project_id', id).order('created_at'),
     supabase.from('project_threads').select('*').eq('project_id', id).order('created_at', { ascending: true }),
     supabase.from('project_notes').select('*, user:users(full_name, avatar_url)').eq('project_id', id).order('created_at', { ascending: false }),
-  ]) as unknown as [any, any, any, any, any, any, any, any, any, any, any, any]
+    // Schedule tasks: opt-in tasks for this project, with assignee + subtask count
+    supabase.from('tasks').select('*, assignee:users!assignee_id(full_name), subtasks:tasks!parent_task_id(id)').eq('project_id', id).eq('show_on_schedule', true).order('due_date', { ascending: true, nullsFirst: false }),
+  ]) as unknown as [any, any, any, any, any, any, any, any, any, any, any, any, any]
   const [
     { data: project }, { data: financials }, { data: milestones },
     { data: stakeholders }, { data: permits }, { data: docs }, { data: users },
     { data: buildings }, { data: meters }, { data: systems },
     { data: threads }, { data: notes },
+    { data: scheduleTasksRaw },
   ] = results
+
+  // Flatten subtask count for the ScheduleTab UI
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const scheduleTasks = ((scheduleTasksRaw ?? []) as any[]).map(t => ({
+    ...t,
+    _subtask_count: Array.isArray(t.subtasks) ? t.subtasks.length : 0,
+  }))
 
   if (!project) notFound()
 
@@ -158,6 +168,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
         threads={threads ?? []}
         activity={activity}
         users={users ?? []}
+        scheduleTasks={scheduleTasks}
       />
     </div>
   )

@@ -124,7 +124,7 @@ export function TasksClient({ tasks: initialTasks, projects, users }: { tasks: a
   const [editForm, setEditForm] = useState({
     title: '', description: '', type: 'Administrative', priority: 'Medium',
     project_id: '', assignee_id: '', approver_id: '',
-    requires_approval: false, due_date: '',
+    requires_approval: false, due_date: '', show_on_schedule: false,
   })
 
   // New task form
@@ -138,6 +138,7 @@ export function TasksClient({ tasks: initialTasks, projects, users }: { tasks: a
     approver_id: '',
     requires_approval: false,
     due_date: '',
+    show_on_schedule: false,
   })
 
   const types = ['All', ...Array.from(new Set(initialTasks.map(t => t.type).filter(Boolean)))]
@@ -358,6 +359,7 @@ export function TasksClient({ tasks: initialTasks, projects, users }: { tasks: a
       approver_id: selected.approver_id ?? '',
       requires_approval: !!selected.requires_approval,
       due_date: selected.due_date ? String(selected.due_date).slice(0, 10) : '',
+      show_on_schedule: !!selected.show_on_schedule,
     })
     setEditingDrawer(true)
     setEditError(null)
@@ -382,6 +384,7 @@ export function TasksClient({ tasks: initialTasks, projects, users }: { tasks: a
           approver_id: editForm.requires_approval ? (editForm.approver_id || null) : null,
           requires_approval: editForm.requires_approval,
           due_date: editForm.due_date || null,
+          show_on_schedule: !!editForm.show_on_schedule,
         }),
       })
       if (res.ok) {
@@ -414,7 +417,7 @@ export function TasksClient({ tasks: initialTasks, projects, users }: { tasks: a
       })
       if (res.ok) {
         setShowNewModal(false)
-        setForm({ project_id: '', title: '', description: '', type: 'Administrative', priority: 'Medium', assignee_id: '', approver_id: '', requires_approval: false, due_date: '' })
+        setForm({ project_id: '', title: '', description: '', type: 'Administrative', priority: 'Medium', assignee_id: '', approver_id: '', requires_approval: false, due_date: '', show_on_schedule: false })
         router.refresh()
       } else {
         const body = await res.json().catch(() => ({}))
@@ -961,6 +964,18 @@ export function TasksClient({ tasks: initialTasks, projects, users }: { tasks: a
                       />
                       <label htmlFor="drawer_requires_approval" className="text-[13px] text-[#181818] font-medium cursor-pointer select-none">
                         Requires approval before completion
+                      </label>
+                    </div>
+                    <div className="col-span-2 flex items-center gap-2.5">
+                      <input
+                        type="checkbox"
+                        id="drawer_show_on_schedule"
+                        checked={!!editForm.show_on_schedule}
+                        onChange={e => setEditForm(f => ({ ...f, show_on_schedule: e.target.checked }))}
+                        className="w-4 h-4 rounded border-[#cbd5e1] text-[#70A0D0] focus:ring-[#70A0D0]"
+                      />
+                      <label htmlFor="drawer_show_on_schedule" className="text-[13px] text-[#181818] font-medium cursor-pointer select-none">
+                        Show on project Schedule tab
                       </label>
                     </div>
                     {editForm.requires_approval && (

@@ -20,13 +20,13 @@ const TABS = [
   { id: 'permitting', label: 'Permitting' },
   { id: 'technical', label: 'Technical' },
   { id: 'financial', label: 'Financial' },
-  // Schedule + Data Room hidden until each is fully defined
-  // { id: 'schedule', label: 'Schedule' },
+  { id: 'schedule', label: 'Schedule' },
+  // Data Room hidden until Box integration is built
   // { id: 'dataroom', label: 'Data Room' },
 ]
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function ProjectDetailClient({ project, financials, milestones, stakeholders, permits, docs, buildings, meters, systems, threads = [], activity = [], users = [] }: any) {
+export function ProjectDetailClient({ project, financials, milestones, stakeholders, permits, docs, buildings, meters, systems, threads = [], activity = [], users = [], scheduleTasks = [] }: any) {
   const [activeTab, setActiveTab] = useState('threads')
 
   return (
@@ -59,8 +59,8 @@ export function ProjectDetailClient({ project, financials, milestones, stakehold
         {activeTab === 'stakeholders' && <StakeholdersTab stakeholders={stakeholders} projectId={project.id} />}
         {activeTab === 'permitting' && <PermittingTab project={project} permits={permits} />}
         {activeTab === 'technical' && <TechnicalTab project={{ ...project, _financials: financials }} buildings={buildings} meters={meters} systems={systems} />}
+        {activeTab === 'schedule' && <ScheduleTab projectId={project.id} milestones={milestones} scheduleTasks={scheduleTasks} />}
         {activeTab === 'financial' && <FinancialTab financials={financials} projectId={project.id} systemKwdc={project.system_kwdc} />}
-        {activeTab === 'schedule' && <ScheduleTab milestones={milestones} />}
         {activeTab === 'dataroom' && <DataRoomTab docs={docs} projectId={project.id} />}
         {activeTab === 'threads' && <ThreadsTab threads={threads} channelLinked={!!project.slack_channel_id} />}
       </div>
