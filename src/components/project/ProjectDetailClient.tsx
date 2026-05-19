@@ -32,7 +32,7 @@ export function ProjectDetailClient({ project, financials, milestones, stakehold
   return (
     <div>
       {/* Tab Bar */}
-      <div className="px-8 mt-6 bg-white border-b border-[#e2e8f0] flex overflow-x-auto max-w-7xl mx-auto w-full">
+      <div className="px-8 mt-6 bg-white border-b border-[#e2e8f0] flex overflow-x-auto">
         {TABS.map(tab => {
           const active = activeTab === tab.id
           return (
@@ -53,7 +53,7 @@ export function ProjectDetailClient({ project, financials, milestones, stakehold
       </div>
 
       {/* Tab Content */}
-      <div className="px-8 py-7 max-w-7xl mx-auto w-full">
+      <div className="px-8 py-7">
         {activeTab === 'site' && <SiteTab project={project} buildings={buildings} meters={meters} systems={systems} />}
         {activeTab === 'utility' && <UtilityTab project={project} buildings={buildings} meters={meters} />}
         {activeTab === 'stakeholders' && <StakeholdersTab stakeholders={stakeholders} projectId={project.id} />}
@@ -67,7 +67,7 @@ export function ProjectDetailClient({ project, financials, milestones, stakehold
 
       {/* Activity feed — bottom of every project page, except when Threads tab is active */}
       {activeTab !== 'threads' && (
-        <div className="px-8 pb-10 max-w-7xl mx-auto w-full">
+        <div className="px-8 pb-10">
           <ProjectActivityActions projectId={project.id} projectName={project.name} users={users} />
           <ProjectActivityFeed entries={activity as ActivityEntry[]} />
         </div>
