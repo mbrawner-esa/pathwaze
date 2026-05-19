@@ -80,6 +80,8 @@ export function AddressAutocomplete({ initial, onSelect, placeholder, required }
   const [error, setError] = useState<string | null>(null)
   const onSelectRef = useRef(onSelect)
   onSelectRef.current = onSelect
+  // Snapshot initial value so changes don't re-mount the autocomplete
+  const initialRef = useRef(initial)
 
   useEffect(() => {
     loadGoogleMaps()
@@ -98,9 +100,8 @@ export function AddressAutocomplete({ initial, onSelect, placeholder, required }
       includedRegionCodes: ['us'],
       // types: ['address'],  // optional; comment out for broader results
     })
-    if (initial) {
-      // The web component has an `value` property to seed text
-      try { (el as HTMLInputElement & { value: string }).value = initial } catch { /* noop */ }
+    if (initialRef.current) {
+      try { (el as HTMLInputElement & { value: string }).value = initialRef.current } catch { /* noop */ }
     }
     // Apply some sensible default styling so it matches our inputs
     el.style.width = '100%'
@@ -130,7 +131,7 @@ export function AddressAutocomplete({ initial, onSelect, placeholder, required }
         el.remove()
       } catch { /* noop */ }
     }
-  }, [loaded, initial])
+  }, [loaded])
 
   // Fallback when the API key is missing
   if (error) {
@@ -146,10 +147,10 @@ export function AddressAutocomplete({ initial, onSelect, placeholder, required }
   }
 
   return (
-    <div className="relative w-full">
+    <div className="pathwaze-autocomplete-host">
       <div ref={containerRef} className="w-full" />
       {!loaded && (
-        <p className="text-[11px] text-[#94a3b8] mt-1">Loading address search…</p>
+        <p className="text-[11px] text-[#94a3b8] mt-0.5">Loading…</p>
       )}
     </div>
   )
