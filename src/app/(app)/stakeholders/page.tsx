@@ -6,16 +6,14 @@ export const dynamic = 'force-dynamic'
 export default async function StakeholdersPage() {
   const supabase = await createClient()
 
-  const [stakeholdersRes, projectsRes] = await Promise.all([
+  const [{ data: stakeholders }, { data: projects }] = await Promise.all([
     supabase
       .from('stakeholders')
-      .select('*, project:projects(name, project_number, tranche, city, state)')
+      // Use the explicit FK alias to disambiguate from projects.primary_stakeholder_id
+      .select('*, project:projects!stakeholders_project_id_fkey(name, project_number, tranche, city, state)')
       .order('name'),
     supabase.from('projects').select('id, name, project_number').order('name'),
   ])
 
-  console.log('[stakeholders page] count:', stakeholdersRes.data?.length, 'error:', stakeholdersRes.error)
-  if (stakeholdersRes.error) console.error('[stakeholders page] error detail:', stakeholdersRes.error)
-
-  return <StakeholdersClient stakeholders={stakeholdersRes.data ?? []} projects={projectsRes.data ?? []} />
+  return <StakeholdersClient stakeholders={stakeholders ?? []} projects={projects ?? []} />
 }
