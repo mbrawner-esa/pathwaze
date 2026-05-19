@@ -12,18 +12,15 @@ export interface AddressData {
 }
 
 interface Props {
-  /** Initial value to seed the input with (e.g. existing project address) */
+  /** Initial value displayed in the search box */
   initial?: string
-  /** Called when user selects a place from the dropdown */
+  /** Fired when user picks a place from the dropdown */
   onSelect: (a: AddressData) => void
   placeholder?: string
-  className?: string
   required?: boolean
 }
 
-// ─── Google Maps lazy loader ───────────────────────────────────────
-// Loads the Maps JS API + places library on first use. Idempotent —
-// multiple components can call this; the script tag is only added once.
+// ─── Maps loader ───────────────────────────────────────────────────
 let loadPromise: Promise<void> | null = null
 
 function loadGoogleMaps(): Promise<void> {
@@ -54,87 +51,106 @@ function loadGoogleMaps(): Promise<void> {
   return loadPromise
 }
 
-// Map Google's address_components into our flat AddressData shape
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type AddressComponent = { longText: string; shortText: string; types: string[] }
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function parsePlace(place: any): AddressData {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const components: Array<{ long_name: string; short_name: string; types: string[] }> = place.address_components || []
-  const get = (type: string) => components.find(c => c.types.includes(type))?.long_name ?? ''
-  const getShort = (type: string) => components.find(c => c.types.includes(type))?.short_name ?? ''
+  const components: AddressComponent[] = place.addressComponents || []
+  const get = (type: string) => components.find(c => c.types.includes(type))?.longText ?? ''
+  const getShort = (type: string) => components.find(c => c.types.includes(type))?.shortText ?? ''
+
+  const lat = typeof place.location?.lat === 'function' ? place.location.lat() : (place.location?.lat ?? null)
+  const lng = typeof place.location?.lng === 'function' ? place.location.lng() : (place.location?.lng ?? null)
 
   return {
     street: [get('street_number'), get('route')].filter(Boolean).join(' ').trim(),
     city: get('locality') || get('sublocality') || get('postal_town') || get('administrative_area_level_2') || '',
     state: getShort('administrative_area_level_1'),
     zip: get('postal_code'),
-    lat: place.geometry?.location ? place.geometry.location.lat() : null,
-    lng: place.geometry?.location ? place.geometry.location.lng() : null,
-    formatted: place.formatted_address || '',
+    lat,
+    lng,
+    formatted: place.formattedAddress || '',
   }
 }
 
-export function AddressAutocomplete({ initial, onSelect, placeholder, className, required }: Props) {
-  const inputRef = useRef<HTMLInputElement>(null)
+export function AddressAutocomplete({ initial, onSelect, placeholder, required }: Props) {
+  const containerRef = useRef<HTMLDivElement>(null)
   const [loaded, setLoaded] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const onSelectRef = useRef(onSelect)
+  onSelectRef.current = onSelect
 
-  // Mount: lazy-load Google Maps script
   useEffect(() => {
     loadGoogleMaps()
       .then(() => setLoaded(true))
       .catch(e => setError(e instanceof Error ? e.message : 'Maps unavailable'))
   }, [])
 
-  // Once loaded + input is in DOM, attach Autocomplete
   useEffect(() => {
-    if (!loaded || !inputRef.current) return
+    if (!loaded || !containerRef.current) return
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const g = (window as any).google
-    if (!g?.maps?.places?.Autocomplete) return
+    if (!g?.maps?.places?.PlaceAutocompleteElement) return
 
-    const autocomplete = new g.maps.places.Autocomplete(inputRef.current, {
-      types: ['address'],
-      componentRestrictions: { country: 'us' },
-      fields: ['address_components', 'formatted_address', 'geometry.location'],
+    // Create the new web-component-based autocomplete
+    const el = new g.maps.places.PlaceAutocompleteElement({
+      includedRegionCodes: ['us'],
+      // types: ['address'],  // optional; comment out for broader results
     })
+    if (initial) {
+      // The web component has an `value` property to seed text
+      try { (el as HTMLInputElement & { value: string }).value = initial } catch { /* noop */ }
+    }
+    // Apply some sensible default styling so it matches our inputs
+    el.style.width = '100%'
 
-    const listener = autocomplete.addListener('place_changed', () => {
-      const place = autocomplete.getPlace()
-      if (!place?.geometry?.location) return
-      onSelect(parsePlace(place))
-    })
+    containerRef.current.innerHTML = ''
+    containerRef.current.appendChild(el)
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const handler = async (event: any) => {
+      try {
+        const prediction = event?.placePrediction
+        if (!prediction) return
+        const place = prediction.toPlace()
+        await place.fetchFields({
+          fields: ['addressComponents', 'formattedAddress', 'location'],
+        })
+        onSelectRef.current(parsePlace(place))
+      } catch (e) {
+        console.warn('[address-autocomplete] place fetch failed:', e)
+      }
+    }
+    el.addEventListener('gmp-select', handler)
 
     return () => {
-      try { g.maps.event.removeListener(listener) } catch { /* noop */ }
+      try {
+        el.removeEventListener('gmp-select', handler)
+        el.remove()
+      } catch { /* noop */ }
     }
-  }, [loaded, onSelect])
+  }, [loaded, initial])
 
-  const inputClass = className || 'w-full px-3 py-2 text-[13px] border border-[#e2e8f0] rounded-md focus:outline-none focus:border-[#70A0D0] focus:ring-2 focus:ring-[#70A0D0]/20'
-
-  // Graceful fallback when API key is missing or load fails — just a plain input.
-  // The parent component still receives onChange via its own logic if it falls back to manual fields.
+  // Fallback when the API key is missing
   if (error) {
     return (
       <input
         type="text"
         defaultValue={initial}
         placeholder={placeholder || 'Start typing an address…'}
-        className={inputClass}
+        className="w-full px-3 py-2 text-[13px] border border-[#e2e8f0] rounded-md focus:outline-none focus:border-[#70A0D0] focus:ring-2 focus:ring-[#70A0D0]/20"
         required={required}
       />
     )
   }
 
   return (
-    <input
-      ref={inputRef}
-      type="text"
-      defaultValue={initial}
-      placeholder={loaded ? (placeholder || 'Start typing an address…') : 'Loading address search…'}
-      className={inputClass}
-      required={required}
-      // Stop browser autofill from competing with Google's dropdown
-      autoComplete="off"
-    />
+    <div className="relative w-full">
+      <div ref={containerRef} className="w-full" />
+      {!loaded && (
+        <p className="text-[11px] text-[#94a3b8] mt-1">Loading address search…</p>
+      )}
+    </div>
   )
 }

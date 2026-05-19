@@ -199,36 +199,23 @@ export function ProjectSummaryCard({
             : <StageBadge stage={project.stage} />}
         </Field>
 
-        {/* Autocomplete row (edit mode only) — Google Places auto-fills the 4 cells below */}
-        {editing && (
-          <div className="col-span-2 grid grid-cols-[160px_1fr] border-b border-[#f1f5f9]">
-            <div className="px-4 py-3 bg-[#fafbfc] border-r border-[#f1f5f9] text-[11.5px] font-semibold text-[#3E3E3C] flex items-center min-h-[44px] whitespace-nowrap">
-              Search Address
-            </div>
-            <div className="px-4 py-3">
-              <AddressAutocomplete
-                initial={[form.address, form.city, form.state, form.zip].filter(Boolean).join(', ')}
-                onSelect={(a) => setForm(f => ({
-                  ...f,
-                  address: a.street || f.address,
-                  city: a.city || f.city,
-                  state: a.state || f.state,
-                  zip: a.zip || f.zip,
-                  lat: a.lat,
-                  lng: a.lng,
-                }))}
-                placeholder="Start typing — Google will auto-fill the fields below"
-              />
-              <p className="text-[10.5px] text-[#94a3b8] mt-1">Selecting an address populates Street, City, State, Zip + map coordinates.</p>
-            </div>
-          </div>
-        )}
-
-        {/* Address row — 4 fields on one line: Street (flex) · City · State · Zip */}
+        {/* Address row — 4 fields on one line. Site Address autocompletes; selecting populates City/State/Zip. */}
         <div className="col-span-2 grid grid-cols-[minmax(0,2.4fr)_minmax(0,1.2fr)_minmax(0,0.7fr)_minmax(0,0.7fr)] border-b border-[#f1f5f9] min-w-0 w-full">
           <AddressCell label="Site Address" hasRightBorder wideLabel>
             {editing
-              ? <FieldInput value={form.address} onChange={v => setForm(f => ({ ...f, address: v }))} placeholder="Street" />
+              ? <AddressAutocomplete
+                  initial={form.address}
+                  onSelect={(a) => setForm(f => ({
+                    ...f,
+                    address: a.street || f.address,
+                    city: a.city || f.city,
+                    state: a.state || f.state,
+                    zip: a.zip || f.zip,
+                    lat: a.lat,
+                    lng: a.lng,
+                  }))}
+                  placeholder="Street"
+                />
               : (project.address || '—')}
           </AddressCell>
           <AddressCell label="City" hasRightBorder>

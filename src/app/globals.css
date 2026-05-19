@@ -15,6 +15,32 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
+/* Google Places autocomplete element — match our form-input styling */
+gmp-place-autocomplete {
+  width: 100%;
+  display: block;
+}
+gmp-place-autocomplete::part(input) {
+  width: 100%;
+  padding: 6px 10px;
+  font-size: 13px;
+  color: #181818;
+  border: 1px solid #cbd5e1;
+  border-radius: 4px;
+  background: white;
+  font-family: inherit;
+  box-shadow: none;
+}
+gmp-place-autocomplete::part(input):focus {
+  outline: none;
+  border-color: #70A0D0;
+  box-shadow: 0 0 0 2px rgba(112, 160, 208, 0.2);
+}
+gmp-place-autocomplete::part(prediction-list) {
+  font-family: inherit;
+  font-size: 13px;
+}
+
 @layer components {
   .card {
     background: white;

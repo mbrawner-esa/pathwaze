@@ -243,12 +243,12 @@ export function BuildingsTable({
           <DrawerSelect label="Category" value={form.category} options={CATEGORIES} onChange={v => setForm(f => ({ ...f, category: v }))} />
         </Section>
 
-        {/* Location — moved up under Area Name/Category */}
+        {/* Location — autocomplete is built into Street Address */}
         <Section title="Location">
           <div className="mb-3">
-            <label className="block text-[11px] font-semibold text-[#3E3E3C] mb-1.5">Search Address</label>
+            <label className="block text-[11px] font-semibold text-[#3E3E3C] mb-1.5">Street Address</label>
             <AddressAutocomplete
-              initial={[form.address, form.city, form.state, form.zip].filter(Boolean).join(', ')}
+              initial={form.address}
               onSelect={(a) => setForm(f => ({
                 ...f,
                 address: a.street || f.address,
@@ -256,10 +256,9 @@ export function BuildingsTable({
                 state: a.state || f.state,
                 zip: a.zip || f.zip,
               }))}
-              placeholder="Start typing — auto-fills the fields below"
+              placeholder="Start typing — City/State/Zip will auto-fill"
             />
           </div>
-          <DrawerInput label="Street Address" value={form.address} onChange={v => setForm(f => ({ ...f, address: v }))} />
           <div className="grid grid-cols-3 gap-3">
             <DrawerInput label="City" value={form.city} onChange={v => setForm(f => ({ ...f, city: v }))} />
             <DrawerInput label="State" value={form.state} onChange={v => setForm(f => ({ ...f, state: v }))} placeholder="FL" />
