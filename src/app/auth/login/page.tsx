@@ -37,15 +37,17 @@ function LoginInner() {
   }
 
   return (
-    <main className="min-h-screen w-full flex items-center justify-center px-4"
-      style={{
-        backgroundColor: '#0F1B26',
-        backgroundImage: "url('/pathwaze-login-bg.svg')",
-        backgroundSize: 'cover',
-        backgroundPosition: 'center',
-        backgroundRepeat: 'no-repeat',
-      }}>
-      <div className="w-full max-w-[400px] rounded-xl shadow-2xl p-9" style={{ backgroundColor: '#F4F7FA' }}>
+    <main className="min-h-screen w-full flex items-center justify-center px-4 relative overflow-hidden"
+      style={{ backgroundColor: '#0F1B26' }}>
+      {/* Background SVG — absolute-positioned img to ensure it renders regardless of CSS bg quirks */}
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src="/pathwaze-login-bg.svg"
+        alt=""
+        aria-hidden="true"
+        className="absolute inset-0 w-full h-full object-cover pointer-events-none select-none"
+      />
+      <div className="relative z-10 w-full max-w-[400px] rounded-xl shadow-2xl p-9" style={{ backgroundColor: '#F4F7FA' }}>
         <div className="flex flex-col items-center mb-7">
           <PathwazeLogo style={{ height: 44, width: 'auto' }} />
         </div>
