@@ -31,9 +31,9 @@ export function ProjectDetailClient({ project, financials, milestones, stakehold
 
   return (
     <div>
-      {/* Tab Bar — full-width bottom border, inner items constrained */}
-      <div className="mt-6 bg-white border-b border-[#e2e8f0]">
-        <div className="px-8 flex overflow-x-auto mx-auto w-full" style={{ maxWidth: 1600 }}>
+      {/* Tab Bar — constrained to same width as content */}
+      <div className="mt-6 mx-auto w-full" style={{ maxWidth: 1600 }}>
+        <div className="px-8 flex overflow-x-auto bg-white border-b border-[#e2e8f0]">
           {TABS.map(tab => {
             const active = activeTab === tab.id
             return (
