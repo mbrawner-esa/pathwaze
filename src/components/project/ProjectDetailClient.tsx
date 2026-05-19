@@ -31,31 +31,29 @@ export function ProjectDetailClient({ project, financials, milestones, stakehold
 
   return (
     <div>
-      {/* Tab Bar — constrained to same width as content */}
-      <div className="mt-6 mx-auto w-full" style={{ maxWidth: 1600 }}>
-        <div className="px-8 flex overflow-x-auto bg-white border-b border-[#e2e8f0]">
-          {TABS.map(tab => {
-            const active = activeTab === tab.id
-            return (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                className="px-5 py-3 text-[13px] font-medium whitespace-nowrap transition-colors -mb-px border-b-2"
-                style={{
-                  color: active ? '#181818' : '#706E6B',
-                  borderBottomColor: active ? '#E6C87A' : 'transparent',
-                  fontWeight: active ? 600 : 500,
-                }}
-              >
-                {tab.label}
-              </button>
-            )
-          })}
-        </div>
-      </div>
-
-      {/* Tab Content */}
-      <div className="px-8 py-7 mx-auto w-full" style={{ maxWidth: 1600 }}>
+      {/* Tab Bar + Content in a single bordered card so they read as one surface */}
+      <div className="px-8 mt-6 mx-auto w-full" style={{ maxWidth: 1600 }}>
+        <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+          <div className="flex overflow-x-auto border-b border-[#f1f5f9] px-2">
+            {TABS.map(tab => {
+              const active = activeTab === tab.id
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  className="px-4 py-3 text-[13px] font-medium whitespace-nowrap transition-colors -mb-px border-b-2"
+                  style={{
+                    color: active ? '#181818' : '#706E6B',
+                    borderBottomColor: active ? '#E6C87A' : 'transparent',
+                    fontWeight: active ? 600 : 500,
+                  }}
+                >
+                  {tab.label}
+                </button>
+              )
+            })}
+          </div>
+          <div className="p-6">
         {activeTab === 'site' && <SiteTab project={project} buildings={buildings} meters={meters} systems={systems} />}
         {activeTab === 'utility' && <UtilityTab project={project} buildings={buildings} meters={meters} />}
         {activeTab === 'stakeholders' && <StakeholdersTab stakeholders={stakeholders} projectId={project.id} />}
@@ -65,6 +63,8 @@ export function ProjectDetailClient({ project, financials, milestones, stakehold
         {activeTab === 'schedule' && <ScheduleTab milestones={milestones} />}
         {activeTab === 'dataroom' && <DataRoomTab docs={docs} projectId={project.id} />}
         {activeTab === 'threads' && <ThreadsTab threads={threads} channelLinked={!!project.slack_channel_id} />}
+          </div>
+        </div>
       </div>
 
       {/* Activity feed — bottom of every project page, except when Threads tab is active */}
