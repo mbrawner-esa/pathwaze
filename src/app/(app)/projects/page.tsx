@@ -15,7 +15,7 @@ export default async function ProjectsPage() {
         city, state, tranche, region, assignee_id,
         utility, target_cod,
         users!assignee_id(full_name, avatar_url),
-        milestones(label, completed, sort_order)
+        milestones(label, completed, sort_order, target_date)
       `)
       .order('name') as unknown as { data: any[] | null },
     supabase.from('users').select('id, full_name').eq('status', 'active').order('full_name'),
@@ -26,7 +26,7 @@ export default async function ProjectsPage() {
     const u = p.users
     const assignee_name = u?.full_name ?? undefined
     const assignee_avatar_url = u?.avatar_url ?? null
-    const milestones = (p.milestones ?? []) as { label: string; completed: boolean; sort_order: number }[]
+    const milestones = (p.milestones ?? []) as { label: string; completed: boolean; sort_order: number; target_date: string | null }[]
     const next = milestones
       .filter(m => !m.completed)
       .sort((a, b) => a.sort_order - b.sort_order)[0]
@@ -46,6 +46,7 @@ export default async function ProjectsPage() {
       assignee_name,
       assignee_avatar_url,
       next_milestone: next?.label,
+      next_milestone_date: next?.target_date ?? null,
     }
   })
 

@@ -19,10 +19,10 @@ interface Project {
   tranche: string
   region: string
   utility?: string
-  target_cod?: string
   assignee_name?: string
   assignee_avatar_url?: string | null
   next_milestone?: string
+  next_milestone_date?: string | null
 }
 
 interface ProjectsClientProps {
@@ -48,7 +48,7 @@ function fmtKw(kwdc: number) {
 
 
 // ── Column definitions ────────────────────────────────────────────────────
-type ColumnId = 'project' | 'stage' | 'size' | 'contract_value' | 'utility' | 'target_cod' | 'assignee' | 'tranche' | 'region' | 'deal_health' | 'next_milestone'
+type ColumnId = 'project' | 'state' | 'stage' | 'size' | 'utility' | 'next_milestone' | 'assignee' | 'tranche' | 'deal_health'
 
 interface ColumnDef {
   id: ColumnId
@@ -59,17 +59,15 @@ interface ColumnDef {
 }
 
 const ALL_COLUMNS: ColumnDef[] = [
-  { id: 'project',        label: 'Project',         alwaysVisible: true, defaultVisible: true, width: 'px-6' },
-  { id: 'stage',          label: 'Stage',           defaultVisible: true },
-  { id: 'size',           label: 'Size kWdc',       defaultVisible: true },
-  { id: 'contract_value', label: 'Contract Value',  defaultVisible: true },
-  { id: 'utility',        label: 'Utility',         defaultVisible: true },
-  { id: 'target_cod',     label: 'Target COD',      defaultVisible: true },
-  { id: 'assignee',       label: 'Project Manager', defaultVisible: true },
-  { id: 'tranche',        label: 'Tranche',         defaultVisible: false },
-  { id: 'region',         label: 'Region',          defaultVisible: false },
-  { id: 'deal_health',    label: 'Deal Health',     defaultVisible: false },
-  { id: 'next_milestone', label: 'Next Milestone',  defaultVisible: false },
+  { id: 'project',        label: 'Project',          alwaysVisible: true, defaultVisible: true, width: 'px-6' },
+  { id: 'state',          label: 'State',            defaultVisible: true },
+  { id: 'size',           label: 'System Size kWdc', defaultVisible: true },
+  { id: 'tranche',        label: 'Tranche',          defaultVisible: true },
+  { id: 'deal_health',    label: 'Deal Health',      defaultVisible: true },
+  { id: 'next_milestone', label: 'Next Milestone',   defaultVisible: true },
+  { id: 'assignee',       label: 'Project Manager',  defaultVisible: true },
+  { id: 'stage',          label: 'Stage',            defaultVisible: false },
+  { id: 'utility',        label: 'Utility',          defaultVisible: false },
 ]
 
 const DEFAULT_VISIBLE_COLS: ColumnId[] = ALL_COLUMNS.filter(c => c.defaultVisible).map(c => c.id)
@@ -154,7 +152,7 @@ export function ProjectsClient({ projects, users = [] }: ProjectsClientProps) {
   const [form, setForm] = useState(initialForm)
 
   const assigneeNames = ['All', ...Array.from(new Set(projects.map(p => p.assignee_name).filter(Boolean) as string[]))]
-  const totalMw = (projects.reduce((s, p) => s + (p.system_kwdc ?? 0), 0) / 1000).toFixed(2)
+  const totalKw = projects.reduce((s, p) => s + (p.system_kwdc ?? 0), 0).toLocaleString()
 
   const filtered = useMemo(() => {
     return projects.filter(p => {
@@ -227,16 +225,14 @@ export function ProjectsClient({ projects, users = [] }: ProjectsClientProps) {
             <div className="text-xs text-[#3E3E3C]">{p.project_number || ''} · {p.city}, {p.state}</div>
           </td>
         )
+      case 'state':
+        return <td key="state" className="px-4 py-3 text-sm text-[#181818]">{p.state || '—'}</td>
       case 'stage':
         return <td key="stage" className="px-4 py-3"><StageBadge stage={p.stage} /></td>
       case 'size':
         return <td key="size" className="px-4 py-3 text-sm font-semibold text-[#181818]">{fmtKw(p.system_kwdc)}</td>
-      case 'contract_value':
-        return <td key="contract_value" className="px-4 py-3 text-sm text-[#706E6B]">—</td>
       case 'utility':
         return <td key="utility" className="px-4 py-3 text-sm text-[#181818] max-w-[150px] truncate">{p.utility || '—'}</td>
-      case 'target_cod':
-        return <td key="target_cod" className="px-4 py-3 text-sm text-[#181818]">{formatDate(p.target_cod)}</td>
       case 'assignee':
         return (
           <td key="assignee" className="px-4 py-3">
@@ -245,12 +241,19 @@ export function ProjectsClient({ projects, users = [] }: ProjectsClientProps) {
         )
       case 'tranche':
         return <td key="tranche" className="px-4 py-3 text-sm text-[#181818]">{p.tranche || '—'}</td>
-      case 'region':
-        return <td key="region" className="px-4 py-3 text-sm text-[#181818]">{p.region || '—'}</td>
       case 'deal_health':
         return <td key="deal_health" className="px-4 py-3"><DealHealthBadge health={p.deal_health} /></td>
       case 'next_milestone':
-        return <td key="next_milestone" className="px-4 py-3 text-sm text-[#181818] max-w-[200px] truncate">{p.next_milestone || '—'}</td>
+        return (
+          <td key="next_milestone" className="px-4 py-3 text-sm text-[#181818] max-w-[220px]">
+            {p.next_milestone ? (
+              <div>
+                <div className="truncate">{p.next_milestone}</div>
+                {p.next_milestone_date && <div className="text-[11px] text-[#706E6B] mt-0.5">{formatDate(p.next_milestone_date)}</div>}
+              </div>
+            ) : '—'}
+          </td>
+        )
       default:
         return null
     }
@@ -289,7 +292,7 @@ export function ProjectsClient({ projects, users = [] }: ProjectsClientProps) {
       <div className="bg-white border-b border-[#e2e8f0] px-8 py-5 flex items-center justify-between sticky top-[52px] z-30">
         <div>
           <div className="text-xl font-bold text-[#3E3E3C]">Portfolio Overview</div>
-          <div className="text-[13px] text-[#3E3E3C] mt-0.5">{projects.length} projects · {totalMw} kWdc total</div>
+          <div className="text-[13px] text-[#3E3E3C] mt-0.5">{projects.length} projects · {totalKw} kWdc total</div>
         </div>
         <button
           onClick={() => setShowNewModal(true)}
@@ -405,7 +408,7 @@ export function ProjectsClient({ projects, users = [] }: ProjectsClientProps) {
           ) : (
             Object.keys(grouped).sort().map(key => {
               const gp = grouped[key]
-              const groupMw = (gp.reduce((s, p) => s + p.system_kwdc, 0) / 1000).toFixed(2)
+              const groupKw = gp.reduce((s, p) => s + p.system_kwdc, 0).toLocaleString()
               const isCollapsed = collapsed[key]
               return (
                 <div key={key} className="mb-1">
@@ -421,7 +424,7 @@ export function ProjectsClient({ projects, users = [] }: ProjectsClientProps) {
                     />
                     <span className="text-sm font-bold text-[#3E3E3C]">{key}</span>
                     <span className="text-xs text-[#3E3E3C] font-medium">
-                      {gp.length} project{gp.length !== 1 ? 's' : ''} · {groupMw} kWdc
+                      {gp.length} project{gp.length !== 1 ? 's' : ''} · {groupKw} kWdc
                     </span>
                   </div>
                   {!isCollapsed && (
