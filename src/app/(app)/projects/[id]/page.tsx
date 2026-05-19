@@ -91,7 +91,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
     <div>
       {/* Sticky breadcrumb bar — full-width bg, inner content constrained */}
       <div className="bg-white border-b border-[#e2e8f0] sticky top-[52px] z-30">
-        <div className="px-8 py-3.5 flex items-center gap-3 mx-auto w-full" style={{ maxWidth: 1600 }}>
+        <div className="px-8 py-3.5 flex items-center gap-3 mx-auto w-full" style={{ maxWidth: 1760 }}>
           <Link
             href="/projects"
             className="flex items-center gap-1.5 px-2.5 py-1.5 text-[12px] font-semibold text-[#3E3E3C] bg-white border border-[#e2e8f0] rounded hover:bg-[#fafbfc] transition-colors"
@@ -117,7 +117,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
       </div>
 
       {/* Map + Summary card */}
-      <div className="px-8 pt-7 grid gap-6 mx-auto w-full" style={{ gridTemplateColumns: '30% 1fr', maxWidth: 1600 }}>
+      <div className="px-8 pt-7 grid gap-6 mx-auto w-full" style={{ gridTemplateColumns: '30% 1fr', maxWidth: 1760 }}>
         <div className="rounded-xl overflow-hidden bg-[#1a2332] relative">
           {project.lat && project.lng ? (
             <iframe

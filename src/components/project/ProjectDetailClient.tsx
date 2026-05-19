@@ -32,20 +32,20 @@ export function ProjectDetailClient({ project, financials, milestones, stakehold
   return (
     <div>
       {/* Tab Bar + Content in a single bordered card so they read as one surface */}
-      <div className="px-8 mt-6 mx-auto w-full" style={{ maxWidth: 1600 }}>
-        <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-          <div className="flex overflow-x-auto border-b border-[#f1f5f9] px-2">
+      <div className="px-8 mt-6 mx-auto w-full" style={{ maxWidth: 1760 }}>
+        <div className="rounded-xl shadow-sm overflow-hidden" style={{ background: '#F8FAFC' }}>
+          <div className="flex overflow-x-auto border-b border-[#e2e8f0] px-2 bg-white">
             {TABS.map(tab => {
               const active = activeTab === tab.id
               return (
                 <button
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id)}
-                  className="px-4 py-3 text-[13px] font-medium whitespace-nowrap transition-colors -mb-px border-b-2"
+                  className="px-4 py-3 text-[14px] whitespace-nowrap transition-colors -mb-px border-b-2"
                   style={{
                     color: active ? '#181818' : '#706E6B',
-                    borderBottomColor: active ? '#E6C87A' : 'transparent',
-                    fontWeight: active ? 600 : 500,
+                    borderBottomColor: active ? '#70A0D0' : 'transparent',
+                    fontWeight: active ? 700 : 600,
                   }}
                 >
                   {tab.label}
@@ -69,7 +69,7 @@ export function ProjectDetailClient({ project, financials, milestones, stakehold
 
       {/* Activity feed — bottom of every project page, except when Threads tab is active */}
       {activeTab !== 'threads' && (
-        <div className="px-8 pb-10 mx-auto w-full" style={{ maxWidth: 1600 }}>
+        <div className="px-8 pt-6 pb-10 mx-auto w-full" style={{ maxWidth: 1760 }}>
           <ProjectActivityActions projectId={project.id} projectName={project.name} users={users} />
           <ProjectActivityFeed entries={activity as ActivityEntry[]} />
         </div>
