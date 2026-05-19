@@ -39,14 +39,7 @@ function LoginInner() {
   return (
     <main className="min-h-screen w-full flex items-center justify-center px-4 relative overflow-hidden"
       style={{ backgroundColor: '#0F1B26' }}>
-      {/* Background SVG — absolute-positioned img to ensure it renders regardless of CSS bg quirks */}
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
-        src="/pathwaze-login-bg.svg"
-        alt=""
-        aria-hidden="true"
-        className="absolute inset-0 w-full h-full object-cover pointer-events-none select-none"
-      />
+      <LoginBackdrop />
       <div className="relative z-10 w-full max-w-[400px] rounded-xl shadow-2xl p-9" style={{ backgroundColor: '#F4F7FA' }}>
         <div className="flex flex-col items-center mb-7">
           <PathwazeLogo style={{ height: 44, width: 'auto' }} />
@@ -115,6 +108,74 @@ export default function LoginPage() {
     <Suspense fallback={<div className="min-h-screen" style={{ background: '#0F1B26' }} />}>
       <LoginInner />
     </Suspense>
+  )
+}
+
+// Inline brand backdrop — four concentric-arc systems bleeding off the corners,
+// plus a faint dot grid. No external asset, no broken-image risk.
+function LoginBackdrop() {
+  return (
+    <svg
+      className="absolute inset-0 w-full h-full pointer-events-none select-none"
+      viewBox="0 0 1920 1080"
+      preserveAspectRatio="xMidYMid slice"
+      xmlns="http://www.w3.org/2000/svg"
+      aria-hidden="true"
+    >
+      {/* Faint dot grid */}
+      <defs>
+        <pattern id="dots" x="0" y="0" width="48" height="48" patternUnits="userSpaceOnUse">
+          <circle cx="1.5" cy="1.5" r="1.2" fill="#2A4870" opacity="0.45" />
+        </pattern>
+      </defs>
+      <rect width="1920" height="1080" fill="url(#dots)" />
+
+      {/* Arc system: top-left, bleeding off */}
+      <g fill="none" stroke="#2A4870" strokeOpacity="0.55" strokeWidth="1.5">
+        <circle cx="0" cy="0" r="240" />
+        <circle cx="0" cy="0" r="380" />
+        <circle cx="0" cy="0" r="520" />
+        <circle cx="0" cy="0" r="660" />
+      </g>
+      <circle cx="0" cy="0" r="100" fill="none" stroke="#F8D068" strokeOpacity="0.5" strokeWidth="2" />
+
+      {/* Arc system: top-right */}
+      <g fill="none" stroke="#3A5F8C" strokeOpacity="0.45" strokeWidth="1.5">
+        <circle cx="1920" cy="120" r="260" />
+        <circle cx="1920" cy="120" r="400" />
+        <circle cx="1920" cy="120" r="540" />
+        <circle cx="1920" cy="120" r="680" />
+      </g>
+      <circle cx="1920" cy="120" r="110" fill="none" stroke="#F8D068" strokeOpacity="0.4" strokeWidth="2" />
+
+      {/* Arc system: bottom-left */}
+      <g fill="none" stroke="#2A4870" strokeOpacity="0.5" strokeWidth="1.5">
+        <circle cx="160" cy="1080" r="220" />
+        <circle cx="160" cy="1080" r="360" />
+        <circle cx="160" cy="1080" r="500" />
+        <circle cx="160" cy="1080" r="640" />
+      </g>
+      <circle cx="160" cy="1080" r="90" fill="none" stroke="#F8D068" strokeOpacity="0.45" strokeWidth="2" />
+
+      {/* Arc system: bottom-right, bleeding off */}
+      <g fill="none" stroke="#3A5F8C" strokeOpacity="0.5" strokeWidth="1.5">
+        <circle cx="1920" cy="1080" r="280" />
+        <circle cx="1920" cy="1080" r="430" />
+        <circle cx="1920" cy="1080" r="580" />
+        <circle cx="1920" cy="1080" r="730" />
+      </g>
+      <circle cx="1920" cy="1080" r="120" fill="none" stroke="#F8D068" strokeOpacity="0.5" strokeWidth="2" />
+
+      {/* Soft radial glow to keep center calm where the form sits */}
+      <defs>
+        <radialGradient id="centerVignette" cx="50%" cy="50%" r="50%">
+          <stop offset="0%" stopColor="#0F1B26" stopOpacity="0.85" />
+          <stop offset="60%" stopColor="#0F1B26" stopOpacity="0.55" />
+          <stop offset="100%" stopColor="#0F1B26" stopOpacity="0" />
+        </radialGradient>
+      </defs>
+      <rect width="1920" height="1080" fill="url(#centerVignette)" />
+    </svg>
   )
 }
 
