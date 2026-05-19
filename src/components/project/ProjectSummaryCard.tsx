@@ -281,8 +281,8 @@ function AddressCell({ label, hasRightBorder = false, wideLabel = false, childre
       <div className={`${wideLabel ? 'px-4' : 'px-3'} py-2 bg-[#fafbfc] border-r border-[#f1f5f9] text-[12px] font-semibold text-[#3E3E3C] flex items-center min-h-[38px] whitespace-nowrap`}>
         {label}
       </div>
-      <div className={`${wideLabel ? 'px-4' : 'px-3'} py-2 text-[13px] text-[#181818] flex items-center min-h-[38px] min-w-0 overflow-hidden`}>
-        <div className="truncate w-full">{children}</div>
+      <div className={`${wideLabel ? 'px-4' : 'px-3'} py-2 text-[13px] text-[#181818] flex items-center min-h-[38px] min-w-0 w-full`}>
+        <div className="w-full min-w-0 truncate">{children}</div>
       </div>
     </div>
   )

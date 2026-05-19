@@ -147,10 +147,19 @@ export function AddressAutocomplete({ initial, onSelect, placeholder, required }
   }
 
   return (
-    <div className="pathwaze-autocomplete-host">
-      <div ref={containerRef} className="w-full" />
+    <div
+      className="pathwaze-autocomplete-host"
+      style={{
+        width: '100%',
+        minHeight: 32,
+        display: 'block',
+        whiteSpace: 'normal',
+        overflow: 'visible',
+      }}
+    >
+      <div ref={containerRef} style={{ width: '100%', minHeight: 30 }} />
       {!loaded && (
-        <p className="text-[11px] text-[#94a3b8] mt-0.5">Loading…</p>
+        <p style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>Loading…</p>
       )}
     </div>
   )
