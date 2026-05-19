@@ -53,7 +53,7 @@ export function ProjectDetailClient({ project, financials, milestones, stakehold
       </div>
 
       {/* Tab Content */}
-      <div className="px-8 py-7">
+      <div className="px-8 py-7 mx-auto w-full" style={{ maxWidth: 1400 }}>
         {activeTab === 'site' && <SiteTab project={project} buildings={buildings} meters={meters} systems={systems} />}
         {activeTab === 'utility' && <UtilityTab project={project} buildings={buildings} meters={meters} />}
         {activeTab === 'stakeholders' && <StakeholdersTab stakeholders={stakeholders} projectId={project.id} />}
@@ -67,7 +67,7 @@ export function ProjectDetailClient({ project, financials, milestones, stakehold
 
       {/* Activity feed — bottom of every project page, except when Threads tab is active */}
       {activeTab !== 'threads' && (
-        <div className="px-8 pb-10">
+        <div className="px-8 pb-10 mx-auto w-full" style={{ maxWidth: 1400 }}>
           <ProjectActivityActions projectId={project.id} projectName={project.name} users={users} />
           <ProjectActivityFeed entries={activity as ActivityEntry[]} />
         </div>

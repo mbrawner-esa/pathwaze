@@ -115,7 +115,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
       </div>
 
       {/* Map + Summary card */}
-      <div className="px-8 pt-7 grid gap-6" style={{ gridTemplateColumns: '30% 1fr' }}>
+      <div className="px-8 pt-7 grid gap-6 mx-auto w-full" style={{ gridTemplateColumns: '30% 1fr', maxWidth: 1400 }}>
         <div className="rounded-xl overflow-hidden bg-[#1a2332] relative">
           {project.lat && project.lng ? (
             <iframe
