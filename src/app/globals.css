@@ -15,17 +15,10 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* Google Places autocomplete element — keep default Google rendering but
-   make sure it can render inside our truncate/overflow-hidden cells. */
-gmp-place-autocomplete {
-  width: 100%;
-  display: block;
-}
-.pathwaze-autocomplete-host {
-  white-space: normal !important;
-  overflow: visible !important;
-  text-overflow: clip !important;
-  width: 100%;
+/* Google Places autocomplete dropdown — must float above modals/drawers */
+.pac-container {
+  z-index: 10000 !important;
+  font-family: var(--font-jakarta), -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
 }
 
 @layer components {

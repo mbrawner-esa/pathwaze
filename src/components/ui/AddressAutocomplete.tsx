@@ -12,9 +12,7 @@ export interface AddressData {
 }
 
 interface Props {
-  /** Initial value displayed in the search box */
   initial?: string
-  /** Fired when user picks a place from the dropdown */
   onSelect: (a: AddressData) => void
   placeholder?: string
   required?: boolean
@@ -52,36 +50,29 @@ function loadGoogleMaps(): Promise<void> {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-type AddressComponent = { longText: string; shortText: string; types: string[] }
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function parsePlace(place: any): AddressData {
-  const components: AddressComponent[] = place.addressComponents || []
-  const get = (type: string) => components.find(c => c.types.includes(type))?.longText ?? ''
-  const getShort = (type: string) => components.find(c => c.types.includes(type))?.shortText ?? ''
-
-  const lat = typeof place.location?.lat === 'function' ? place.location.lat() : (place.location?.lat ?? null)
-  const lng = typeof place.location?.lng === 'function' ? place.location.lng() : (place.location?.lng ?? null)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const components: Array<{ long_name: string; short_name: string; types: string[] }> = place.address_components || []
+  const get = (type: string) => components.find(c => c.types.includes(type))?.long_name ?? ''
+  const getShort = (type: string) => components.find(c => c.types.includes(type))?.short_name ?? ''
 
   return {
     street: [get('street_number'), get('route')].filter(Boolean).join(' ').trim(),
     city: get('locality') || get('sublocality') || get('postal_town') || get('administrative_area_level_2') || '',
     state: getShort('administrative_area_level_1'),
     zip: get('postal_code'),
-    lat,
-    lng,
-    formatted: place.formattedAddress || '',
+    lat: place.geometry?.location ? place.geometry.location.lat() : null,
+    lng: place.geometry?.location ? place.geometry.location.lng() : null,
+    formatted: place.formatted_address || '',
   }
 }
 
 export function AddressAutocomplete({ initial, onSelect, placeholder, required }: Props) {
-  const containerRef = useRef<HTMLDivElement>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
   const [loaded, setLoaded] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const onSelectRef = useRef(onSelect)
   onSelectRef.current = onSelect
-  // Snapshot initial value so changes don't re-mount the autocomplete
-  const initialRef = useRef(initial)
 
   useEffect(() => {
     loadGoogleMaps()
@@ -90,77 +81,39 @@ export function AddressAutocomplete({ initial, onSelect, placeholder, required }
   }, [])
 
   useEffect(() => {
-    if (!loaded || !containerRef.current) return
+    if (!loaded || !inputRef.current) return
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const g = (window as any).google
-    if (!g?.maps?.places?.PlaceAutocompleteElement) return
+    if (!g?.maps?.places?.Autocomplete) return
 
-    // Create the new web-component-based autocomplete
-    const el = new g.maps.places.PlaceAutocompleteElement({
-      includedRegionCodes: ['us'],
-      // types: ['address'],  // optional; comment out for broader results
+    const autocomplete = new g.maps.places.Autocomplete(inputRef.current, {
+      types: ['address'],
+      componentRestrictions: { country: 'us' },
+      fields: ['address_components', 'formatted_address', 'geometry.location'],
     })
-    if (initialRef.current) {
-      try { (el as HTMLInputElement & { value: string }).value = initialRef.current } catch { /* noop */ }
-    }
-    // Apply some sensible default styling so it matches our inputs
-    el.style.width = '100%'
 
-    containerRef.current.innerHTML = ''
-    containerRef.current.appendChild(el)
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const handler = async (event: any) => {
-      try {
-        const prediction = event?.placePrediction
-        if (!prediction) return
-        const place = prediction.toPlace()
-        await place.fetchFields({
-          fields: ['addressComponents', 'formattedAddress', 'location'],
-        })
-        onSelectRef.current(parsePlace(place))
-      } catch (e) {
-        console.warn('[address-autocomplete] place fetch failed:', e)
-      }
-    }
-    el.addEventListener('gmp-select', handler)
+    const listener = autocomplete.addListener('place_changed', () => {
+      const place = autocomplete.getPlace()
+      if (!place?.geometry?.location) return
+      onSelectRef.current(parsePlace(place))
+    })
 
     return () => {
-      try {
-        el.removeEventListener('gmp-select', handler)
-        el.remove()
-      } catch { /* noop */ }
+      try { g.maps.event.removeListener(listener) } catch { /* noop */ }
     }
   }, [loaded])
 
-  // Fallback when the API key is missing
-  if (error) {
-    return (
-      <input
-        type="text"
-        defaultValue={initial}
-        placeholder={placeholder || 'Start typing an address…'}
-        className="w-full px-3 py-2 text-[13px] border border-[#e2e8f0] rounded-md focus:outline-none focus:border-[#70A0D0] focus:ring-2 focus:ring-[#70A0D0]/20"
-        required={required}
-      />
-    )
-  }
-
+  // Standard input — Google attaches the autocomplete dropdown to it automatically
   return (
-    <div
-      className="pathwaze-autocomplete-host"
-      style={{
-        width: '100%',
-        minHeight: 32,
-        display: 'block',
-        whiteSpace: 'normal',
-        overflow: 'visible',
-      }}
-    >
-      <div ref={containerRef} style={{ width: '100%', minHeight: 30 }} />
-      {!loaded && (
-        <p style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>Loading…</p>
-      )}
-    </div>
+    <input
+      ref={inputRef}
+      type="text"
+      defaultValue={initial}
+      placeholder={loaded ? (placeholder || 'Start typing an address…') : 'Loading address search…'}
+      className="w-full px-2 py-1 text-[13px] text-[#181818] border border-[#cbd5e1] rounded focus:outline-none focus:border-[#70A0D0] focus:ring-2 focus:ring-[#70A0D0]/20"
+      required={required}
+      autoComplete="off"
+      disabled={!loaded && !error}
+    />
   )
 }
