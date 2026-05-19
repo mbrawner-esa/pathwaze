@@ -6,6 +6,7 @@ import { StageBadge } from '@/components/ui/StageBadge'
 import { Avatar } from '@/components/ui/Avatar'
 import { formatNumber, formatDate } from '@/lib/utils'
 import { FieldGrid, Field, FieldInput, FieldSelect } from './_editFields'
+import { AddressAutocomplete } from '@/components/ui/AddressAutocomplete'
 
 const STAGES = ['Archived', 'Pre-Planning', 'Design Development', 'Bidding', 'Late Stage Development', 'Pre-Closing', 'NTP', 'Pre-Construction', 'Active Construction', 'Post Construction', 'Closeout', 'Operating']
 const TRANCHES = ['TR01 - GLR', 'TR02 - WFD', 'TR03 - CFD', 'TR04 - EFD', 'TR05 - CORP']
@@ -20,6 +21,8 @@ interface Project {
   state: string
   address: string
   zip: string
+  lat?: number | null
+  lng?: number | null
   tranche?: string
   region?: string  // deprecated — kept for backward compat
   primary_stakeholder_id?: string | null
@@ -63,6 +66,8 @@ export function ProjectSummaryCard({
     city: project.city ?? '',
     state: project.state ?? '',
     zip: project.zip ?? '',
+    lat: project.lat ?? null as number | null,
+    lng: project.lng ?? null as number | null,
     target_cod: project.target_cod ? String(project.target_cod).slice(0, 10) : '',
     assignee_id: project.assignee_id ?? '',
     primary_stakeholder_id: project.primary_stakeholder_id ?? '',
@@ -78,6 +83,8 @@ export function ProjectSummaryCard({
       city: project.city ?? '',
       state: project.state ?? '',
       zip: project.zip ?? '',
+      lat: project.lat ?? null,
+      lng: project.lng ?? null,
       target_cod: project.target_cod ? String(project.target_cod).slice(0, 10) : '',
       assignee_id: project.assignee_id ?? '',
       primary_stakeholder_id: project.primary_stakeholder_id ?? '',
@@ -102,6 +109,8 @@ export function ProjectSummaryCard({
           city: form.city,
           state: form.state,
           zip: form.zip,
+          lat: form.lat,
+          lng: form.lng,
           target_cod: form.target_cod || null,
           assignee_id: form.assignee_id || null,
         }),
@@ -189,6 +198,31 @@ export function ProjectSummaryCard({
             ? <FieldSelect value={form.stage} options={STAGES} onChange={v => setForm(f => ({ ...f, stage: v }))} placeholder="— Stage —" />
             : <StageBadge stage={project.stage} />}
         </Field>
+
+        {/* Autocomplete row (edit mode only) — Google Places auto-fills the 4 cells below */}
+        {editing && (
+          <div className="col-span-2 grid grid-cols-[160px_1fr] border-b border-[#f1f5f9]">
+            <div className="px-4 py-3 bg-[#fafbfc] border-r border-[#f1f5f9] text-[11.5px] font-semibold text-[#3E3E3C] flex items-center min-h-[44px] whitespace-nowrap">
+              Search Address
+            </div>
+            <div className="px-4 py-3">
+              <AddressAutocomplete
+                initial={[form.address, form.city, form.state, form.zip].filter(Boolean).join(', ')}
+                onSelect={(a) => setForm(f => ({
+                  ...f,
+                  address: a.street || f.address,
+                  city: a.city || f.city,
+                  state: a.state || f.state,
+                  zip: a.zip || f.zip,
+                  lat: a.lat,
+                  lng: a.lng,
+                }))}
+                placeholder="Start typing — Google will auto-fill the fields below"
+              />
+              <p className="text-[10.5px] text-[#94a3b8] mt-1">Selecting an address populates Street, City, State, Zip + map coordinates.</p>
+            </div>
+          </div>
+        )}
 
         {/* Address row — 4 fields on one line: Street (flex) · City · State · Zip */}
         <div className="col-span-2 grid grid-cols-[minmax(0,2.4fr)_minmax(0,1.2fr)_minmax(0,0.7fr)_minmax(0,0.7fr)] border-b border-[#f1f5f9] min-w-0 w-full">

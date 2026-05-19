@@ -3,6 +3,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Plus, Trash2 } from 'lucide-react'
 import { RowDrawer, DrawerField, DrawerInput, DrawerSelect, DrawerTextarea, Section } from './_RowDrawer'
+import { AddressAutocomplete } from '@/components/ui/AddressAutocomplete'
 
 export interface Building {
   id: string
@@ -244,6 +245,20 @@ export function BuildingsTable({
 
         {/* Location — moved up under Area Name/Category */}
         <Section title="Location">
+          <div className="mb-3">
+            <label className="block text-[11px] font-semibold text-[#3E3E3C] mb-1.5">Search Address</label>
+            <AddressAutocomplete
+              initial={[form.address, form.city, form.state, form.zip].filter(Boolean).join(', ')}
+              onSelect={(a) => setForm(f => ({
+                ...f,
+                address: a.street || f.address,
+                city: a.city || f.city,
+                state: a.state || f.state,
+                zip: a.zip || f.zip,
+              }))}
+              placeholder="Start typing — auto-fills the fields below"
+            />
+          </div>
           <DrawerInput label="Street Address" value={form.address} onChange={v => setForm(f => ({ ...f, address: v }))} />
           <div className="grid grid-cols-3 gap-3">
             <DrawerInput label="City" value={form.city} onChange={v => setForm(f => ({ ...f, city: v }))} />
