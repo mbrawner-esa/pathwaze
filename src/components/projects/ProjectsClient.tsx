@@ -289,7 +289,8 @@ export function ProjectsClient({ projects, users = [] }: ProjectsClientProps) {
   return (
     <div>
       {/* Sticky header bar */}
-      <div className="bg-white border-b border-[#e2e8f0] px-8 py-5 flex items-center justify-between sticky top-[52px] z-30">
+      <div className="bg-white border-b border-[#e2e8f0] sticky top-[52px] z-30">
+        <div className="px-8 py-5 flex items-center justify-between max-w-7xl mx-auto w-full">
         <div>
           <div className="text-xl font-bold text-[#3E3E3C]">Portfolio Overview</div>
           <div className="text-[13px] text-[#3E3E3C] mt-0.5">{projects.length} projects · {totalKw} kWdc total</div>
@@ -300,10 +301,11 @@ export function ProjectsClient({ projects, users = [] }: ProjectsClientProps) {
         >
           <Plus size={14} /> New Project
         </button>
+        </div>
       </div>
 
       {/* Body */}
-      <div className="px-8 py-7">
+      <div className="px-8 py-7 max-w-7xl mx-auto w-full">
         <div className="bg-white rounded-xl shadow-sm overflow-hidden">
           {/* Filter bar */}
           <div className="px-6 py-4 border-b border-[#f1f5f9] flex items-center gap-2.5 flex-wrap">

@@ -234,19 +234,21 @@ export function StakeholdersClient({ stakeholders, projects }: { stakeholders: a
   return (
     <div>
       {/* Sticky header bar */}
-      <div className="bg-white border-b border-[#e2e8f0] px-8 py-5 flex items-center justify-between sticky top-[52px] z-30">
-        <div>
-          <div className="text-xl font-bold text-[#3E3E3C]">Stakeholders</div>
-          <div className="text-[13px] text-[#3E3E3C] mt-0.5">{filtered.length} of {stakeholders.length} contacts</div>
+      <div className="bg-white border-b border-[#e2e8f0] sticky top-[52px] z-30">
+        <div className="px-8 py-5 flex items-center justify-between max-w-7xl mx-auto w-full">
+          <div>
+            <div className="text-xl font-bold text-[#3E3E3C]">Stakeholders</div>
+            <div className="text-[13px] text-[#3E3E3C] mt-0.5">{filtered.length} of {stakeholders.length} contacts</div>
+          </div>
+          <button onClick={() => setShowNewModal(true)}
+            className="flex items-center gap-1.5 px-3.5 py-2 bg-[#70A0D0] text-white rounded-lg text-sm font-medium hover:bg-[#2C5485] transition-colors">
+            <Plus size={14} /> New Stakeholder
+          </button>
         </div>
-        <button onClick={() => setShowNewModal(true)}
-          className="flex items-center gap-1.5 px-3.5 py-2 bg-[#70A0D0] text-white rounded-lg text-sm font-medium hover:bg-[#2C5485] transition-colors">
-          <Plus size={14} /> New Stakeholder
-        </button>
       </div>
 
       {/* Body */}
-      <div className="px-8 py-7">
+      <div className="px-8 py-7 max-w-7xl mx-auto w-full">
         <div className="bg-white rounded-xl shadow-sm overflow-hidden">
           {/* Filter bar */}
           <div className="px-6 py-4 border-b border-[#f1f5f9] flex items-center gap-2.5 flex-wrap">
