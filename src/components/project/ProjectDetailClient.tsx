@@ -31,29 +31,31 @@ export function ProjectDetailClient({ project, financials, milestones, stakehold
 
   return (
     <div>
-      {/* Tab Bar */}
-      <div className="px-8 mt-6 bg-white border-b border-[#e2e8f0] flex overflow-x-auto">
-        {TABS.map(tab => {
-          const active = activeTab === tab.id
-          return (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className="px-5 py-3 text-[13px] font-medium whitespace-nowrap transition-colors -mb-px border-b-2"
-              style={{
-                color: active ? '#181818' : '#706E6B',
-                borderBottomColor: active ? '#E6C87A' : 'transparent',
-                fontWeight: active ? 600 : 500,
-              }}
-            >
-              {tab.label}
-            </button>
-          )
-        })}
+      {/* Tab Bar — full-width bottom border, inner items constrained */}
+      <div className="mt-6 bg-white border-b border-[#e2e8f0]">
+        <div className="px-8 flex overflow-x-auto mx-auto w-full" style={{ maxWidth: 1600 }}>
+          {TABS.map(tab => {
+            const active = activeTab === tab.id
+            return (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className="px-5 py-3 text-[13px] font-medium whitespace-nowrap transition-colors -mb-px border-b-2"
+                style={{
+                  color: active ? '#181818' : '#706E6B',
+                  borderBottomColor: active ? '#E6C87A' : 'transparent',
+                  fontWeight: active ? 600 : 500,
+                }}
+              >
+                {tab.label}
+              </button>
+            )
+          })}
+        </div>
       </div>
 
       {/* Tab Content */}
-      <div className="px-8 py-7 mx-auto w-full" style={{ maxWidth: 1400 }}>
+      <div className="px-8 py-7 mx-auto w-full" style={{ maxWidth: 1600 }}>
         {activeTab === 'site' && <SiteTab project={project} buildings={buildings} meters={meters} systems={systems} />}
         {activeTab === 'utility' && <UtilityTab project={project} buildings={buildings} meters={meters} />}
         {activeTab === 'stakeholders' && <StakeholdersTab stakeholders={stakeholders} projectId={project.id} />}
@@ -67,7 +69,7 @@ export function ProjectDetailClient({ project, financials, milestones, stakehold
 
       {/* Activity feed — bottom of every project page, except when Threads tab is active */}
       {activeTab !== 'threads' && (
-        <div className="px-8 pb-10 mx-auto w-full" style={{ maxWidth: 1400 }}>
+        <div className="px-8 pb-10 mx-auto w-full" style={{ maxWidth: 1600 }}>
           <ProjectActivityActions projectId={project.id} projectName={project.name} users={users} />
           <ProjectActivityFeed entries={activity as ActivityEntry[]} />
         </div>
