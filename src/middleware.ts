@@ -26,9 +26,11 @@ export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
   const isAuth = pathname.startsWith('/auth')
   const isPending = pathname === '/auth/pending'
-  const isPublic = pathname.startsWith('/investor')
+  const isPublic = pathname.startsWith('/investor') || pathname === '/email-logo'
 
-  // Not signed in → bounce to login (except for auth pages and public investor portal)
+  // Not signed in → bounce to login (except for auth pages, public investor
+  // portal, and the email-logo asset (fetched server-side by Resend for
+  // invite emails — must be publicly accessible).
   if (!session && !isAuth && !isPublic) {
     return NextResponse.redirect(new URL('/auth/login', request.url))
   }
