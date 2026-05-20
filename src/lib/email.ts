@@ -5,6 +5,8 @@ interface InviteEmailParams {
   to: string
   inviterName: string
   loginUrl: string
+  /** Origin of the request (e.g. https://pathwaze.vercel.app) — used to fetch the inline logo PNG. */
+  origin?: string
 }
 
 const LOGO_CID = 'pathwaze-logo'
@@ -25,8 +27,15 @@ export async function sendInviteEmail(params: InviteEmailParams): Promise<{ sent
     // ships the image inside the email body so recipient clients never
     // need to fetch externally — bypasses Gmail/Outlook image blocking
     // and Resend link-tracking rewrites.
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
+    //
+    // Prefer the caller-supplied origin (always correct since it comes from
+    // the incoming request URL). Falls back to NEXT_PUBLIC_APP_URL if not
+    // provided. Without one of those, the fetch hits localhost and fails
+    // silently — the email then goes out as multipart/alternative with no
+    // image, exactly what users reported.
+    const appUrl = params.origin || process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
     let logoAttachment: { filename: string; content: string; content_id: string; content_type: string } | null = null
+    let logoFetchError: string | null = null
     try {
       const r = await fetch(`${appUrl}/email-logo`)
       if (r.ok) {
@@ -38,10 +47,16 @@ export async function sendInviteEmail(params: InviteEmailParams): Promise<{ sent
           content_id: LOGO_CID,
           content_type: 'image/png',
         }
+      } else {
+        logoFetchError = `Logo fetch returned ${r.status}`
       }
-    } catch {
-      // If logo fetch fails, fall back to sending without the inline image.
-      // The HTML uses cid: so the recipient will just see the alt text.
+    } catch (e) {
+      logoFetchError = e instanceof Error ? e.message : 'Unknown logo fetch error'
+    }
+    if (logoFetchError) {
+      // Surface the failure to server logs so we don't silently ship
+      // logo-less emails again.
+      console.error('[sendInviteEmail] logo attachment skipped:', logoFetchError, 'appUrl:', appUrl)
     }
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

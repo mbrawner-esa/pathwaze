@@ -57,7 +57,7 @@ export async function POST(request: NextRequest) {
 
   // Best-effort email send. Track results so the UI can show which got mailed.
   const results = await Promise.all(cleaned.map(async email => {
-    const r = await sendInviteEmail({ to: email, inviterName, loginUrl })
+    const r = await sendInviteEmail({ to: email, inviterName, loginUrl, origin })
     return { email, sent: r.sent, error: r.error }
   }))
   const sentCount = results.filter(r => r.sent).length
