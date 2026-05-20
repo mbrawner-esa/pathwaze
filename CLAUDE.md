@@ -39,11 +39,17 @@ app UI, browser tabs, iOS home screen, and email.
 3. **`src/app/apple-icon.png`** — 256×256 iOS home screen icon. Next.js App
    Router metadata file. Must be a raster PNG.
 
-4. **`src/app/email-logo/route.tsx`** — Edge route that rasterizes the full
-   icon+wordmark lockup to PNG via `next/og`'s `ImageResponse`. Referenced by
-   the invite email template (`src/lib/email.ts`) as `${appUrl}/email-logo`.
-   Currently duplicates the SVG markup and `COLORS` from `PathwazeLogo.tsx` —
-   when the source SVG changes, copy the new paths/colors here too.
+4. **`public/email-logo.png`** — Pre-rendered icon+wordmark lockup (600×150
+   PNG, dark variant for navy email header) used by the invite email
+   template (`src/lib/email.ts`). To regenerate after a logo change:
+   `curl -s -o public/email-logo.png https://pathwaze.vercel.app/email-logo`
+   (this fetches a fresh render from the edge route below).
+
+5. **`src/app/email-logo/route.tsx`** — Edge route that rasterizes the full
+   icon+wordmark lockup to PNG via `next/og`'s `ImageResponse`. Used to
+   regenerate `public/email-logo.png` after a logo change. Duplicates the
+   SVG markup and `COLORS` from `PathwazeLogo.tsx` — when the source SVG
+   changes, copy the new paths/colors here too.
 
 ### When updating:
 

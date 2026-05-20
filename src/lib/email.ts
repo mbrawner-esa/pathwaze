@@ -5,11 +5,9 @@ interface InviteEmailParams {
   to: string
   inviterName: string
   loginUrl: string
-  /** Origin of the request (e.g. https://pathwaze.vercel.app) — used so Resend can fetch the inline logo. */
+  /** Kept for API compatibility; no longer used. */
   origin?: string
 }
-
-const LOGO_CID = 'pathwaze-logo'
 
 export async function sendInviteEmail(params: InviteEmailParams): Promise<{ sent: boolean; error?: string }> {
   const apiKey = process.env.RESEND_API_KEY
@@ -23,46 +21,12 @@ export async function sendInviteEmail(params: InviteEmailParams): Promise<{ sent
     // (e.g. "<noreply@x.com>"), strip them. Resend rejects that format.
     const from = /^<[^>]+>$/.test(fromRaw.trim()) ? fromRaw.trim().slice(1, -1) : fromRaw
 
-    // Fetch the logo PNG ourselves and send as base64 `content` (not `path`).
-    // Sending content directly gives Resend a cleaner signal to set
-    // Content-Disposition: inline + Content-ID header on the attachment,
-    // which makes the <img src="cid:..."> reference actually resolve.
-    //
-    // Now safe to fetch from inside the Vercel function because the auth
-    // middleware exempts /email-logo (see src/middleware.ts).
-    const appUrl = params.origin || process.env.NEXT_PUBLIC_APP_URL || 'https://pathwaze.vercel.app'
-    let logoContent: string | null = null
-    try {
-      const r = await fetch(`${appUrl}/email-logo`)
-      if (r.ok) {
-        const buf = await r.arrayBuffer()
-        logoContent = Buffer.from(buf).toString('base64')
-      } else {
-        console.error('[sendInviteEmail] logo fetch failed:', r.status, await r.text())
-      }
-    } catch (e) {
-      console.error('[sendInviteEmail] logo fetch error:', e)
-    }
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const sendArgs: any = {
+    const { error } = await resend.emails.send({
       from,
       to: params.to,
       subject: `${params.inviterName} invited you to Pathwaze`,
       html: inviteHtml(params),
-    }
-    if (logoContent) {
-      sendArgs.attachments = [
-        {
-          filename: 'pathwaze-logo.png',
-          content: logoContent,
-          content_id: LOGO_CID,
-          content_type: 'image/png',
-        },
-      ]
-    }
-
-    const { error } = await resend.emails.send(sendArgs)
+    })
     if (error) return { sent: false, error: error.message || 'Resend send failed' }
     return { sent: true }
   } catch (e) {
@@ -71,10 +35,13 @@ export async function sendInviteEmail(params: InviteEmailParams): Promise<{ sent
 }
 
 function inviteHtml({ inviterName, loginUrl }: InviteEmailParams): string {
-  // Logo is attached server-side by Resend (path → fetched → attached
-  // with Content-ID = pathwaze-logo). Renders reliably in every email
-  // client, including Outlook desktop, without external fetches.
-  const logoSrc = `cid:${LOGO_CID}`
+  // Logo is served as a static asset from public/email-logo.png.
+  // No CID, no attachments, no auth gates — just a plain image URL.
+  // Outlook will show "Show images" once for first-time recipients;
+  // adding pathwaze.esa-solar.com to Exchange safe senders eliminates
+  // even that step for internal users.
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://pathwaze.vercel.app'
+  const logoUrl = `${appUrl}/email-logo.png`
 
   return `<!DOCTYPE html>
 <html>
@@ -85,7 +52,7 @@ function inviteHtml({ inviterName, loginUrl }: InviteEmailParams): string {
       <table role="presentation" width="540" cellpadding="0" cellspacing="0" style="max-width:540px;background:#ffffff;border-radius:14px;overflow:hidden;box-shadow:0 1px 3px rgba(15,27,38,0.08);">
         <tr>
           <td style="background:#1C303C;padding:24px 32px;text-align:left;">
-            <img src="${logoSrc}" alt="Pathwaze" width="160" height="40" style="display:block;width:160px;height:40px;border:0;outline:none;text-decoration:none;" />
+            <img src="${logoUrl}" alt="Pathwaze" width="160" height="40" style="display:block;width:160px;height:40px;border:0;outline:none;text-decoration:none;" />
           </td>
         </tr>
         <tr>
