@@ -5,11 +5,9 @@ interface InviteEmailParams {
   to: string
   inviterName: string
   loginUrl: string
-  /** Origin of the request (e.g. https://pathwaze.vercel.app) — used to fetch the inline logo PNG. */
+  /** Kept for API compatibility but no longer used (logo is now pure HTML/CSS). */
   origin?: string
 }
-
-const LOGO_CID = 'pathwaze-logo'
 
 export async function sendInviteEmail(params: InviteEmailParams): Promise<{ sent: boolean; error?: string }> {
   const apiKey = process.env.RESEND_API_KEY
@@ -23,52 +21,12 @@ export async function sendInviteEmail(params: InviteEmailParams): Promise<{ sent
     // (e.g. "<noreply@x.com>"), strip them. Resend rejects that format.
     const from = /^<[^>]+>$/.test(fromRaw.trim()) ? fromRaw.trim().slice(1, -1) : fromRaw
 
-    // Fetch the logo PNG and attach it inline (cid:pathwaze-logo). This
-    // ships the image inside the email body so recipient clients never
-    // need to fetch externally — bypasses Gmail/Outlook image blocking
-    // and Resend link-tracking rewrites.
-    //
-    // Prefer the caller-supplied origin (always correct since it comes from
-    // the incoming request URL). Falls back to NEXT_PUBLIC_APP_URL if not
-    // provided. Without one of those, the fetch hits localhost and fails
-    // silently — the email then goes out as multipart/alternative with no
-    // image, exactly what users reported.
-    const appUrl = params.origin || process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
-    let logoAttachment: { filename: string; content: string; content_id: string; content_type: string } | null = null
-    let logoFetchError: string | null = null
-    try {
-      const r = await fetch(`${appUrl}/email-logo`)
-      if (r.ok) {
-        const buf = await r.arrayBuffer()
-        const base64 = Buffer.from(buf).toString('base64')
-        logoAttachment = {
-          filename: 'pathwaze-logo.png',
-          content: base64,
-          content_id: LOGO_CID,
-          content_type: 'image/png',
-        }
-      } else {
-        logoFetchError = `Logo fetch returned ${r.status}`
-      }
-    } catch (e) {
-      logoFetchError = e instanceof Error ? e.message : 'Unknown logo fetch error'
-    }
-    if (logoFetchError) {
-      // Surface the failure to server logs so we don't silently ship
-      // logo-less emails again.
-      console.error('[sendInviteEmail] logo attachment skipped:', logoFetchError, 'appUrl:', appUrl)
-    }
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const sendArgs: any = {
+    const { error } = await resend.emails.send({
       from,
       to: params.to,
       subject: `${params.inviterName} invited you to Pathwaze`,
       html: inviteHtml(params),
-    }
-    if (logoAttachment) sendArgs.attachments = [logoAttachment]
-
-    const { error } = await resend.emails.send(sendArgs)
+    })
     if (error) return { sent: false, error: error.message || 'Resend send failed' }
     return { sent: true }
   } catch (e) {
@@ -77,11 +35,9 @@ export async function sendInviteEmail(params: InviteEmailParams): Promise<{ sent
 }
 
 function inviteHtml({ inviterName, loginUrl }: InviteEmailParams): string {
-  // Logo is shipped inline as a CID attachment — see sendInviteEmail above.
-  // Renders reliably without depending on the recipient's image-loading
-  // preferences or external URL fetches.
-  const logoSrc = `cid:${LOGO_CID}`
-
+  // Brand header rendered as pure HTML/CSS — no image, no attachment, no
+  // external fetch. Renders identically in every email client (Outlook
+  // desktop included). The yellow circle mirrors the icon-mark dot.
   return `<!DOCTYPE html>
 <html>
 <head><meta charset="utf-8"></head>
@@ -90,8 +46,17 @@ function inviteHtml({ inviterName, loginUrl }: InviteEmailParams): string {
     <tr><td align="center">
       <table role="presentation" width="540" cellpadding="0" cellspacing="0" style="max-width:540px;background:#ffffff;border-radius:14px;overflow:hidden;box-shadow:0 1px 3px rgba(15,27,38,0.08);">
         <tr>
-          <td style="background:#1C303C;padding:24px 32px;text-align:left;">
-            <img src="${logoSrc}" alt="Pathwaze" width="160" height="40" style="display:block;width:160px;height:40px;border:0;outline:none;text-decoration:none;" />
+          <td style="background:#1C303C;padding:28px 32px;text-align:left;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;">
+            <table role="presentation" cellpadding="0" cellspacing="0" style="border-collapse:collapse;">
+              <tr>
+                <td style="vertical-align:middle;padding-right:12px;">
+                  <div style="width:14px;height:14px;background:#F8D068;border-radius:50%;display:inline-block;"></div>
+                </td>
+                <td style="vertical-align:middle;">
+                  <span style="font-size:24px;font-weight:700;color:#F4F7FA;letter-spacing:-0.01em;line-height:1;">pathwaze</span>
+                </td>
+              </tr>
+            </table>
           </td>
         </tr>
         <tr>
