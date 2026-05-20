@@ -60,13 +60,14 @@ export default async function DashboardPage() {
     { data: tasksDueThisWeek },
     { data: completedActivity },
     { data: myThreadEntries },
+    { data: myProjectThreadEntries },
     { data: recentActivity },
   ] = await Promise.all([
     // Tasks due this week (mine, not complete)
     supabase
       .from('tasks')
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      .select('id, title, status, priority, due_date, type, project_id, project:projects(name)') as any,
+      .select('id, title, status, priority, due_date, type, project_id, assignee_id, project:projects(name)') as any,
     // Activity log: my Complete transitions in last 7 days
     supabase
       .from('activity_log')
@@ -83,13 +84,20 @@ export default async function DashboardPage() {
       .eq('user_id', user.id)
       .order('created_at', { ascending: false })
       .limit(20),
+    // project_threads I posted to recently (Slack channel sync + UI posts)
+    supabase
+      .from('project_threads')
+      .select('id, project_id, message, user_name, created_at')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false })
+      .limit(20),
     // Activity log for active-projects ranking (last 30 days)
     supabase
       .from('activity_log')
-      .select('id, entity_type, entity_id, created_at')
+      .select('id, entity_type, entity_id, created_at, metadata')
       .gte('created_at', thirtyDaysAgo)
       .order('created_at', { ascending: false })
-      .limit(300),
+      .limit(500),
   ])
 
   // Filter tasks client-side (assignee = me AND due_date in week range AND not Complete)
@@ -126,27 +134,39 @@ export default async function DashboardPage() {
     myCompletedLastWeek.push({ task, completedAt: a.created_at })
   }
 
-  // Top conversations: most recent task threads I posted to (dedup per task)
-  const seenThreadTask = new Set<string>()
+  // Top conversations: merge task_threads + project_threads I posted to (dedup, most recent first)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const combinedThreads: any[] = [
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ...((myThreadEntries ?? []) as any[]).map(t => ({ kind: 'task' as const, key: `task-${t.task_id}`, task_id: t.task_id, project_id: null, message: t.message, created_at: t.created_at, id: t.id })),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ...((myProjectThreadEntries ?? []) as any[]).map(t => ({ kind: 'project' as const, key: `proj-${t.project_id}`, task_id: null, project_id: t.project_id, message: t.message, created_at: t.created_at, id: t.id })),
+  ].sort((a, b) => (a.created_at < b.created_at ? 1 : -1))
+
+  const seenThreadKey = new Set<string>()
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const myRecentThreads: any[] = []
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  for (const t of ((myThreadEntries ?? []) as any[])) {
-    if (seenThreadTask.has(t.task_id)) continue
-    seenThreadTask.add(t.task_id)
+  for (const t of combinedThreads) {
+    if (seenThreadKey.has(t.key)) continue
+    seenThreadKey.add(t.key)
     myRecentThreads.push(t)
     if (myRecentThreads.length >= 5) break
   }
   // Resolve task + project info for each
-  const threadTaskIds = myRecentThreads.map(t => t.task_id)
-  const { data: threadTasks } = threadTaskIds.length > 0
-    ? await supabase
-        .from('tasks')
-        .select('id, title, project:projects(name)')
-        .in('id', threadTaskIds) as unknown as { data: any[] | null }
-    : { data: [] }
+  const threadTaskIds = myRecentThreads.filter(t => t.kind === 'task').map(t => t.task_id)
+  const threadProjectIds = myRecentThreads.filter(t => t.kind === 'project').map(t => t.project_id)
+  const [{ data: threadTasks }, { data: threadProjects }] = await Promise.all([
+    threadTaskIds.length > 0
+      ? supabase.from('tasks').select('id, title, project:projects(name)').in('id', threadTaskIds) as unknown as Promise<{ data: any[] | null }>
+      : Promise.resolve({ data: [] as any[] }),
+    threadProjectIds.length > 0
+      ? supabase.from('projects').select('id, name').in('id', threadProjectIds) as unknown as Promise<{ data: any[] | null }>
+      : Promise.resolve({ data: [] as any[] }),
+  ])
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const threadTaskMap = new Map<string, any>((threadTasks ?? []).map(t => [t.id, t]))
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const threadProjectMap = new Map<string, any>((threadProjects ?? []).map(p => [p.id, p]))
 
   // Active projects: aggregate activity_log by project_id (via task/stakeholder linkage)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -170,7 +190,13 @@ export default async function DashboardPage() {
   const projectStats: Record<string, { count: number; last: string }> = {}
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   ;((recentActivity ?? []) as any[]).forEach(a => {
-    const pid = entityToProject.get(a.entity_id)
+    // Resolve project_id from multiple sources:
+    //  1. entity_type='project' → entity_id IS the project_id
+    //  2. task/stakeholder → look up FK
+    //  3. fallback: metadata.project_id (permits, milestones, financials, etc.)
+    let pid: string | undefined
+    if (a.entity_type === 'project') pid = a.entity_id
+    else pid = entityToProject.get(a.entity_id) ?? a.metadata?.project_id
     if (!pid) return
     if (!projectStats[pid]) projectStats[pid] = { count: 0, last: a.created_at }
     projectStats[pid].count++
@@ -313,16 +339,30 @@ export default async function DashboardPage() {
                 <EmptyState text="No recent messages. Drop a thought in a task thread to start." />
               ) : (
                 myRecentThreads.map(t => {
-                  const task = threadTaskMap.get(t.task_id)
-                  if (!task) return null
+                  let title = ''
+                  let subtitle = ''
+                  let href = '/tasks'
+                  if (t.kind === 'task') {
+                    const task = threadTaskMap.get(t.task_id)
+                    if (!task) return null
+                    title = task.title
+                    subtitle = task.project?.name ?? 'No project'
+                    href = '/tasks'
+                  } else {
+                    const proj = threadProjectMap.get(t.project_id)
+                    if (!proj) return null
+                    title = `${proj.name} — Threads`
+                    subtitle = proj.name
+                    href = `/projects/${t.project_id}`
+                  }
                   return (
-                    <Link key={t.id} href="/tasks" className="flex items-start gap-3 px-4 py-3 rounded-lg hover:bg-[#fafbfc] transition-colors">
+                    <Link key={t.id} href={href} className="flex items-start gap-3 px-4 py-3 rounded-lg hover:bg-[#fafbfc] transition-colors">
                       <Avatar name={fullName} imageUrl={avatarUrl} size="sm" />
                       <div className="flex-1 min-w-0">
-                        <p className="text-[13.5px] font-medium text-[#181818] truncate">{task.title}</p>
+                        <p className="text-[13.5px] font-medium text-[#181818] truncate">{title}</p>
                         <p className="text-[12px] text-[#3E3E3C] line-clamp-1 mt-0.5">&ldquo;{t.message}&rdquo;</p>
                         <p className="text-[10.5px] text-[#706E6B] mt-1">
-                          {task.project?.name ?? 'No project'} · {formatDate(t.created_at)}
+                          {subtitle} · {formatDate(t.created_at)}
                         </p>
                       </div>
                     </Link>
