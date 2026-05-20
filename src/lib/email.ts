@@ -36,7 +36,7 @@ function inviteHtml({ inviterName, loginUrl }: InviteEmailParams): string {
   // Absolute logo URL — points at the live /icon.png so swapping the file
   // automatically updates every future email without code changes.
   const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
-  const logoUrl = `${appUrl}/icon.png`
+  const logoUrl = `${appUrl}/email-logo.png`
 
   return `<!DOCTYPE html>
 <html>
