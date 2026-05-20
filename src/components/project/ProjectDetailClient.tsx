@@ -1,5 +1,6 @@
 'use client'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { useSearchParams, useRouter, usePathname } from 'next/navigation'
 import { SiteTab } from './SiteTab'
 import { UtilityTab } from './UtilityTab'
 import { StakeholdersTab } from './StakeholdersTab'
@@ -25,9 +26,31 @@ const TABS = [
   // { id: 'dataroom', label: 'Data Room' },
 ]
 
+const VALID_TAB_IDS = new Set(TABS.map(t => t.id))
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function ProjectDetailClient({ project, financials, milestones, stakeholders, permits, docs, buildings, meters, systems, threads = [], activity = [], users = [] }: any) {
-  const [activeTab, setActiveTab] = useState('threads')
+  const router = useRouter()
+  const pathname = usePathname()
+  const searchParams = useSearchParams()
+
+  // Initial tab honors ?tab=<id> on the URL so deep links from tasks land
+  // on the right tab. Falls back to "threads" (default landing tab).
+  const tabFromUrl = searchParams.get('tab')
+  const initialTab = tabFromUrl && VALID_TAB_IDS.has(tabFromUrl) ? tabFromUrl : 'threads'
+  const [activeTab, setActiveTab] = useState(initialTab)
+
+  // Keep the URL in sync when the user clicks a tab — so refreshing or
+  // sharing the link goes back to the same tab.
+  useEffect(() => {
+    if (activeTab === (tabFromUrl || 'threads')) return
+    const params = new URLSearchParams(searchParams.toString())
+    if (activeTab === 'threads') params.delete('tab')
+    else params.set('tab', activeTab)
+    const qs = params.toString()
+    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab])
 
   return (
     <div>

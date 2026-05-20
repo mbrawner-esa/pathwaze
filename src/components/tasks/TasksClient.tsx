@@ -1,10 +1,46 @@
 'use client'
 import { useState, useMemo, useEffect, useCallback } from 'react'
-import { Search, List, LayoutGrid, X, Plus, Send, MessageSquare, CheckCircle, Activity, Slack, Pencil, Paperclip, ExternalLink, Trash2, Upload, Download, ChevronDown } from 'lucide-react'
+import { Search, List, LayoutGrid, X, Plus, Send, MessageSquare, CheckCircle, Activity, Slack, Pencil, Paperclip, ExternalLink, Trash2, Upload, Download, ChevronDown, Copy, Link2 } from 'lucide-react'
+import Link from 'next/link'
 import { formatDate } from '@/lib/utils'
 import { Avatar } from '@/components/ui/Avatar'
 import { useRouter } from 'next/navigation'
 import { createClient as createBrowserClient } from '@/lib/supabase/client'
+
+// Map a task_links entity_type to the project-page tab that hosts it,
+// so a link click lands on the right tab.
+const ENTITY_TAB: Record<string, string> = {
+  project:     'site',
+  building:    'site',
+  meter:       'utility',
+  system:      'technical',
+  permit:      'permitting',
+  stakeholder: 'stakeholders',
+}
+
+const ENTITY_LABELS: Record<string, string> = {
+  project:     'Project',
+  building:    'Building',
+  meter:       'Meter',
+  system:      'System',
+  permit:      'Permit',
+  stakeholder: 'Stakeholder',
+}
+
+// Render a short, descriptive label for the linked entity in a badge.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function linkLabel(entityType: string, entity: any): string {
+  if (!entity) return `(deleted ${entityType})`
+  switch (entityType) {
+    case 'project':     return entity.name || entity.project_number || 'Project'
+    case 'building':    return entity.name || 'Building'
+    case 'meter':       return entity.account_number ? `Meter ${entity.account_number}` : 'Meter'
+    case 'system':      return entity.label || `${entity.system_kwdc ?? '?'} kWdc system`
+    case 'permit':      return `${entity.type ?? 'Permit'}${entity.status ? ` (${entity.status})` : ''}`
+    case 'stakeholder': return entity.name || 'Stakeholder'
+    default: return entityType
+  }
+}
 
 const STATUS_COLORS: Record<string, { bg: string; text: string }> = {
   'Draft': { bg: '#F8FAFC', text: '#475569' },
@@ -116,6 +152,19 @@ export function TasksClient({ tasks: initialTasks, projects, users }: { tasks: a
   const [savingFile, setSavingFile] = useState(false)
   const [uploadProgress, setUploadProgress] = useState<string | null>(null)
   const [fileError, setFileError] = useState<string | null>(null)
+
+  // Task links (polymorphic refs to project entities)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [taskLinks, setTaskLinks] = useState<any[]>([])
+  const [loadingTaskLinks, setLoadingTaskLinks] = useState(false)
+  const [showAddLink, setShowAddLink] = useState(false)
+  const [linkType, setLinkType] = useState<'project'|'building'|'meter'|'system'|'permit'|'stakeholder'>('building')
+  const [linkEntityId, setLinkEntityId] = useState('')
+  const [savingLink, setSavingLink] = useState(false)
+  const [linkError, setLinkError] = useState<string | null>(null)
+  // Lazily-loaded entity catalog for the picker, keyed by `${projectId}:${type}`.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [linkCatalog, setLinkCatalog] = useState<Record<string, any[]>>({})
 
   // Drawer edit state
   const [editingDrawer, setEditingDrawer] = useState(false)
@@ -231,6 +280,69 @@ export function TasksClient({ tasks: initialTasks, projects, users }: { tasks: a
     setLoadingFiles(false)
   }, [])
 
+  const loadTaskLinks = useCallback(async (taskId: string) => {
+    setLoadingTaskLinks(true)
+    try {
+      const res = await fetch(`/api/tasks/${taskId}/links`)
+      if (res.ok) setTaskLinks(await res.json())
+    } catch { /* ignore */ }
+    setLoadingTaskLinks(false)
+  }, [])
+
+  // Fetch the catalog of entities for a given project + type, cached for the session.
+  async function loadLinkCatalog(projectId: string, type: typeof linkType) {
+    const key = `${projectId}:${type}`
+    if (linkCatalog[key]) return
+    const browserSb = createBrowserClient()
+    let query
+    if (type === 'project') {
+      // Special case: linking to the project itself (just one choice — the current project).
+      query = browserSb.from('projects').select('id, name, project_number').eq('id', projectId)
+    } else if (type === 'building') {
+      query = browserSb.from('buildings').select('id, name, project_id').eq('project_id', projectId).order('created_at')
+    } else if (type === 'meter') {
+      query = browserSb.from('meters').select('id, account_number, building_id').eq('project_id', projectId).order('created_at')
+    } else if (type === 'system') {
+      query = browserSb.from('systems').select('id, label, system_kwdc, project_id').eq('project_id', projectId).order('created_at')
+    } else if (type === 'permit') {
+      query = browserSb.from('permits').select('id, type, status, project_id').eq('project_id', projectId).order('created_at')
+    } else {
+      query = browserSb.from('stakeholders').select('id, name, role, project_id').eq('project_id', projectId).order('name')
+    }
+    const { data } = await query
+    setLinkCatalog(prev => ({ ...prev, [key]: data ?? [] }))
+  }
+
+  async function addTaskLink() {
+    if (!selectedTask || !linkEntityId) return
+    setSavingLink(true)
+    setLinkError(null)
+    try {
+      const res = await fetch(`/api/tasks/${selectedTask}/links`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ entity_type: linkType, entity_id: linkEntityId }),
+      })
+      if (res.ok) {
+        await loadTaskLinks(selectedTask)
+        setShowAddLink(false)
+        setLinkEntityId('')
+      } else {
+        const b = await res.json().catch(() => ({}))
+        setLinkError(b?.error || `Failed (${res.status})`)
+      }
+    } catch (err) {
+      setLinkError(err instanceof Error ? err.message : 'Network error')
+    }
+    setSavingLink(false)
+  }
+
+  async function removeTaskLink(linkId: string) {
+    if (!selectedTask) return
+    const res = await fetch(`/api/tasks/${selectedTask}/links/${linkId}`, { method: 'DELETE' })
+    if (res.ok) setTaskLinks(prev => prev.filter(l => l.id !== linkId))
+  }
+
   async function uploadFile(file: File) {
     if (!selectedTask) return
     setSavingFile(true)
@@ -334,17 +446,22 @@ export function TasksClient({ tasks: initialTasks, projects, users }: { tasks: a
       loadComments(selectedTask)
       loadActivity(selectedTask)
       loadFiles(selectedTask)
+      loadTaskLinks(selectedTask)
     } else {
       setComments([])
       setActivity([])
       setFiles([])
+      setTaskLinks([])
     }
     // Reset edit state when selection changes
     setEditingDrawer(false)
     setEditError(null)
     setShowAddFile(false)
     setFileError(null)
-  }, [selectedTask, loadComments, loadActivity, loadFiles])
+    setShowAddLink(false)
+    setLinkError(null)
+    setLinkEntityId('')
+  }, [selectedTask, loadComments, loadActivity, loadFiles, loadTaskLinks])
 
   function startDrawerEdit() {
     if (!selected) return
@@ -396,6 +513,25 @@ export function TasksClient({ tasks: initialTasks, projects, users }: { tasks: a
       setEditError(err instanceof Error ? err.message : 'Network error')
     }
     setSavingDrawer(false)
+  }
+
+  // Pre-fill the New Task modal with the selected task's fields so the user
+  // can tweak before saving. Closes the drawer so the modal can take focus.
+  function duplicateTask() {
+    if (!selected) return
+    setForm({
+      project_id: selected.project_id || '',
+      title: `${selected.title} (copy)`,
+      description: selected.description || '',
+      type: selected.type || 'Administrative',
+      priority: selected.priority || 'Medium',
+      assignee_id: selected.assignee_id || '',
+      approver_id: selected.approver_id || '',
+      requires_approval: !!selected.requires_approval,
+      due_date: '',
+    })
+    setSelectedTask(null)
+    setShowNewModal(true)
   }
 
   async function handleCreateTask() {
@@ -599,7 +735,15 @@ export function TasksClient({ tasks: initialTasks, projects, users }: { tasks: a
                                 <span className="text-[10px] bg-[#FDF4FF] text-[#7e22ce] px-1.5 py-0.5 rounded">Approval</span>
                               )}
                             </div>
-                            {task.project && <p className="text-xs text-[#706E6B] mt-0.5 ml-3.5">{task.project.name}</p>}
+                            {task.project && (
+                              <Link
+                                href={`/projects/${task.project_id}`}
+                                onClick={e => e.stopPropagation()}
+                                className="block text-xs text-[#706E6B] mt-0.5 ml-3.5 hover:text-[#2C5485] hover:underline w-fit"
+                              >
+                                {task.project.name}
+                              </Link>
+                            )}
                           </td>
                           <td className="px-3 py-3 text-[#3E3E3C]">{task.type}</td>
                           <td className="px-3 py-3">
@@ -741,7 +885,15 @@ export function TasksClient({ tasks: initialTasks, projects, users }: { tasks: a
                             </div>
                             <p className="text-sm font-medium text-[#181818] leading-tight mb-2">{task.title}</p>
                             <div className="flex items-center justify-between">
-                              <span className="text-xs text-[#706E6B] truncate">{task.project?.name}</span>
+                              {task.project ? (
+                                <Link
+                                  href={`/projects/${task.project_id}`}
+                                  onClick={e => e.stopPropagation()}
+                                  className="text-xs text-[#706E6B] truncate hover:text-[#2C5485] hover:underline min-w-0"
+                                >
+                                  {task.project.name}
+                                </Link>
+                              ) : <span className="text-xs text-[#706E6B] truncate">{task.project?.name}</span>}
                               <div className="flex items-center gap-1 flex-shrink-0">
                                 {task.assignee?.full_name && <Avatar name={task.assignee.full_name} imageUrl={task.assignee.avatar_url} size="sm" />}
                               </div>
@@ -802,7 +954,13 @@ export function TasksClient({ tasks: initialTasks, projects, users }: { tasks: a
                     <h2 className="text-[18px] font-semibold text-[#181818] leading-tight">{selected.title}</h2>
                   )}
                   {selected.project && !editingDrawer && (
-                    <p className="text-[12.5px] text-[#3E3E3C] mt-1">{selected.project.name}</p>
+                    <Link
+                      href={`/projects/${selected.project_id}`}
+                      className="text-[12.5px] text-[#3E3E3C] mt-1 hover:text-[#2C5485] hover:underline inline-flex items-center gap-1 w-fit"
+                    >
+                      {selected.project.name}
+                      <ExternalLink size={11} className="opacity-60" />
+                    </Link>
                   )}
                 </div>
                 <div className="flex items-center gap-2 flex-shrink-0">
@@ -837,13 +995,22 @@ export function TasksClient({ tasks: initialTasks, projects, users }: { tasks: a
                       </button>
                     </>
                   ) : (
-                    <button
-                      onClick={startDrawerEdit}
-                      title="Edit task"
-                      className="text-[#706E6B] hover:text-[#181818] hover:bg-[#F3F2F2] p-1.5 rounded transition-colors"
-                    >
-                      <Pencil size={16} />
-                    </button>
+                    <>
+                      <button
+                        onClick={duplicateTask}
+                        title="Duplicate task"
+                        className="text-[#706E6B] hover:text-[#181818] hover:bg-[#F3F2F2] p-1.5 rounded transition-colors"
+                      >
+                        <Copy size={16} />
+                      </button>
+                      <button
+                        onClick={startDrawerEdit}
+                        title="Edit task"
+                        className="text-[#706E6B] hover:text-[#181818] hover:bg-[#F3F2F2] p-1.5 rounded transition-colors"
+                      >
+                        <Pencil size={16} />
+                      </button>
+                    </>
                   )}
                   <button onClick={() => setSelectedTask(null)} className="text-[#706E6B] hover:text-[#181818] hover:bg-[#F3F2F2] p-1.5 rounded transition-colors">
                     <X size={18} />
@@ -1065,6 +1232,114 @@ export function TasksClient({ tasks: initialTasks, projects, users }: { tasks: a
                       </button>
                     </div>
                   )}
+                </div>
+              )}
+
+              {/* Related — links to buildings, meters, systems, permits, etc */}
+              {selected.project_id && (
+                <div className="mb-5 bg-white border border-[#e2e8f0] rounded-lg overflow-hidden">
+                  <div className="px-4 py-3 border-b border-[#f1f5f9] flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Link2 size={14} className="text-[#3E3E3C]" />
+                      <span className="text-[13px] font-semibold text-[#181818]">Related</span>
+                      <span className="text-[11px] text-[#706E6B]">{taskLinks.length}</span>
+                    </div>
+                    {!showAddLink && (
+                      <button
+                        onClick={() => {
+                          setShowAddLink(true)
+                          loadLinkCatalog(selected.project_id, linkType)
+                        }}
+                        className="btn-secondary"
+                      >
+                        <Plus size={12} /> Link
+                      </button>
+                    )}
+                  </div>
+                  <div className="px-4 py-3">
+                    {showAddLink && (
+                      <div className="mb-3 p-3 bg-[#fafbfc] border border-[#e2e8f0] rounded-lg">
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <label className="block text-[11px] font-semibold text-[#706E6B] uppercase tracking-wider mb-1">Type</label>
+                            <select
+                              value={linkType}
+                              onChange={e => {
+                                const v = e.target.value as typeof linkType
+                                setLinkType(v); setLinkEntityId('')
+                                loadLinkCatalog(selected.project_id, v)
+                              }}
+                              className="w-full px-2 py-1 border border-[#cbd5e1] rounded text-[13px] bg-white focus:outline-none focus:border-[#70A0D0] focus:ring-2 focus:ring-[#70A0D0]/20"
+                            >
+                              <option value="building">Building</option>
+                              <option value="meter">Meter</option>
+                              <option value="system">System</option>
+                              <option value="permit">Permit</option>
+                              <option value="stakeholder">Stakeholder</option>
+                              <option value="project">Project</option>
+                            </select>
+                          </div>
+                          <div>
+                            <label className="block text-[11px] font-semibold text-[#706E6B] uppercase tracking-wider mb-1">Record</label>
+                            <select
+                              value={linkEntityId}
+                              onChange={e => setLinkEntityId(e.target.value)}
+                              className="w-full px-2 py-1 border border-[#cbd5e1] rounded text-[13px] bg-white focus:outline-none focus:border-[#70A0D0] focus:ring-2 focus:ring-[#70A0D0]/20"
+                            >
+                              <option value="">— Select —</option>
+                              {(linkCatalog[`${selected.project_id}:${linkType}`] ?? []).map(item => (
+                                <option key={item.id} value={item.id}>{linkLabel(linkType, item)}</option>
+                              ))}
+                            </select>
+                          </div>
+                        </div>
+                        {linkError && <p className="text-[11px] text-[#991b1b] mt-2">{linkError}</p>}
+                        <div className="flex justify-end gap-2 mt-3">
+                          <button
+                            onClick={() => { setShowAddLink(false); setLinkEntityId(''); setLinkError(null) }}
+                            disabled={savingLink}
+                            className="px-3 py-1 text-[12px] text-[#3E3E3C] hover:text-[#181818]"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            onClick={addTaskLink}
+                            disabled={savingLink || !linkEntityId}
+                            className="btn-primary text-[12px]"
+                          >
+                            {savingLink ? 'Saving…' : 'Add Link'}
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                    {loadingTaskLinks ? (
+                      <p className="text-xs text-[#706E6B]">Loading...</p>
+                    ) : taskLinks.length === 0 && !showAddLink ? (
+                      <p className="text-xs text-[#706E6B] py-2">No linked records yet — link a building, meter, system, permit, or stakeholder.</p>
+                    ) : (
+                      <ul className="flex flex-wrap gap-1.5">
+                        {taskLinks.map(l => {
+                          const tab = ENTITY_TAB[l.entity_type] ?? 'site'
+                          const href = `/projects/${selected.project_id}?tab=${tab}`
+                          return (
+                            <li key={l.id} className="inline-flex items-center gap-1 pl-2 pr-1 py-1 bg-[#EFF6FF] border border-[#bfdbfe] rounded-full text-[12px]">
+                              <Link href={href} className="inline-flex items-center gap-1.5 text-[#1d4ed8] hover:text-[#1e40af]">
+                                <span className="text-[10px] font-semibold uppercase tracking-wider opacity-70">{ENTITY_LABELS[l.entity_type]}</span>
+                                <span className="font-medium">{linkLabel(l.entity_type, l.entity)}</span>
+                              </Link>
+                              <button
+                                onClick={() => removeTaskLink(l.id)}
+                                title="Remove link"
+                                className="ml-1 p-0.5 hover:bg-[#dbeafe] rounded-full text-[#3b82f6]"
+                              >
+                                <X size={11} />
+                              </button>
+                            </li>
+                          )
+                        })}
+                      </ul>
+                    )}
+                  </div>
                 </div>
               )}
 
