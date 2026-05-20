@@ -14,7 +14,10 @@ export async function sendInviteEmail(params: InviteEmailParams): Promise<{ sent
   try {
     const { Resend } = await import('resend')
     const resend = new Resend(apiKey)
-    const from = process.env.RESEND_FROM || 'Pathwaze <onboarding@resend.dev>'
+    const fromRaw = process.env.RESEND_FROM || 'Pathwaze <onboarding@resend.dev>'
+    // Defensive: if the env var is a bare email wrapped in angle brackets
+    // (e.g. "<noreply@x.com>"), strip them. Resend rejects that format.
+    const from = /^<[^>]+>$/.test(fromRaw.trim()) ? fromRaw.trim().slice(1, -1) : fromRaw
 
     const { error } = await resend.emails.send({
       from,
