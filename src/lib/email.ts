@@ -5,9 +5,11 @@ interface InviteEmailParams {
   to: string
   inviterName: string
   loginUrl: string
-  /** Kept for API compatibility but no longer used (logo is now pure HTML/CSS). */
+  /** Origin of the request (e.g. https://pathwaze.vercel.app) — used so Resend can fetch the inline logo. */
   origin?: string
 }
+
+const LOGO_CID = 'pathwaze-logo'
 
 export async function sendInviteEmail(params: InviteEmailParams): Promise<{ sent: boolean; error?: string }> {
   const apiKey = process.env.RESEND_API_KEY
@@ -21,11 +23,31 @@ export async function sendInviteEmail(params: InviteEmailParams): Promise<{ sent
     // (e.g. "<noreply@x.com>"), strip them. Resend rejects that format.
     const from = /^<[^>]+>$/.test(fromRaw.trim()) ? fromRaw.trim().slice(1, -1) : fromRaw
 
+    // Build the logo URL for Resend to fetch server-side. Resend's
+    // attachment `path` field accepts a URL — their infrastructure
+    // downloads and attaches it, then we reference via cid: in the HTML.
+    // This avoids the Vercel-function-localhost issue (we never fetch
+    // ourselves) and bypasses Outlook's external-image blocking
+    // (it's a proper inline attachment, not an external <img src>).
+    const appUrl = params.origin || process.env.NEXT_PUBLIC_APP_URL || 'https://pathwaze.vercel.app'
+    const logoPath = `${appUrl}/email-logo`
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { error } = await resend.emails.send({
       from,
       to: params.to,
       subject: `${params.inviterName} invited you to Pathwaze`,
       html: inviteHtml(params),
+      attachments: [
+        {
+          filename: 'pathwaze-logo.png',
+          path: logoPath,
+          // content_id requires resend SDK v4+. Lets the HTML reference
+          // the attachment via <img src="cid:pathwaze-logo">.
+          content_id: LOGO_CID,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        } as any,
+      ],
     })
     if (error) return { sent: false, error: error.message || 'Resend send failed' }
     return { sent: true }
@@ -35,9 +57,11 @@ export async function sendInviteEmail(params: InviteEmailParams): Promise<{ sent
 }
 
 function inviteHtml({ inviterName, loginUrl }: InviteEmailParams): string {
-  // Brand header rendered as pure HTML/CSS — no image, no attachment, no
-  // external fetch. Renders identically in every email client (Outlook
-  // desktop included). The yellow circle mirrors the icon-mark dot.
+  // Logo is attached server-side by Resend (path → fetched → attached
+  // with Content-ID = pathwaze-logo). Renders reliably in every email
+  // client, including Outlook desktop, without external fetches.
+  const logoSrc = `cid:${LOGO_CID}`
+
   return `<!DOCTYPE html>
 <html>
 <head><meta charset="utf-8"></head>
@@ -46,17 +70,8 @@ function inviteHtml({ inviterName, loginUrl }: InviteEmailParams): string {
     <tr><td align="center">
       <table role="presentation" width="540" cellpadding="0" cellspacing="0" style="max-width:540px;background:#ffffff;border-radius:14px;overflow:hidden;box-shadow:0 1px 3px rgba(15,27,38,0.08);">
         <tr>
-          <td style="background:#1C303C;padding:28px 32px;text-align:left;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;">
-            <table role="presentation" cellpadding="0" cellspacing="0" style="border-collapse:collapse;">
-              <tr>
-                <td style="vertical-align:middle;padding-right:12px;">
-                  <div style="width:14px;height:14px;background:#F8D068;border-radius:50%;display:inline-block;"></div>
-                </td>
-                <td style="vertical-align:middle;">
-                  <span style="font-size:24px;font-weight:700;color:#F4F7FA;letter-spacing:-0.01em;line-height:1;">pathwaze</span>
-                </td>
-              </tr>
-            </table>
+          <td style="background:#1C303C;padding:24px 32px;text-align:left;">
+            <img src="${logoSrc}" alt="Pathwaze" width="160" height="40" style="display:block;width:160px;height:40px;border:0;outline:none;text-decoration:none;" />
           </td>
         </tr>
         <tr>
