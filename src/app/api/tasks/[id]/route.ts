@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { NextRequest, NextResponse } from 'next/server'
 import { sendDM, replyInThread, taskAssignedBlocks, taskStatusChangedBlocks } from '@/lib/slack'
+import { sendTaskAssignedEmail, sendTaskCompletedEmail } from '@/lib/email'
 
 const TRACKED_FIELDS = ['status', 'priority', 'assignee_id', 'approver_id', 'approval_status', 'due_date', 'title']
 
@@ -144,6 +145,69 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     }
   } catch (e) {
     console.warn('[slack] task notify failed:', e)
+  }
+
+  // ── Email notifications ──
+  // Fire-and-forget. Mirrors the Slack DM logic but uses email-specific
+  // preferences (notify_email_task_assigned / notify_email_task_complete).
+  try {
+    const actorName = user.user_metadata?.full_name || user.email?.split('@')[0] || 'A teammate'
+    const newAssigneeId = body.assignee_id !== undefined ? body.assignee_id : before?.assignee_id
+    const wasReassigned = body.assignee_id !== undefined && before?.assignee_id !== body.assignee_id
+    const statusChanged = body.status !== undefined && before?.status !== body.status
+    const completedNow = statusChanged && body.status === 'Complete'
+    const origin = process.env.NEXT_PUBLIC_APP_URL || new URL(req.url).origin
+    const taskUrl = `${origin}/tasks?id=${id}`
+
+    let projectName: string | null = null
+    if (data.project_id) {
+      const { data: proj } = await supabase.from('projects').select('name').eq('id', data.project_id).single()
+      projectName = (proj as { name?: string } | null)?.name ?? null
+    }
+
+    // (a) Re-assigned → email the new assignee
+    if (wasReassigned && newAssigneeId && newAssigneeId !== user.id) {
+      const { data: a } = await supabase
+        .from('users')
+        .select('email, full_name, notify_email_task_assigned')
+        .eq('id', newAssigneeId)
+        .single() as { data: { email?: string; full_name?: string; notify_email_task_assigned?: boolean } | null }
+      if (a?.email && a.notify_email_task_assigned !== false) {
+        sendTaskAssignedEmail({
+          to: a.email,
+          recipientName: a.full_name || a.email,
+          taskTitle: data.title,
+          taskDescription: data.description,
+          projectName,
+          dueDate: data.due_date,
+          priority: data.priority,
+          type: data.type,
+          assignerName: actorName,
+          taskUrl,
+        }).catch(e => console.error('[task PATCH] assigned email failed:', e))
+      }
+    }
+
+    // (b) Status → Complete → email the task creator (if not the actor)
+    if (completedNow && data.created_by && data.created_by !== user.id) {
+      const { data: c } = await supabase
+        .from('users')
+        .select('email, full_name, notify_email_task_complete')
+        .eq('id', data.created_by)
+        .single() as { data: { email?: string; full_name?: string; notify_email_task_complete?: boolean } | null }
+      if (c?.email && c.notify_email_task_complete !== false) {
+        sendTaskCompletedEmail({
+          to: c.email,
+          recipientName: c.full_name || c.email,
+          taskTitle: data.title,
+          projectName,
+          completerName: actorName,
+          taskUrl,
+        }).catch(e => console.error('[task PATCH] completed email failed:', e))
+      }
+    }
+  } catch (e) {
+    console.warn('[email] task notify failed:', e)
   }
 
   return NextResponse.json(data)

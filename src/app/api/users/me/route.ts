@@ -6,6 +6,8 @@ const ALLOWED_FIELDS = [
   'notify_slack_task_assigned',
   'notify_slack_task_status',
   'notify_slack_task_threads',
+  'notify_email_task_assigned',
+  'notify_email_task_complete',
 ] as const
 
 export async function PATCH(request: NextRequest) {

@@ -19,6 +19,8 @@ export interface SettingsUser {
   notify_slack_task_assigned: boolean
   notify_slack_task_status: boolean
   notify_slack_task_threads: boolean
+  notify_email_task_assigned: boolean
+  notify_email_task_complete: boolean
 }
 
 export function SettingsClient({ user }: { user: SettingsUser }) {
@@ -29,6 +31,8 @@ export function SettingsClient({ user }: { user: SettingsUser }) {
     notify_slack_task_assigned: user.notify_slack_task_assigned ?? true,
     notify_slack_task_status:   user.notify_slack_task_status   ?? true,
     notify_slack_task_threads:  user.notify_slack_task_threads  ?? true,
+    notify_email_task_assigned: user.notify_email_task_assigned ?? true,
+    notify_email_task_complete: user.notify_email_task_complete ?? true,
   })
   const [saving, setSaving] = useState<string | null>(null)
   const [err, setErr] = useState<string | null>(null)
@@ -84,8 +88,8 @@ export function SettingsClient({ user }: { user: SettingsUser }) {
         <p className="text-[11px] text-[#94a3b8] mt-4">Last synced from Slack: {lastSync}</p>
       </Section>
 
-      {/* Notifications */}
-      <Section title="Notifications" subtitle="Control which Slack DMs Pathwaze sends you.">
+      {/* Slack DMs */}
+      <Section title="Slack notifications" subtitle="Control which Slack DMs Pathwaze sends you.">
         <Toggle
           label="Task assigned to me"
           description="DM when a teammate assigns you a task."
@@ -106,6 +110,24 @@ export function SettingsClient({ user }: { user: SettingsUser }) {
           checked={prefs.notify_slack_task_threads}
           saving={saving === 'notify_slack_task_threads'}
           onChange={v => patch('notify_slack_task_threads', v)}
+        />
+      </Section>
+
+      {/* Email */}
+      <Section title="Email notifications" subtitle="Control which Pathwaze emails you receive.">
+        <Toggle
+          label="Task assigned to me"
+          description="Email when a teammate assigns you a task."
+          checked={prefs.notify_email_task_assigned}
+          saving={saving === 'notify_email_task_assigned'}
+          onChange={v => patch('notify_email_task_assigned', v)}
+        />
+        <Toggle
+          label="My tasks completed"
+          description="Email when a task you created is marked complete."
+          checked={prefs.notify_email_task_complete}
+          saving={saving === 'notify_email_task_complete'}
+          onChange={v => patch('notify_email_task_complete', v)}
         />
         <p className="text-[11px] text-[#94a3b8] mt-3">
           In-app notifications (the bell icon) are always on.
