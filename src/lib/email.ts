@@ -23,32 +23,46 @@ export async function sendInviteEmail(params: InviteEmailParams): Promise<{ sent
     // (e.g. "<noreply@x.com>"), strip them. Resend rejects that format.
     const from = /^<[^>]+>$/.test(fromRaw.trim()) ? fromRaw.trim().slice(1, -1) : fromRaw
 
-    // Build the logo URL for Resend to fetch server-side. Resend's
-    // attachment `path` field accepts a URL — their infrastructure
-    // downloads and attaches it, then we reference via cid: in the HTML.
-    // This avoids the Vercel-function-localhost issue (we never fetch
-    // ourselves) and bypasses Outlook's external-image blocking
-    // (it's a proper inline attachment, not an external <img src>).
+    // Fetch the logo PNG ourselves and send as base64 `content` (not `path`).
+    // Sending content directly gives Resend a cleaner signal to set
+    // Content-Disposition: inline + Content-ID header on the attachment,
+    // which makes the <img src="cid:..."> reference actually resolve.
+    //
+    // Now safe to fetch from inside the Vercel function because the auth
+    // middleware exempts /email-logo (see src/middleware.ts).
     const appUrl = params.origin || process.env.NEXT_PUBLIC_APP_URL || 'https://pathwaze.vercel.app'
-    const logoPath = `${appUrl}/email-logo`
+    let logoContent: string | null = null
+    try {
+      const r = await fetch(`${appUrl}/email-logo`)
+      if (r.ok) {
+        const buf = await r.arrayBuffer()
+        logoContent = Buffer.from(buf).toString('base64')
+      } else {
+        console.error('[sendInviteEmail] logo fetch failed:', r.status, await r.text())
+      }
+    } catch (e) {
+      console.error('[sendInviteEmail] logo fetch error:', e)
+    }
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { error } = await resend.emails.send({
+    const sendArgs: any = {
       from,
       to: params.to,
       subject: `${params.inviterName} invited you to Pathwaze`,
       html: inviteHtml(params),
-      attachments: [
+    }
+    if (logoContent) {
+      sendArgs.attachments = [
         {
           filename: 'pathwaze-logo.png',
-          path: logoPath,
-          // content_id requires resend SDK v4+. Lets the HTML reference
-          // the attachment via <img src="cid:pathwaze-logo">.
+          content: logoContent,
           content_id: LOGO_CID,
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        } as any,
-      ],
-    })
+          content_type: 'image/png',
+        },
+      ]
+    }
+
+    const { error } = await resend.emails.send(sendArgs)
     if (error) return { sent: false, error: error.message || 'Resend send failed' }
     return { sent: true }
   } catch (e) {
