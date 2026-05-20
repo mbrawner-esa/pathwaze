@@ -7,6 +7,8 @@ interface InviteEmailParams {
   loginUrl: string
 }
 
+const LOGO_CID = 'pathwaze-logo'
+
 export async function sendInviteEmail(params: InviteEmailParams): Promise<{ sent: boolean; error?: string }> {
   const apiKey = process.env.RESEND_API_KEY
   if (!apiKey) return { sent: false, error: 'RESEND_API_KEY not configured' }
@@ -19,12 +21,39 @@ export async function sendInviteEmail(params: InviteEmailParams): Promise<{ sent
     // (e.g. "<noreply@x.com>"), strip them. Resend rejects that format.
     const from = /^<[^>]+>$/.test(fromRaw.trim()) ? fromRaw.trim().slice(1, -1) : fromRaw
 
-    const { error } = await resend.emails.send({
+    // Fetch the logo PNG and attach it inline (cid:pathwaze-logo). This
+    // ships the image inside the email body so recipient clients never
+    // need to fetch externally — bypasses Gmail/Outlook image blocking
+    // and Resend link-tracking rewrites.
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
+    let logoAttachment: { filename: string; content: string; content_id: string; content_type: string } | null = null
+    try {
+      const r = await fetch(`${appUrl}/email-logo`)
+      if (r.ok) {
+        const buf = await r.arrayBuffer()
+        const base64 = Buffer.from(buf).toString('base64')
+        logoAttachment = {
+          filename: 'pathwaze-logo.png',
+          content: base64,
+          content_id: LOGO_CID,
+          content_type: 'image/png',
+        }
+      }
+    } catch {
+      // If logo fetch fails, fall back to sending without the inline image.
+      // The HTML uses cid: so the recipient will just see the alt text.
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const sendArgs: any = {
       from,
       to: params.to,
       subject: `${params.inviterName} invited you to Pathwaze`,
       html: inviteHtml(params),
-    })
+    }
+    if (logoAttachment) sendArgs.attachments = [logoAttachment]
+
+    const { error } = await resend.emails.send(sendArgs)
     if (error) return { sent: false, error: error.message || 'Resend send failed' }
     return { sent: true }
   } catch (e) {
@@ -33,12 +62,10 @@ export async function sendInviteEmail(params: InviteEmailParams): Promise<{ sent
 }
 
 function inviteHtml({ inviterName, loginUrl }: InviteEmailParams): string {
-  // Absolute logo URL — points at the live /icon.png so swapping the file
-  // automatically updates every future email without code changes.
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
-  // Renders the icon+wordmark lockup as PNG via next/og at request time.
-  // See src/app/email-logo/route.tsx
-  const logoUrl = `${appUrl}/email-logo`
+  // Logo is shipped inline as a CID attachment — see sendInviteEmail above.
+  // Renders reliably without depending on the recipient's image-loading
+  // preferences or external URL fetches.
+  const logoSrc = `cid:${LOGO_CID}`
 
   return `<!DOCTYPE html>
 <html>
@@ -49,7 +76,7 @@ function inviteHtml({ inviterName, loginUrl }: InviteEmailParams): string {
       <table role="presentation" width="540" cellpadding="0" cellspacing="0" style="max-width:540px;background:#ffffff;border-radius:14px;overflow:hidden;box-shadow:0 1px 3px rgba(15,27,38,0.08);">
         <tr>
           <td style="background:#1C303C;padding:24px 32px;text-align:left;">
-            <img src="${logoUrl}" alt="Pathwaze" width="160" height="40" style="display:block;width:160px;height:40px;border:0;outline:none;text-decoration:none;" />
+            <img src="${logoSrc}" alt="Pathwaze" width="160" height="40" style="display:block;width:160px;height:40px;border:0;outline:none;text-decoration:none;" />
           </td>
         </tr>
         <tr>
