@@ -38,9 +38,7 @@
       "Bash(npm install:*)",
       "Bash(export PATH=\"/c/Program Files/nodejs:$PATH\")",
       "Bash(git --version)",
-      "Bash(git config *)",
-      "Bash(npx next *)",
-      "Bash(node -e \"console.log\\(require\\('next/package.json'\\).version\\)\")"
+      "Bash(git config *)"
     ]
   }
 }

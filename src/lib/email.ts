@@ -36,7 +36,9 @@ function inviteHtml({ inviterName, loginUrl }: InviteEmailParams): string {
   // Absolute logo URL — points at the live /icon.png so swapping the file
   // automatically updates every future email without code changes.
   const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
-  const logoUrl = `${appUrl}/email-logo.png`
+  // Renders the icon+wordmark lockup as PNG via next/og at request time.
+  // See src/app/email-logo/route.tsx
+  const logoUrl = `${appUrl}/email-logo`
 
   return `<!DOCTYPE html>
 <html>
@@ -47,7 +49,7 @@ function inviteHtml({ inviterName, loginUrl }: InviteEmailParams): string {
       <table role="presentation" width="540" cellpadding="0" cellspacing="0" style="max-width:540px;background:#ffffff;border-radius:14px;overflow:hidden;box-shadow:0 1px 3px rgba(15,27,38,0.08);">
         <tr>
           <td style="background:#1C303C;padding:24px 32px;text-align:left;">
-            <img src="${logoUrl}" alt="Pathwaze" height="40" style="display:block;height:40px;width:auto;border:0;outline:none;text-decoration:none;" />
+            <img src="${logoUrl}" alt="Pathwaze" width="160" height="40" style="display:block;width:160px;height:40px;border:0;outline:none;text-decoration:none;" />
           </td>
         </tr>
         <tr>
