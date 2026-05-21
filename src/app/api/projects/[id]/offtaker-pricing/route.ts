@@ -13,6 +13,7 @@ const ALLOWED = new Set([
   'estimated_ntp', 'estimated_cod',
   'utility_escalation_rate',
   'customer_term_savings', 'customer_term_npv',
+  'quote_created_at',
 ])
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -43,13 +44,18 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     if (ALLOWED.has(k)) row[k] = v
   }
   if (!row.version_label) {
-    // Auto-name new options as "Option A", "Option B", etc. based on count.
+    // Default version label: QT-YYMM-V[A]-Name (user edits the trailing "Name"
+    // after saving). Letter increments per project so successive proposals
+    // get unique labels even on the same month.
     const { count } = await supabase
       .from('offtaker_pricing')
       .select('id', { count: 'exact', head: true })
       .eq('project_id', id) as { count: number | null }
     const letter = String.fromCharCode('A'.charCodeAt(0) + (count ?? 0))
-    row.version_label = `Option ${letter}`
+    const now = new Date()
+    const yy = String(now.getFullYear()).slice(-2)
+    const mm = String(now.getMonth() + 1).padStart(2, '0')
+    row.version_label = `QT-${yy}${mm}-V${letter}-Name`
   }
   // Pre-populate per-proposal dates from the project's master schedule.
   // Each proposal can edit them independently after. Note: target_cod is
@@ -68,6 +74,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     }
     if (row.estimated_ntp === undefined) row.estimated_ntp = asDate(proj?.start_date) ?? undefined
     if (row.estimated_cod === undefined) row.estimated_cod = asDate(proj?.target_cod) ?? undefined
+  }
+  // Default quote_created_at to today for new proposals.
+  if (row.quote_created_at === undefined) {
+    row.quote_created_at = new Date().toISOString().slice(0, 10)
   }
 
   // If incoming row says is_selected, clear the flag on any existing rows first.

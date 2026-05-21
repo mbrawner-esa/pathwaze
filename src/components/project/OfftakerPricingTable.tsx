@@ -2,23 +2,29 @@
 /**
  * Offtaker Pricing — versioned proposal options for the customer offtake.
  *
- * Each row is a full proposal organized into four sections:
- *   1. Project Information   — linked systems, computed size + Year-1 energy,
- *                              estimated NTP / COD
- *   2. Utility Savings       — per-meter electric bill savings (user-entered),
- *                              computed per-meter and blended avoided cost
- *   3. Contract Terms        — revenue type, term, escalator, year-1 price,
- *                              computed Year-1 net savings, customer term
- *                              savings + NPV (user-entered)
- *   4. Environmental Attributes — SREC treatment, computed total SRECs
+ * Drawer sections:
+ *   1. Project Information      — linked systems (via "add related" picker),
+ *                                 computed System Size DC + Year-1 energy,
+ *                                 estimated NTP / COD, quote created date
+ *   2. Utility Savings          — per-meter electric bill savings (user $),
+ *                                 computed per-meter + blended avoided cost,
+ *                                 editable utility escalation
+ *   3. Contract Terms           — term, revenue type, year-1 price (currency
+ *                                 input, 4 decimals), escalation rate
+ *   4. Contract Performance     — computed Year-1 net savings, customer term
+ *                                 savings + NPV (entered in $K thousands)
+ *   5. Environmental Attributes — SREC treatment, computed total SRECs
+ *
+ * Plus Notes (with bullet/numbered-list rendering) and Threads.
  *
  * One row per project may be marked is_selected (the customer's accepted
  * proposal). Contract Type + Offtaker Credit live separately on the project's
- * Tax & Incentives section (project_financials).
+ * Tax & Incentives section (project_financials). Default version_label uses
+ * the pattern QT-YYMM-V[A]-Name (server-generated; user edits).
  */
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { Plus, Star, Trash2, X, Send, MessageSquare, Pencil } from 'lucide-react'
+import { Plus, Star, Trash2, X, Send, MessageSquare, Pencil, Info } from 'lucide-react'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { Avatar } from '@/components/ui/Avatar'
 
@@ -48,6 +54,7 @@ export interface PricingRow {
   srec_treatment: string | null
   // Misc
   notes: string | null
+  quote_created_at: string | null
   created_at: string
   updated_at: string
 }
@@ -102,6 +109,9 @@ export function OfftakerPricingTable({
   const [loadingThreads, setLoadingThreads] = useState(false)
   const [newMessage, setNewMessage] = useState('')
 
+  // Add-system picker (replaces checkboxes)
+  const [pendingSystemId, setPendingSystemId] = useState('')
+
   const open = rows.find(r => r.id === openId) ?? null
 
   const loadThreads = useCallback(async (rowId: string) => {
@@ -115,7 +125,7 @@ export function OfftakerPricingTable({
 
   useEffect(() => {
     if (openId) loadThreads(openId)
-    else { setThreads([]); setEditing(false); setErr(null) }
+    else { setThreads([]); setEditing(false); setErr(null); setPendingSystemId('') }
   }, [openId, loadThreads])
 
   // ── Computed values for the open row ────────────────────────────────
@@ -391,15 +401,28 @@ export function OfftakerPricingTable({
                 <td className="px-3 py-3 text-[12.5px] text-[#3E3E3C]">{r.year1_contract_price != null ? `$${Number(r.year1_contract_price).toFixed(4)}/kWh` : '—'}</td>
                 <td className="px-3 py-3 text-[12.5px] text-[#3E3E3C]">{rowTotalSavings(r) ? formatCurrency(rowTotalSavings(r)) : '—'}</td>
                 <td className="px-5 py-3 text-right">
-                  <button
-                    onClick={e => { e.stopPropagation(); toggleSelected(r) }}
-                    disabled={busy}
-                    title={r.is_selected ? 'Unselect' : 'Mark as selected proposal'}
-                    className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold transition-colors ${r.is_selected ? 'bg-[#E6C87A]/30 text-[#92400E]' : 'bg-[#f1f5f9] text-[#706E6B] hover:bg-[#e2e8f0]'}`}
-                  >
-                    <Star size={10} fill={r.is_selected ? '#E6C87A' : 'none'} />
-                    {r.is_selected ? 'Selected' : 'Select'}
-                  </button>
+                  <div className="inline-flex items-center gap-1">
+                    <button
+                      onClick={e => { e.stopPropagation(); toggleSelected(r) }}
+                      disabled={busy}
+                      title={r.is_selected ? 'Unselect' : 'Mark as selected proposal'}
+                      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold transition-colors ${r.is_selected ? 'bg-[#E6C87A]/30 text-[#92400E]' : 'bg-[#f1f5f9] text-[#706E6B] hover:bg-[#e2e8f0]'}`}
+                    >
+                      <Star size={10} fill={r.is_selected ? '#E6C87A' : 'none'} />
+                      {r.is_selected ? 'Selected' : 'Select'}
+                    </button>
+                    <button
+                      onClick={e => {
+                        e.stopPropagation()
+                        if (confirm(`Delete "${r.version_label}"?`)) deleteRow(r.id)
+                      }}
+                      disabled={busy}
+                      title="Delete proposal"
+                      className="p-1 text-[#94a3b8] hover:text-[#dc2626] hover:bg-[#fef2f2] rounded transition-colors"
+                    >
+                      <Trash2 size={11} />
+                    </button>
+                  </div>
                 </td>
               </tr>
             ))}
@@ -482,41 +505,62 @@ export function OfftakerPricingTable({
               <SectionShell title="Project Information">
                 <div className="px-5 py-4 space-y-4">
                   <FieldCell label="Linked systems" full>
-                    {editing ? (
-                      <div className="space-y-1">
-                        {systems.length === 0 ? (
-                          <p className="text-[12px] text-[#A8A8A8] italic">No systems on this project yet.</p>
-                        ) : systems.map(s => {
-                          const checked = (editForm.linked_system_ids ?? []).includes(s.id)
-                          return (
-                            <label key={s.id} className="flex items-center gap-2 cursor-pointer">
-                              <input
-                                type="checkbox"
-                                checked={checked}
-                                onChange={e => {
-                                  const cur = editForm.linked_system_ids ?? []
-                                  const next = e.target.checked ? [...cur, s.id] : cur.filter(x => x !== s.id)
-                                  setEditForm(f => ({ ...f, linked_system_ids: next }))
-                                }}
-                                className="w-4 h-4 rounded border-[#cbd5e1]"
-                              />
-                              <span className="text-[13px] text-[#181818]">{s.name}</span>
-                              <span className="text-[11.5px] text-[#706E6B]">· {fmtKwdc(s.size_kwdc ?? 0)} · {fmtKwh(s.annual_production_kwh ?? 0)}/yr</span>
-                            </label>
-                          )
-                        })}
-                      </div>
-                    ) : linkedSystems().length === 0 ? (
+                    {/* Same "add related" chip + picker pattern used on tasks
+                        — single source of UX truth for entity linking. */}
+                    {linkedSystems().length === 0 && !editing && (
                       <span className="text-[13px] text-[#A8A8A8] italic">None linked</span>
-                    ) : (
-                      <ul className="space-y-0.5">
+                    )}
+                    {linkedSystems().length > 0 && (
+                      <ul className="flex flex-wrap gap-1.5">
                         {linkedSystems().map(s => (
-                          <li key={s.id} className="text-[13px] text-[#181818]">
-                            {s.name}
-                            <span className="text-[11.5px] text-[#706E6B] ml-2">· {fmtKwdc(s.size_kwdc ?? 0)} · {fmtKwh(s.annual_production_kwh ?? 0)}/yr</span>
+                          <li key={s.id} className="inline-flex items-center gap-1 pl-2 pr-1 py-1 bg-[#EFF6FF] border border-[#bfdbfe] rounded-full text-[12px]">
+                            <span className="text-[10px] font-semibold uppercase tracking-wider opacity-70 text-[#1d4ed8]">System</span>
+                            <span className="font-medium text-[#1d4ed8]">{s.name}</span>
+                            <span className="text-[11px] text-[#3b82f6] opacity-80">· {fmtKwdc(s.size_kwdc ?? 0)}</span>
+                            {editing && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const cur = editForm.linked_system_ids ?? []
+                                  setEditForm(f => ({ ...f, linked_system_ids: cur.filter(x => x !== s.id) }))
+                                }}
+                                title="Unlink"
+                                className="ml-1 p-0.5 hover:bg-[#dbeafe] rounded-full text-[#3b82f6]"
+                              >
+                                <X size={11} />
+                              </button>
+                            )}
                           </li>
                         ))}
                       </ul>
+                    )}
+                    {editing && (
+                      <div className="flex items-center gap-2 mt-2">
+                        <select
+                          value={pendingSystemId}
+                          onChange={e => setPendingSystemId(e.target.value)}
+                          className="flex-1 px-2 py-1.5 border border-[#cbd5e1] rounded text-[13px] bg-white focus:outline-none focus:border-[#70A0D0]"
+                        >
+                          <option value="">— Select a system to link —</option>
+                          {systems
+                            .filter(s => !(editForm.linked_system_ids ?? []).includes(s.id))
+                            .map(s => (
+                              <option key={s.id} value={s.id}>{s.name} · {fmtKwdc(s.size_kwdc ?? 0)} · {fmtKwh(s.annual_production_kwh ?? 0)}/yr</option>
+                            ))}
+                        </select>
+                        <button
+                          type="button"
+                          disabled={!pendingSystemId}
+                          onClick={() => {
+                            const cur = editForm.linked_system_ids ?? []
+                            setEditForm(f => ({ ...f, linked_system_ids: [...cur, pendingSystemId] }))
+                            setPendingSystemId('')
+                          }}
+                          className="btn-secondary h-[30px]"
+                        >
+                          <Plus size={12} /> Add
+                        </button>
+                      </div>
                     )}
                   </FieldCell>
                   <div className="grid grid-cols-2 gap-4">
@@ -531,6 +575,11 @@ export function OfftakerPricingTable({
                       {editing
                         ? <DateInput value={editForm.estimated_cod ?? ''} onChange={v => setEditForm(f => ({ ...f, estimated_cod: v || null }))} />
                         : (open.estimated_cod ? formatDate(open.estimated_cod) : '—')}
+                    </FieldCell>
+                    <FieldCell label="Quote created" full>
+                      {editing
+                        ? <DateInput value={editForm.quote_created_at ?? ''} onChange={v => setEditForm(f => ({ ...f, quote_created_at: v || null }))} />
+                        : (open.quote_created_at ? formatDate(open.quote_created_at) : '—')}
                     </FieldCell>
                   </div>
                 </div>
@@ -581,7 +630,7 @@ export function OfftakerPricingTable({
                       </tbody>
                     </table>
                   )}
-                  <div className="grid grid-cols-3 gap-4 pt-2 border-t border-[#f1f5f9]">
+                  <div className="grid gap-4 pt-2 border-t border-[#f1f5f9]" style={{ gridTemplateColumns: '5fr 5fr 2fr' }}>
                     <CalcField label="Total electric bill savings" value={formatCurrency(totalElectricBillSavings())} />
                     <CalcField label="Blended avoided cost" value={blendedAvoidedCost() > 0 ? fmtRate(blendedAvoidedCost()) : '—'} />
                     <FieldCell label="Utility escalation">
@@ -606,31 +655,47 @@ export function OfftakerPricingTable({
                       ? <SelectInput value={editForm.revenue_type ?? ''} options={REVENUE_TYPES} onChange={v => setEditForm(f => ({ ...f, revenue_type: v }))} />
                       : (open.revenue_type || '—')}
                   </FieldCell>
+                  <FieldCell label="Year 1 price">
+                    {editing
+                      ? <CurrencyInput value={editForm.year1_contract_price ?? 0} decimals={4} suffix="/kWh" onChange={v => setEditForm(f => ({ ...f, year1_contract_price: v }))} />
+                      : (open.year1_contract_price != null ? `$${Number(open.year1_contract_price).toFixed(4)}/kWh` : '—')}
+                  </FieldCell>
                   <FieldCell label="Escalation rate">
                     {editing
                       ? <NumberInput value={editForm.escalation_rate ?? 0} onChange={v => setEditForm(f => ({ ...f, escalation_rate: v }))} suffix="%" />
                       : (open.escalation_rate != null ? `${open.escalation_rate}%` : '—')}
                   </FieldCell>
-                  <FieldCell label="Year 1 price">
-                    {editing
-                      ? <NumberInput value={editForm.year1_contract_price ?? 0} decimals={4} onChange={v => setEditForm(f => ({ ...f, year1_contract_price: v }))} suffix="$/kWh" />
-                      : (open.year1_contract_price != null ? `$${Number(open.year1_contract_price).toFixed(4)}/kWh` : '—')}
-                  </FieldCell>
+                </div>
+              </SectionShell>
+
+              {/* ─────────────────── 4. Contract Performance ─────────────────── */}
+              <SectionShell title="Contract Performance">
+                <div className="px-5 py-4 grid grid-cols-2 gap-x-5 gap-y-4">
                   <CalcField label="Year 1 net savings" value={formatCurrency(year1NetSavings())} />
-                  <FieldCell label="Customer term savings">
+                  <FieldCell label={
+                    <InfoLabel
+                      label="Customer term savings"
+                      info="Enter the amount in thousands of dollars. e.g., 8,610 = $8,610,000."
+                    />
+                  }>
                     {editing
-                      ? <NumberInput value={editForm.customer_term_savings ?? 0} onChange={v => setEditForm(f => ({ ...f, customer_term_savings: v }))} suffix="$" />
-                      : (open.customer_term_savings != null ? formatCurrency(open.customer_term_savings) : '—')}
+                      ? <CurrencyInput value={editForm.customer_term_savings ?? 0} onChange={v => setEditForm(f => ({ ...f, customer_term_savings: v }))} suffix="K" />
+                      : (open.customer_term_savings != null ? formatThousandsCurrency(open.customer_term_savings) : '—')}
                   </FieldCell>
-                  <FieldCell label="Customer term NPV" full>
+                  <FieldCell label={
+                    <InfoLabel
+                      label="Customer term NPV"
+                      info="Enter the amount in thousands of dollars. e.g., 8,610 = $8,610,000."
+                    />
+                  } full>
                     {editing
-                      ? <NumberInput value={editForm.customer_term_npv ?? 0} onChange={v => setEditForm(f => ({ ...f, customer_term_npv: v }))} suffix="$" />
-                      : (open.customer_term_npv != null ? formatCurrency(open.customer_term_npv) : '—')}
+                      ? <CurrencyInput value={editForm.customer_term_npv ?? 0} onChange={v => setEditForm(f => ({ ...f, customer_term_npv: v }))} suffix="K" />
+                      : (open.customer_term_npv != null ? formatThousandsCurrency(open.customer_term_npv) : '—')}
                   </FieldCell>
                 </div>
               </SectionShell>
 
-              {/* ───────────────────── 4. Environmental Attributes ───────────────────── */}
+              {/* ───────────────────── 5. Environmental Attributes ───────────────────── */}
               <SectionShell title="Environmental Attributes">
                 <div className="px-5 py-4 grid grid-cols-2 gap-x-5 gap-y-4">
                   <FieldCell label="SREC treatment">
@@ -646,15 +711,20 @@ export function OfftakerPricingTable({
               <SectionShell title="Notes">
                 <div className="px-5 py-4">
                   {editing ? (
-                    <textarea
-                      value={editForm.notes ?? ''}
-                      onChange={e => setEditForm(f => ({ ...f, notes: e.target.value }))}
-                      rows={5}
-                      placeholder="Internal notes about this proposal — assumptions, customer feedback, comparison points, etc."
-                      className="w-full px-3 py-2 border border-[#cbd5e1] rounded text-[13px] text-[#181818] resize-none focus:outline-none focus:border-[#70A0D0] focus:ring-2 focus:ring-[#70A0D0]/20"
-                    />
+                    <>
+                      <textarea
+                        value={editForm.notes ?? ''}
+                        onChange={e => setEditForm(f => ({ ...f, notes: e.target.value }))}
+                        rows={5}
+                        placeholder={`Internal notes about this proposal.\n\nUse lists by starting a line with - or 1. :\n- bullet item\n1. numbered item`}
+                        className="w-full px-3 py-2 border border-[#cbd5e1] rounded text-[13px] text-[#181818] resize-none focus:outline-none focus:border-[#70A0D0] focus:ring-2 focus:ring-[#70A0D0]/20 font-mono"
+                      />
+                      <p className="text-[10.5px] text-[#94a3b8] mt-1.5">
+                        Start a line with <code className="bg-[#f1f5f9] px-1 py-0.5 rounded">-</code> or <code className="bg-[#f1f5f9] px-1 py-0.5 rounded">1.</code> to make lists. Blank lines separate paragraphs.
+                      </p>
+                    </>
                   ) : open.notes ? (
-                    <p className="text-[13px] text-[#181818] whitespace-pre-wrap">{open.notes}</p>
+                    <NotesRender source={open.notes} />
                   ) : (
                     <p className="text-[12.5px] text-[#A8A8A8] italic">No notes yet.</p>
                   )}
@@ -725,11 +795,130 @@ function SectionShell({ title, children }: { title: React.ReactNode; children: R
   )
 }
 
-function FieldCell({ label, full, children }: { label: string; full?: boolean; children: React.ReactNode }) {
+function FieldCell({ label, full, children }: { label: React.ReactNode; full?: boolean; children: React.ReactNode }) {
   return (
     <div className={full ? 'col-span-2' : ''}>
-      <p className="text-[10.5px] font-bold text-[#706E6B] uppercase tracking-wider mb-1">{label}</p>
+      <div className="text-[10.5px] font-bold text-[#706E6B] uppercase tracking-wider mb-1">{label}</div>
       <div className="text-[13px] text-[#181818]">{children}</div>
+    </div>
+  )
+}
+
+function InfoLabel({ label, info }: { label: string; info: string }) {
+  return (
+    <span className="inline-flex items-center gap-1">
+      {label}
+      <span title={info} className="inline-flex items-center cursor-help text-[#94a3b8]"><Info size={11} /></span>
+    </span>
+  )
+}
+
+// Currency-formatted input: shows $0.00 prefix in a read-only span, user types
+// the number. Supports custom decimal precision and an optional suffix
+// (e.g., "/kWh", "K"). Strips $ and commas on save so the underlying value is
+// always a plain number.
+function CurrencyInput({ value, onChange, decimals = 2, suffix }: { value: number; onChange: (v: number) => void; decimals?: number; suffix?: string }) {
+  const [text, setText] = useState<string>(formatForEdit(value, decimals))
+  // Re-sync when external value changes (e.g., when editForm resets)
+  useEffect(() => { setText(formatForEdit(value, decimals)) }, [value, decimals])
+  return (
+    <div className="flex items-center gap-1.5">
+      <div className="flex-1 flex items-center border border-[#cbd5e1] rounded focus-within:border-[#70A0D0] focus-within:ring-2 focus-within:ring-[#70A0D0]/20 bg-white">
+        <span className="px-2 py-1 text-[13px] text-[#706E6B] border-r border-[#e2e8f0]">$</span>
+        <input
+          type="text"
+          inputMode="decimal"
+          value={text}
+          onChange={e => {
+            // Allow free typing; strip $ and commas, parse on blur.
+            const raw = e.target.value.replace(/[^0-9.\-]/g, '')
+            setText(e.target.value.replace(/[$]/g, ''))
+            const n = parseFloat(raw)
+            if (Number.isFinite(n)) onChange(n)
+            else if (raw === '' || raw === '-') onChange(0)
+          }}
+          onBlur={() => setText(formatForEdit(value, decimals))}
+          className="flex-1 px-2 py-1 text-[13px] text-[#181818] bg-transparent focus:outline-none"
+        />
+      </div>
+      {suffix && <span className="text-[11px] text-[#706E6B] flex-shrink-0">{suffix}</span>}
+    </div>
+  )
+}
+
+function formatForEdit(n: number, decimals: number): string {
+  if (n == null || Number.isNaN(n)) return ''
+  return Number(n).toLocaleString('en-US', { minimumFractionDigits: decimals, maximumFractionDigits: decimals })
+}
+
+// Format a "thousands" value as full dollars: 8610 → $8,610,000.
+function formatThousandsCurrency(n: number): string {
+  return formatCurrency(Number(n) * 1000)
+}
+
+// Render a plain-text notes string with simple list support:
+//   - lines starting with `- ` or `* ` become unordered list items
+//   - lines starting with `1. ` `2. ` etc become ordered list items
+//   - blank lines separate paragraphs
+//   - everything else is plain text with preserved line breaks
+function NotesRender({ source }: { source: string }) {
+  type Block =
+    | { kind: 'p'; text: string }
+    | { kind: 'ul'; items: string[] }
+    | { kind: 'ol'; items: string[] }
+
+  const blocks: Block[] = []
+  let currentList: Block | null = null
+  let currentPara: string[] = []
+  function flushPara() {
+    if (currentPara.length) {
+      blocks.push({ kind: 'p', text: currentPara.join('\n') })
+      currentPara = []
+    }
+  }
+  function flushList() {
+    if (currentList) {
+      blocks.push(currentList)
+      currentList = null
+    }
+  }
+  for (const rawLine of source.split('\n')) {
+    const line = rawLine
+    if (line.trim() === '') {
+      flushPara(); flushList(); continue
+    }
+    const ulMatch = line.match(/^\s*[-*]\s+(.*)$/)
+    const olMatch = line.match(/^\s*\d+\.\s+(.*)$/)
+    if (ulMatch) {
+      flushPara()
+      if (!currentList || currentList.kind !== 'ul') { flushList(); currentList = { kind: 'ul', items: [] } }
+      currentList.items.push(ulMatch[1])
+    } else if (olMatch) {
+      flushPara()
+      if (!currentList || currentList.kind !== 'ol') { flushList(); currentList = { kind: 'ol', items: [] } }
+      currentList.items.push(olMatch[1])
+    } else {
+      flushList()
+      currentPara.push(line)
+    }
+  }
+  flushPara(); flushList()
+
+  return (
+    <div className="text-[13px] text-[#181818] space-y-2">
+      {blocks.map((b, i) => {
+        if (b.kind === 'p') return <p key={i} className="whitespace-pre-wrap leading-relaxed">{b.text}</p>
+        if (b.kind === 'ul') return (
+          <ul key={i} className="list-disc pl-5 space-y-0.5">
+            {b.items.map((it, j) => <li key={j} className="leading-relaxed">{it}</li>)}
+          </ul>
+        )
+        return (
+          <ol key={i} className="list-decimal pl-5 space-y-0.5">
+            {b.items.map((it, j) => <li key={j} className="leading-relaxed">{it}</li>)}
+          </ol>
+        )
+      })}
     </div>
   )
 }

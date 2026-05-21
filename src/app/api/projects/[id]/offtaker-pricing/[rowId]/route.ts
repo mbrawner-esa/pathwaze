@@ -11,6 +11,7 @@ const ALLOWED = new Set([
   'estimated_ntp', 'estimated_cod',
   'utility_escalation_rate',
   'customer_term_savings', 'customer_term_npv',
+  'quote_created_at',
 ])
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string; rowId: string }> }) {
