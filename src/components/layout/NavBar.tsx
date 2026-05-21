@@ -215,8 +215,12 @@ export function NavBar({ user }: NavBarProps) {
                 <p className="text-[11.5px] text-[#706E6B] capitalize mt-0.5">{user.role}</p>
               </div>
               {user.role === 'admin' && (
-                <Link href="/admin/users" onClick={() => setShowUserMenu(false)}
-                  className="block w-full text-left px-4 py-2 text-[13px] text-[#181818] hover:bg-[#f8fafc]">User Management</Link>
+                <>
+                  <Link href="/admin/users" onClick={() => setShowUserMenu(false)}
+                    className="block w-full text-left px-4 py-2 text-[13px] text-[#181818] hover:bg-[#f8fafc]">User Management</Link>
+                  <Link href="/admin/archived" onClick={() => setShowUserMenu(false)}
+                    className="block w-full text-left px-4 py-2 text-[13px] text-[#181818] hover:bg-[#f8fafc]">Archived Projects</Link>
+                </>
               )}
               <Link href="/settings" onClick={() => setShowUserMenu(false)}
                 className="block w-full text-left px-4 py-2 text-[13px] text-[#181818] hover:bg-[#f8fafc]">Settings</Link>

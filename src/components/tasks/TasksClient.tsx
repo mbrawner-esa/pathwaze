@@ -1,6 +1,6 @@
 'use client'
 import { useState, useMemo, useEffect, useCallback } from 'react'
-import { Search, List, LayoutGrid, X, Plus, Send, MessageSquare, CheckCircle, Activity, Slack, Pencil, Paperclip, ExternalLink, Trash2, Upload, Download, ChevronDown, Copy, Link2 } from 'lucide-react'
+import { Search, List, LayoutGrid, X, Plus, Send, MessageSquare, CheckCircle, Activity, Slack, Pencil, Paperclip, ExternalLink, Trash2, Upload, Download, ChevronDown, Copy, Link2, Lock } from 'lucide-react'
 import Link from 'next/link'
 import { formatDate } from '@/lib/utils'
 import { Avatar } from '@/components/ui/Avatar'
@@ -173,7 +173,7 @@ export function TasksClient({ tasks: initialTasks, projects, users }: { tasks: a
   const [editForm, setEditForm] = useState({
     title: '', description: '', type: 'Administrative', priority: 'Medium',
     project_id: '', assignee_id: '', approver_id: '',
-    requires_approval: false, due_date: '',
+    requires_approval: false, due_date: '', visibility: 'public' as 'public' | 'private',
   })
 
   // New task form
@@ -187,6 +187,7 @@ export function TasksClient({ tasks: initialTasks, projects, users }: { tasks: a
     approver_id: '',
     requires_approval: false,
     due_date: '',
+    visibility: 'public' as 'public' | 'private',
   })
 
   const types = ['All', ...Array.from(new Set(initialTasks.map(t => t.type).filter(Boolean)))]
@@ -475,6 +476,7 @@ export function TasksClient({ tasks: initialTasks, projects, users }: { tasks: a
       approver_id: selected.approver_id ?? '',
       requires_approval: !!selected.requires_approval,
       due_date: selected.due_date ? String(selected.due_date).slice(0, 10) : '',
+      visibility: (selected.visibility === 'private' ? 'private' : 'public') as 'public' | 'private',
     })
     setEditingDrawer(true)
     setEditError(null)
@@ -499,6 +501,7 @@ export function TasksClient({ tasks: initialTasks, projects, users }: { tasks: a
           approver_id: editForm.requires_approval ? (editForm.approver_id || null) : null,
           requires_approval: editForm.requires_approval,
           due_date: editForm.due_date || null,
+          visibility: editForm.visibility,
         }),
       })
       if (res.ok) {
@@ -529,6 +532,7 @@ export function TasksClient({ tasks: initialTasks, projects, users }: { tasks: a
       approver_id: selected.approver_id || '',
       requires_approval: !!selected.requires_approval,
       due_date: '',
+      visibility: (selected.visibility === 'private' ? 'private' : 'public') as 'public' | 'private',
     })
     setSelectedTask(null)
     setShowNewModal(true)
@@ -550,7 +554,7 @@ export function TasksClient({ tasks: initialTasks, projects, users }: { tasks: a
       })
       if (res.ok) {
         setShowNewModal(false)
-        setForm({ project_id: '', title: '', description: '', type: 'Administrative', priority: 'Medium', assignee_id: '', approver_id: '', requires_approval: false, due_date: '' })
+        setForm({ project_id: '', title: '', description: '', type: 'Administrative', priority: 'Medium', assignee_id: '', approver_id: '', requires_approval: false, due_date: '', visibility: 'public' })
         router.refresh()
       } else {
         const body = await res.json().catch(() => ({}))
@@ -731,6 +735,11 @@ export function TasksClient({ tasks: initialTasks, projects, users }: { tasks: a
                             <div className="flex items-center gap-2">
                               <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: PRIORITY_COLORS[task.priority] ?? '#94a3b8' }} />
                               <span className="font-medium text-[#181818]">{task.title}</span>
+                              {task.visibility === 'private' && (
+                                <span className="inline-flex items-center gap-1 text-[10px] bg-[#F1F5F9] text-[#475569] px-1.5 py-0.5 rounded" title="Private — only you can see this">
+                                  <Lock size={9} /> Private
+                                </span>
+                              )}
                               {task.requires_approval && (
                                 <span className="text-[10px] bg-[#FDF4FF] text-[#7e22ce] px-1.5 py-0.5 rounded">Approval</span>
                               )}
@@ -878,6 +887,9 @@ export function TasksClient({ tasks: initialTasks, projects, users }: { tasks: a
                           >
                             <div className="flex items-center gap-1.5 mb-1.5">
                               <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded" style={{ background: typeC.bg, color: typeC.text }}>{task.type}</span>
+                              {task.visibility === 'private' && (
+                                <Lock size={10} className="text-[#94a3b8]" />
+                              )}
                               {isHigh && (
                                 <span className="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded" style={{ background: '#EF4444', color: 'white' }}>High</span>
                               )}
@@ -1129,6 +1141,27 @@ export function TasksClient({ tasks: initialTasks, projects, users }: { tasks: a
                       <label htmlFor="drawer_requires_approval" className="text-[13px] text-[#181818] font-medium cursor-pointer select-none">
                         Requires approval before completion
                       </label>
+                    </div>
+                    <div className="col-span-2">
+                      <label className="label block mb-1.5">Visibility</label>
+                      <div className="grid grid-cols-2 gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setEditForm(f => ({ ...f, visibility: 'public' }))}
+                          className={`text-left p-2.5 border-2 rounded transition-all ${editForm.visibility === 'public' ? 'border-[#70A0D0] bg-[#EFF6FF]' : 'border-[#e2e8f0] bg-white hover:bg-[#fafbfc]'}`}
+                        >
+                          <p className="text-[12.5px] font-semibold text-[#181818]">Public</p>
+                          <p className="text-[11px] text-[#706E6B]">Visible to team</p>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setEditForm(f => ({ ...f, visibility: 'private' }))}
+                          className={`text-left p-2.5 border-2 rounded transition-all ${editForm.visibility === 'private' ? 'border-[#70A0D0] bg-[#EFF6FF]' : 'border-[#e2e8f0] bg-white hover:bg-[#fafbfc]'}`}
+                        >
+                          <p className="text-[12.5px] font-semibold text-[#181818] flex items-center gap-1.5"><Lock size={10} /> Private</p>
+                          <p className="text-[11px] text-[#706E6B]">Only you</p>
+                        </button>
+                      </div>
                     </div>
                     {editForm.requires_approval && (
                       <div className="col-span-2">
@@ -1634,6 +1667,35 @@ export function TasksClient({ tasks: initialTasks, projects, users }: { tasks: a
                     <textarea value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
                       className="w-full px-3 py-2 border border-[#cbd5e1] rounded text-[13px] text-[#181818] h-20 resize-none focus:outline-none focus:border-[#70A0D0] focus:ring-2 focus:ring-[#70A0D0]/20 transition-all"
                       placeholder="Add additional context (optional)" />
+                  </div>
+                </div>
+              </div>
+
+              {/* Section: Visibility */}
+              <div>
+                <div className="px-6 py-2.5 bg-[#f1f5f9] border-y border-[#e2e8f0]">
+                  <h3 className="text-[10.5px] font-bold text-[#3E3E3C] uppercase tracking-[0.06em]">Visibility</h3>
+                </div>
+                <div className="px-6 py-5 bg-white">
+                  <div className="grid grid-cols-2 gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setForm(f => ({ ...f, visibility: 'public' }))}
+                      className={`text-left p-3 border-2 rounded-lg transition-all ${form.visibility === 'public' ? 'border-[#70A0D0] bg-[#EFF6FF]' : 'border-[#e2e8f0] bg-white hover:bg-[#fafbfc]'}`}
+                    >
+                      <p className="text-[13px] font-semibold text-[#181818]">Public</p>
+                      <p className="text-[11.5px] text-[#706E6B] mt-0.5 leading-snug">Visible to your team</p>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setForm(f => ({ ...f, visibility: 'private' }))}
+                      className={`text-left p-3 border-2 rounded-lg transition-all ${form.visibility === 'private' ? 'border-[#70A0D0] bg-[#EFF6FF]' : 'border-[#e2e8f0] bg-white hover:bg-[#fafbfc]'}`}
+                    >
+                      <p className="text-[13px] font-semibold text-[#181818] flex items-center gap-1.5">
+                        <Lock size={11} /> Private
+                      </p>
+                      <p className="text-[11.5px] text-[#706E6B] mt-0.5 leading-snug">Only you can see this (personal reminder)</p>
+                    </button>
                   </div>
                 </div>
               </div>

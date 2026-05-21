@@ -17,6 +17,8 @@ export default async function ProjectsPage() {
         users!assignee_id(full_name, avatar_url),
         milestones(label, completed, sort_order, target_date)
       `)
+      // Archived projects are hidden program-wide. Admins can view them at /admin/archived.
+      .neq('stage', 'Archived')
       .order('name') as unknown as { data: any[] | null },
     supabase.from('users').select('id, full_name').eq('status', 'active').order('full_name'),
   ])

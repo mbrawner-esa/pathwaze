@@ -41,7 +41,7 @@ export default async function DataroomPage() {
   type ProjectRow = { id: string; name: string; project_number: string; tranche: string; stage: string }
   type DocRow = { project_id: string; category_id: string; status: string }
   const [{ data: projects }, { data: docs }] = await Promise.all([
-    supabase.from('projects').select('id, name, project_number, tranche, stage').order('name') as unknown as Promise<{data: ProjectRow[] | null}>,
+    supabase.from('projects').select('id, name, project_number, tranche, stage').neq('stage', 'Archived').order('name') as unknown as Promise<{data: ProjectRow[] | null}>,
     supabase.from('dataroom_docs').select('project_id, category_id, status') as unknown as Promise<{data: DocRow[] | null}>,
   ])
 

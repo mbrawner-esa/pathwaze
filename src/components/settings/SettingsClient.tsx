@@ -21,7 +21,13 @@ export interface SettingsUser {
   notify_slack_task_threads: boolean
   notify_email_task_assigned: boolean
   notify_email_task_complete: boolean
+  subscribed_task_types: string[] | null
 }
+
+const ALL_TASK_TYPES = [
+  'Design', 'Engineering', 'Permitting', 'Interconnection',
+  'Financial', 'Legal', 'Construction', 'Operations', 'Administrative',
+] as const
 
 export function SettingsClient({ user }: { user: SettingsUser }) {
   const router = useRouter()
@@ -34,6 +40,7 @@ export function SettingsClient({ user }: { user: SettingsUser }) {
     notify_email_task_assigned: user.notify_email_task_assigned ?? true,
     notify_email_task_complete: user.notify_email_task_complete ?? true,
   })
+  const [subs, setSubs] = useState<string[]>(user.subscribed_task_types ?? [...ALL_TASK_TYPES])
   const [saving, setSaving] = useState<string | null>(null)
   const [err, setErr] = useState<string | null>(null)
 
@@ -45,6 +52,20 @@ export function SettingsClient({ user }: { user: SettingsUser }) {
       const b = await res.json().catch(() => ({}))
       setErr(b?.error || 'Save failed')
       setPrefs(p => ({ ...p, [field]: !value }))
+    }
+    setSaving(null)
+  }
+
+  async function toggleSubscription(type: string) {
+    const next = subs.includes(type) ? subs.filter(t => t !== type) : [...subs, type]
+    const prev = subs
+    setSubs(next)
+    setSaving('subscribed_task_types'); setErr(null)
+    const res = await fetch('/api/users/me', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ subscribed_task_types: next }) })
+    if (!res.ok) {
+      const b = await res.json().catch(() => ({}))
+      setErr(b?.error || 'Save failed')
+      setSubs(prev)
     }
     setSaving(null)
   }
@@ -134,6 +155,32 @@ export function SettingsClient({ user }: { user: SettingsUser }) {
           Channel posts for project events depend on each project&apos;s linked Slack channel.
         </p>
       </Section>
+
+      {/* Task subscriptions */}
+      {user.role !== 'investor' && (
+        <Section title="Task subscriptions" subtitle="Which task types you want to see in the Task Tracker. Tasks you create, are assigned to, or approve are always visible regardless of subscriptions.">
+          <div className="flex flex-wrap gap-2">
+            {ALL_TASK_TYPES.map(t => {
+              const on = subs.includes(t)
+              return (
+                <button
+                  key={t}
+                  onClick={() => toggleSubscription(t)}
+                  disabled={saving === 'subscribed_task_types'}
+                  className={`px-3 py-1.5 text-[12.5px] font-semibold rounded-full border transition-all ${on ? 'bg-[#EFF6FF] border-[#bfdbfe] text-[#1d4ed8]' : 'bg-white border-[#e2e8f0] text-[#706E6B] hover:bg-[#fafbfc]'}`}
+                >
+                  {on && <span className="mr-1">✓</span>}{t}
+                </button>
+              )
+            })}
+          </div>
+          <p className="text-[11px] text-[#94a3b8] mt-3">
+            {user.role === 'admin' || user.role === 'manager'
+              ? 'As an admin/manager you see all tasks regardless of subscriptions — these settings are kept for when your role changes.'
+              : 'Public tasks of unsubscribed types are hidden from your Task Tracker.'}
+          </p>
+        </Section>
+      )}
 
       {/* Account */}
       <Section title="Account" subtitle="">

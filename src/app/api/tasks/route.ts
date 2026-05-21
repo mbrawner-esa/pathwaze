@@ -8,6 +8,7 @@ export async function POST(req: NextRequest) {
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const body = await req.json()
+  const visibility = body.visibility === 'private' ? 'private' : 'public'
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data, error } = await (supabase.from('tasks') as any).insert({
     project_id: body.project_id,
@@ -20,6 +21,7 @@ export async function POST(req: NextRequest) {
     approver_id: body.approver_id || null,
     requires_approval: body.requires_approval || false,
     due_date: body.due_date || null,
+    visibility,
     created_by: user.id,
   }).select().single()
 
@@ -27,7 +29,10 @@ export async function POST(req: NextRequest) {
 
   // ── Email notification: task assigned ──
   // Fire-and-forget — never fail the API request if email send fails.
-  if (data.assignee_id && data.assignee_id !== user.id) {
+  // Private tasks don't notify anyone (they're personal reminders — even if
+  // an assignee is set, that user can't view the task because they're not
+  // the creator).
+  if (data.visibility !== 'private' && data.assignee_id && data.assignee_id !== user.id) {
     notifyTaskAssigned(supabase, data, user.id).catch(e =>
       console.error('[task POST] task-assigned email failed:', e)
     )

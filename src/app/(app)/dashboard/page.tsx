@@ -210,6 +210,7 @@ export default async function DashboardPage() {
     ? await supabase
         .from('projects')
         .select('id, name, project_number, stage, city, state, system_kwdc')
+        .neq('stage', 'Archived')
         .in('id', topProjectIds) as unknown as { data: any[] | null }
     : { data: [] }
   // Sort topProjects to match topProjectIds order

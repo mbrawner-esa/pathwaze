@@ -30,7 +30,9 @@ interface ProjectsClientProps {
   users?: { id: string; full_name: string }[]
 }
 
-const STAGES = ['All', 'Archived', 'Pre-Planning', 'Design Development', 'Bidding', 'Late Stage Development', 'Pre-Closing', 'NTP', 'Pre-Construction', 'Active Construction', 'Post Construction', 'Closeout', 'Operating']
+// 'Archived' is intentionally excluded — archived projects don't appear in the
+// main list (filtered server-side). Admins can browse them at /admin/archived.
+const STAGES = ['All', 'Pre-Planning', 'Design Development', 'Bidding', 'Late Stage Development', 'Pre-Closing', 'NTP', 'Pre-Construction', 'Active Construction', 'Post Construction', 'Closeout', 'Operating']
 const STATES = ['All', 'FL', 'IL']
 const GROUP_OPTIONS: { value: string; label: string }[] = [
   { value: 'none', label: 'None' },

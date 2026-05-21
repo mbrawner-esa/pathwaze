@@ -11,7 +11,7 @@ export default async function SettingsPage() {
 
   const { data: profile } = await supabase
     .from('users')
-    .select('id, email, full_name, role, status, avatar_url, timezone, timezone_label, title, slack_display_name, profile_synced_at, notify_slack_task_assigned, notify_slack_task_status, notify_slack_task_threads, notify_email_task_assigned, notify_email_task_complete')
+    .select('id, email, full_name, role, status, avatar_url, timezone, timezone_label, title, slack_display_name, profile_synced_at, notify_slack_task_assigned, notify_slack_task_status, notify_slack_task_threads, notify_email_task_assigned, notify_email_task_complete, subscribed_task_types')
     .eq('id', user.id)
     .single() as unknown as { data: SettingsUser | null }
 
