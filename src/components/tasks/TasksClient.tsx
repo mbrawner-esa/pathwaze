@@ -189,6 +189,15 @@ export function TasksClient({ tasks: initialTasks, projects, users }: { tasks: a
     due_date: '',
     visibility: 'public' as 'public' | 'private',
   })
+  // Pending related links to apply after task creation
+  const [pendingLinks, setPendingLinks] = useState<Array<{ entity_type: string; entity_id: string; label: string }>>([])
+  const [newLinkType, setNewLinkType] = useState<'building'|'meter'|'system'|'permit'|'stakeholder'|'project'>('building')
+  const [newLinkEntityId, setNewLinkEntityId] = useState('')
+  // Pending files: either local File objects (to upload) or external URL links
+  const [pendingFiles, setPendingFiles] = useState<File[]>([])
+  const [pendingFileLinks, setPendingFileLinks] = useState<Array<{ name: string; url: string }>>([])
+  const [newFileLinkNameModal, setNewFileLinkNameModal] = useState('')
+  const [newFileLinkUrlModal, setNewFileLinkUrlModal] = useState('')
 
   const types = ['All', ...Array.from(new Set(initialTasks.map(t => t.type).filter(Boolean)))]
   const statuses = ['All', ...ALL_STATUSES]
@@ -518,6 +527,19 @@ export function TasksClient({ tasks: initialTasks, projects, users }: { tasks: a
     setSavingDrawer(false)
   }
 
+  // Close the New Task modal and reset all staged state (pending links, files,
+  // form fields, errors).
+  function closeNewTaskModal() {
+    setShowNewModal(false)
+    setCreateError(null)
+    setPendingLinks([])
+    setPendingFiles([])
+    setPendingFileLinks([])
+    setNewLinkEntityId('')
+    setNewFileLinkNameModal('')
+    setNewFileLinkUrlModal('')
+  }
+
   // Pre-fill the New Task modal with the selected task's fields so the user
   // can tweak before saving. Closes the drawer so the modal can take focus.
   function duplicateTask() {
@@ -552,16 +574,62 @@ export function TasksClient({ tasks: initialTasks, projects, users }: { tasks: a
           approver_id: form.requires_approval ? form.approver_id || null : null,
         }),
       })
-      if (res.ok) {
-        setShowNewModal(false)
-        setForm({ project_id: '', title: '', description: '', type: 'Administrative', priority: 'Medium', assignee_id: '', approver_id: '', requires_approval: false, due_date: '', visibility: 'public' })
-        router.refresh()
-      } else {
+      if (!res.ok) {
         const body = await res.json().catch(() => ({}))
         const msg = body?.error || `Request failed with ${res.status}`
         console.error('Create task failed:', msg, body)
         setCreateError(msg)
+        setSaving(false)
+        return
       }
+      const created = await res.json()
+
+      // Apply any staged related-entity links + files. These run in parallel
+      // and are best-effort — a failure on any one doesn't block the others
+      // or roll back the task creation.
+      const tasks: Promise<unknown>[] = []
+      for (const l of pendingLinks) {
+        tasks.push(fetch(`/api/tasks/${created.id}/links`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ entity_type: l.entity_type, entity_id: l.entity_id }),
+        }))
+      }
+      for (const fl of pendingFileLinks) {
+        tasks.push(fetch(`/api/tasks/${created.id}/files`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ file_name: fl.name, file_url: fl.url }),
+        }))
+      }
+      for (const file of pendingFiles) {
+        tasks.push((async () => {
+          const browserSb = createBrowserClient()
+          const safeName = file.name.replace(/[^\w.\-]+/g, '_')
+          const storagePath = `${created.id}/${Date.now()}-${safeName}`
+          const { error: upErr } = await browserSb.storage.from('task-files').upload(storagePath, file, { cacheControl: '3600', upsert: false })
+          if (upErr) { console.warn('[new task] file upload failed:', upErr.message); return }
+          await fetch(`/api/tasks/${created.id}/files`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              file_name: file.name, storage_path: storagePath,
+              file_size: file.size, content_type: file.type || null,
+            }),
+          })
+        })())
+      }
+      if (tasks.length) await Promise.all(tasks)
+
+      setShowNewModal(false)
+      setForm({ project_id: '', title: '', description: '', type: 'Administrative', priority: 'Medium', assignee_id: '', approver_id: '', requires_approval: false, due_date: '', visibility: 'public' })
+      setPendingLinks([])
+      setPendingFiles([])
+      setPendingFileLinks([])
+      setNewLinkEntityId('')
+      setNewFileLinkNameModal('')
+      setNewFileLinkUrlModal('')
+      router.refresh()
     } catch (err) {
       console.error('Create task error:', err)
       setCreateError(err instanceof Error ? err.message : 'Network error')
@@ -1611,7 +1679,7 @@ export function TasksClient({ tasks: initialTasks, projects, users }: { tasks: a
 
       {/* New Task Modal — Lightning-style */}
       {showNewModal && (
-        <div className="fixed inset-0 bg-[#080A0F]/40 flex items-center justify-center z-50 p-4" onClick={() => { setShowNewModal(false); setCreateError(null) }}>
+        <div className="fixed inset-0 bg-[#080A0F]/40 flex items-center justify-center z-50 p-4" onClick={closeNewTaskModal}>
           <div className="bg-white rounded-lg shadow-2xl w-full max-w-[640px] max-h-[92vh] flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
             {/* Header */}
             <div className="px-6 py-4 flex items-center justify-between" style={{ background: 'linear-gradient(135deg, #2C5485 0%, #70A0D0 100%)' }}>
@@ -1619,7 +1687,7 @@ export function TasksClient({ tasks: initialTasks, projects, users }: { tasks: a
                 <div className="text-[11px] font-semibold text-white/75 uppercase tracking-[0.08em]">Task</div>
                 <h2 className="text-[17px] font-semibold text-white mt-0.5">New Task</h2>
               </div>
-              <button onClick={() => { setShowNewModal(false); setCreateError(null) }} className="text-white/70 hover:text-white p-1 rounded transition-colors">
+              <button onClick={closeNewTaskModal} className="text-white/70 hover:text-white p-1 rounded transition-colors">
                 <X size={18} />
               </button>
             </div>
@@ -1671,48 +1739,53 @@ export function TasksClient({ tasks: initialTasks, projects, users }: { tasks: a
                 </div>
               </div>
 
-              {/* Section: Visibility */}
-              <div>
-                <div className="px-6 py-2.5 bg-[#f1f5f9] border-y border-[#e2e8f0]">
-                  <h3 className="text-[10.5px] font-bold text-[#3E3E3C] uppercase tracking-[0.06em]">Visibility</h3>
-                </div>
-                <div className="px-6 py-5 bg-white">
-                  <div className="grid grid-cols-2 gap-3">
-                    <button
-                      type="button"
-                      onClick={() => setForm(f => ({ ...f, visibility: 'public' }))}
-                      className={`text-left p-3 border-2 rounded-lg transition-all ${form.visibility === 'public' ? 'border-[#70A0D0] bg-[#EFF6FF]' : 'border-[#e2e8f0] bg-white hover:bg-[#fafbfc]'}`}
-                    >
-                      <p className="text-[13px] font-semibold text-[#181818]">Public</p>
-                      <p className="text-[11.5px] text-[#706E6B] mt-0.5 leading-snug">Visible to your team</p>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setForm(f => ({ ...f, visibility: 'private' }))}
-                      className={`text-left p-3 border-2 rounded-lg transition-all ${form.visibility === 'private' ? 'border-[#70A0D0] bg-[#EFF6FF]' : 'border-[#e2e8f0] bg-white hover:bg-[#fafbfc]'}`}
-                    >
-                      <p className="text-[13px] font-semibold text-[#181818] flex items-center gap-1.5">
-                        <Lock size={11} /> Private
-                      </p>
-                      <p className="text-[11.5px] text-[#706E6B] mt-0.5 leading-snug">Only you can see this (personal reminder)</p>
-                    </button>
-                  </div>
-                </div>
-              </div>
-
               {/* Section: Assignment */}
               <div>
                 <div className="px-6 py-2.5 bg-[#f1f5f9] border-y border-[#e2e8f0]">
                   <h3 className="text-[10.5px] font-bold text-[#3E3E3C] uppercase tracking-[0.06em]">Assignment</h3>
                 </div>
                 <div className="px-6 py-5 bg-white space-y-4">
-                  <div>
-                    <label className="block text-[12px] font-medium text-[#3E3E3C] mb-1.5">Assignee</label>
-                    <select value={form.assignee_id} onChange={e => setForm(f => ({ ...f, assignee_id: e.target.value }))}
-                      className="w-full px-3 py-2 border border-[#cbd5e1] rounded text-[13px] text-[#181818] bg-white focus:outline-none focus:border-[#70A0D0] focus:ring-2 focus:ring-[#70A0D0]/20 transition-all">
-                      <option value="">Unassigned</option>
-                      {users.map((u: { id: string; full_name: string }) => <option key={u.id} value={u.id}>{u.full_name}</option>)}
-                    </select>
+                  <div className="grid grid-cols-[1fr_auto] gap-3 items-end">
+                    <div>
+                      <label className="block text-[12px] font-medium text-[#3E3E3C] mb-1.5">Assignee</label>
+                      <select value={form.assignee_id} onChange={e => setForm(f => ({ ...f, assignee_id: e.target.value }))}
+                        className="w-full px-3 py-2 border border-[#cbd5e1] rounded text-[13px] text-[#181818] bg-white focus:outline-none focus:border-[#70A0D0] focus:ring-2 focus:ring-[#70A0D0]/20 transition-all">
+                        <option value="">Unassigned</option>
+                        {users.map((u: { id: string; full_name: string }) => <option key={u.id} value={u.id}>{u.full_name}</option>)}
+                      </select>
+                    </div>
+                    {/* Compact visibility toggle — segmented control next to Assignee */}
+                    <div>
+                      <label className="block text-[12px] font-medium text-[#3E3E3C] mb-1.5">Visibility</label>
+                      <div className="flex bg-[#f1f5f9] rounded-md p-0.5 h-[34px]">
+                        <button
+                          type="button"
+                          onClick={() => setForm(f => ({ ...f, visibility: 'public' }))}
+                          className="px-3 text-[12px] font-semibold rounded transition-all"
+                          style={{
+                            background: form.visibility === 'public' ? 'white' : 'transparent',
+                            color: form.visibility === 'public' ? '#181818' : '#706E6B',
+                            boxShadow: form.visibility === 'public' ? '0 1px 2px rgba(0,0,0,0.08)' : 'none',
+                          }}
+                          title="Visible to your team"
+                        >
+                          Public
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setForm(f => ({ ...f, visibility: 'private' }))}
+                          className="px-3 text-[12px] font-semibold rounded transition-all inline-flex items-center gap-1"
+                          style={{
+                            background: form.visibility === 'private' ? 'white' : 'transparent',
+                            color: form.visibility === 'private' ? '#181818' : '#706E6B',
+                            boxShadow: form.visibility === 'private' ? '0 1px 2px rgba(0,0,0,0.08)' : 'none',
+                          }}
+                          title="Only you can see this — personal reminder"
+                        >
+                          <Lock size={10} /> Private
+                        </button>
+                      </div>
+                    </div>
                   </div>
                   <div>
                     <label className="flex items-center gap-2.5 cursor-pointer select-none">
@@ -1749,6 +1822,164 @@ export function TasksClient({ tasks: initialTasks, projects, users }: { tasks: a
                 </div>
               </div>
 
+              {/* Section: Related — only available once a project is selected (entities are project-scoped) */}
+              {form.project_id && (
+                <div>
+                  <div className="px-6 py-2.5 bg-[#f1f5f9] border-y border-[#e2e8f0]">
+                    <h3 className="text-[10.5px] font-bold text-[#3E3E3C] uppercase tracking-[0.06em]">Related (optional)</h3>
+                  </div>
+                  <div className="px-6 py-5 bg-white space-y-3">
+                    {pendingLinks.length > 0 && (
+                      <ul className="flex flex-wrap gap-1.5">
+                        {pendingLinks.map((l, i) => (
+                          <li key={`${l.entity_type}:${l.entity_id}`} className="inline-flex items-center gap-1 pl-2 pr-1 py-1 bg-[#EFF6FF] border border-[#bfdbfe] rounded-full text-[12px] text-[#1d4ed8]">
+                            <span className="text-[10px] font-semibold uppercase tracking-wider opacity-70">{ENTITY_LABELS[l.entity_type]}</span>
+                            <span className="font-medium">{l.label}</span>
+                            <button
+                              type="button"
+                              onClick={() => setPendingLinks(p => p.filter((_, idx) => idx !== i))}
+                              className="ml-1 p-0.5 hover:bg-[#dbeafe] rounded-full"
+                              title="Remove"
+                            >
+                              <X size={11} />
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                    <div className="grid grid-cols-[1fr_2fr_auto] gap-2 items-end">
+                      <div>
+                        <label className="block text-[11px] font-semibold text-[#706E6B] uppercase tracking-wider mb-1">Type</label>
+                        <select
+                          value={newLinkType}
+                          onChange={e => {
+                            const v = e.target.value as typeof newLinkType
+                            setNewLinkType(v); setNewLinkEntityId('')
+                            loadLinkCatalog(form.project_id, v)
+                          }}
+                          onFocus={() => loadLinkCatalog(form.project_id, newLinkType)}
+                          className="w-full px-2 py-1.5 border border-[#cbd5e1] rounded text-[13px] bg-white focus:outline-none focus:border-[#70A0D0]"
+                        >
+                          <option value="building">Building</option>
+                          <option value="meter">Meter</option>
+                          <option value="system">System</option>
+                          <option value="permit">Permit</option>
+                          <option value="stakeholder">Stakeholder</option>
+                          <option value="project">Project</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-semibold text-[#706E6B] uppercase tracking-wider mb-1">Record</label>
+                        <select
+                          value={newLinkEntityId}
+                          onChange={e => setNewLinkEntityId(e.target.value)}
+                          onFocus={() => loadLinkCatalog(form.project_id, newLinkType)}
+                          className="w-full px-2 py-1.5 border border-[#cbd5e1] rounded text-[13px] bg-white focus:outline-none focus:border-[#70A0D0]"
+                        >
+                          <option value="">— Select —</option>
+                          {(linkCatalog[`${form.project_id}:${newLinkType}`] ?? [])
+                            .filter(item => !pendingLinks.some(p => p.entity_type === newLinkType && p.entity_id === item.id))
+                            .map(item => (
+                              <option key={item.id} value={item.id}>{linkLabel(newLinkType, item)}</option>
+                            ))}
+                        </select>
+                      </div>
+                      <button
+                        type="button"
+                        disabled={!newLinkEntityId}
+                        onClick={() => {
+                          const item = (linkCatalog[`${form.project_id}:${newLinkType}`] ?? []).find(x => x.id === newLinkEntityId)
+                          if (!item) return
+                          setPendingLinks(p => [...p, { entity_type: newLinkType, entity_id: newLinkEntityId, label: linkLabel(newLinkType, item) }])
+                          setNewLinkEntityId('')
+                        }}
+                        className="btn-secondary h-[34px]"
+                      >
+                        <Plus size={12} /> Add
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Section: Files (optional) */}
+              <div>
+                <div className="px-6 py-2.5 bg-[#f1f5f9] border-y border-[#e2e8f0]">
+                  <h3 className="text-[10.5px] font-bold text-[#3E3E3C] uppercase tracking-[0.06em]">Files (optional)</h3>
+                </div>
+                <div className="px-6 py-5 bg-white space-y-3">
+                  {(pendingFiles.length > 0 || pendingFileLinks.length > 0) && (
+                    <ul className="divide-y divide-[#f1f5f9] border border-[#e2e8f0] rounded">
+                      {pendingFiles.map((f, i) => (
+                        <li key={`file-${i}`} className="flex items-center gap-2 px-3 py-2">
+                          <Paperclip size={13} className="text-[#706E6B] flex-shrink-0" />
+                          <span className="text-[12.5px] text-[#181818] flex-1 truncate">{f.name}</span>
+                          <span className="text-[11px] text-[#706E6B]">{(f.size / 1024).toFixed(0)} KB</span>
+                          <button type="button" onClick={() => setPendingFiles(prev => prev.filter((_, idx) => idx !== i))} className="text-[#94a3b8] hover:text-[#dc2626]">
+                            <Trash2 size={12} />
+                          </button>
+                        </li>
+                      ))}
+                      {pendingFileLinks.map((l, i) => (
+                        <li key={`link-${i}`} className="flex items-center gap-2 px-3 py-2">
+                          <ExternalLink size={13} className="text-[#706E6B] flex-shrink-0" />
+                          <span className="text-[12.5px] text-[#181818] flex-1 truncate">{l.name}</span>
+                          <span className="text-[11px] text-[#706E6B] truncate max-w-[180px]">{l.url}</span>
+                          <button type="button" onClick={() => setPendingFileLinks(prev => prev.filter((_, idx) => idx !== i))} className="text-[#94a3b8] hover:text-[#dc2626]">
+                            <Trash2 size={12} />
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[11px] font-semibold text-[#706E6B] uppercase tracking-wider mb-1.5">Upload</label>
+                      <input
+                        type="file"
+                        multiple
+                        onChange={e => {
+                          const list = Array.from(e.target.files ?? [])
+                          if (list.length) setPendingFiles(prev => [...prev, ...list])
+                          e.target.value = ''
+                        }}
+                        className="block w-full text-[11.5px] text-[#3E3E3C] file:mr-2 file:py-1 file:px-2 file:rounded file:border-0 file:text-[11.5px] file:font-semibold file:bg-[#70A0D0] file:text-white hover:file:bg-[#2C5485] file:cursor-pointer cursor-pointer"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-semibold text-[#706E6B] uppercase tracking-wider mb-1.5">External link</label>
+                      <div className="flex gap-1.5">
+                        <input
+                          type="text"
+                          value={newFileLinkNameModal}
+                          onChange={e => setNewFileLinkNameModal(e.target.value)}
+                          placeholder="Label"
+                          className="w-24 px-2 py-1.5 border border-[#cbd5e1] rounded text-[12px] focus:outline-none focus:border-[#70A0D0]"
+                        />
+                        <input
+                          type="url"
+                          value={newFileLinkUrlModal}
+                          onChange={e => setNewFileLinkUrlModal(e.target.value)}
+                          placeholder="https://…"
+                          className="flex-1 px-2 py-1.5 border border-[#cbd5e1] rounded text-[12px] focus:outline-none focus:border-[#70A0D0]"
+                        />
+                        <button
+                          type="button"
+                          disabled={!newFileLinkNameModal.trim() || !newFileLinkUrlModal.trim()}
+                          onClick={() => {
+                            setPendingFileLinks(prev => [...prev, { name: newFileLinkNameModal.trim(), url: newFileLinkUrlModal.trim() }])
+                            setNewFileLinkNameModal(''); setNewFileLinkUrlModal('')
+                          }}
+                          className="btn-secondary h-[30px]"
+                        >
+                          Add
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
               {createError && (
                 <div className="px-6 py-3 bg-[#fef2f2] border-t border-[#fecaca]">
                   <div className="text-[12px] text-[#991b1b] flex items-start gap-2">
@@ -1761,7 +1992,7 @@ export function TasksClient({ tasks: initialTasks, projects, users }: { tasks: a
 
             {/* Sticky footer */}
             <div className="px-6 py-3 bg-[#f1f5f9] border-t border-[#e2e8f0] flex justify-end gap-2">
-              <button onClick={() => { setShowNewModal(false); setCreateError(null) }}
+              <button onClick={closeNewTaskModal}
                 className="px-4 py-2 text-[13px] font-semibold text-[#3E3E3C] bg-white border border-[#cbd5e1] rounded hover:bg-[#fafbfc] transition-colors">
                 Cancel
               </button>
