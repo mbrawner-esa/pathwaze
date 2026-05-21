@@ -586,21 +586,7 @@ export function OfftakerPricingTable({
               </SectionShell>
 
               {/* ───────────────────── 2. Utility Savings ───────────────────── */}
-              <SectionShell
-                title="Utility Savings"
-                rightSlot={
-                  <div className="flex items-center gap-2">
-                    <span className="text-[10.5px] font-bold text-[#706E6B] uppercase tracking-wider">Utility escalation</span>
-                    {editing ? (
-                      <div className="w-20">
-                        <NumberInput value={editForm.utility_escalation_rate ?? 5} onChange={v => setEditForm(f => ({ ...f, utility_escalation_rate: v }))} suffix="%" />
-                      </div>
-                    ) : (
-                      <span className="text-[12.5px] font-medium text-[#181818]">{open.utility_escalation_rate ?? 5}%</span>
-                    )}
-                  </div>
-                }
-              >
+              <SectionShell title="Utility Savings">
                 <div className="px-5 py-4 space-y-4">
                   {linkedMeters().length === 0 ? (
                     <p className="text-[12.5px] text-[#A8A8A8] italic">Link a system that has an attached meter to compute utility savings.</p>
@@ -685,10 +671,15 @@ export function OfftakerPricingTable({
                     value={formatCurrency(year1NetSavings())}
                     info="Total Electric Bill Savings − (Year 1 Price × Total Year 1 Production). Displayed in full dollars."
                   />
+                  <FieldCell label="Utility escalation">
+                    {editing
+                      ? <NumberInput value={editForm.utility_escalation_rate ?? 5} onChange={v => setEditForm(f => ({ ...f, utility_escalation_rate: v }))} suffix="%" />
+                      : `${open.utility_escalation_rate ?? 5}%`}
+                  </FieldCell>
                   <FieldCell label={
                     <InfoLabel
                       label="Customer term savings"
-                      info="Enter the amount in thousands of dollars. e.g., 8,610 = $8,610,000."
+                      info="Enter the value in thousands of dollars. Displayed with a K suffix to confirm units."
                     />
                   }>
                     {editing
@@ -698,9 +689,9 @@ export function OfftakerPricingTable({
                   <FieldCell label={
                     <InfoLabel
                       label="Customer term NPV"
-                      info="Enter the amount in thousands of dollars. e.g., 8,610 = $8,610,000."
+                      info="Enter the value in thousands of dollars. Displayed with a K suffix to confirm units."
                     />
-                  } full>
+                  }>
                     {editing
                       ? <CurrencyInput value={editForm.customer_term_npv ?? 0} onChange={v => setEditForm(f => ({ ...f, customer_term_npv: v }))} suffix="K" />
                       : (open.customer_term_npv != null ? formatThousandsCurrency(open.customer_term_npv) : '—')}
@@ -864,9 +855,13 @@ function formatForEdit(n: number, decimals: number): string {
   return Number(n).toLocaleString('en-US', { minimumFractionDigits: decimals, maximumFractionDigits: decimals })
 }
 
-// Format a "thousands" value as full dollars: 8610 → $8,610,000.
+// Display a "thousands" value as-entered with a K suffix, leaving the
+// units explicit and avoiding silent × 1000 multiplication. Stored as
+// "amount in $K" — display matches input.
 function formatThousandsCurrency(n: number): string {
-  return formatCurrency(Number(n) * 1000)
+  const v = Number(n)
+  if (!Number.isFinite(v) || v === 0) return '$0K'
+  return `${formatCurrency(v)}K`
 }
 
 // Render notes for display. New notes saved by RichTextEditor are HTML
