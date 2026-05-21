@@ -52,15 +52,22 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     row.version_label = `Option ${letter}`
   }
   // Pre-populate per-proposal dates from the project's master schedule.
-  // Each proposal can edit them independently after.
+  // Each proposal can edit them independently after. Note: target_cod is
+  // a free-form TEXT column on projects (defaults to "TBD"), so we only
+  // copy it forward if it parses as a real ISO date.
   if (row.estimated_ntp === undefined || row.estimated_cod === undefined) {
     const { data: proj } = await supabase
       .from('projects')
       .select('start_date, target_cod')
       .eq('id', id)
       .single() as { data: { start_date?: string | null; target_cod?: string | null } | null }
-    if (row.estimated_ntp === undefined && proj?.start_date) row.estimated_ntp = proj.start_date
-    if (row.estimated_cod === undefined && proj?.target_cod) row.estimated_cod = proj.target_cod
+    const asDate = (s?: string | null): string | null => {
+      if (!s) return null
+      // Accept ISO yyyy-mm-dd (or longer timestamp) — anything else (e.g., "TBD") is ignored.
+      return /^\d{4}-\d{2}-\d{2}/.test(s) ? s.slice(0, 10) : null
+    }
+    if (row.estimated_ntp === undefined) row.estimated_ntp = asDate(proj?.start_date) ?? undefined
+    if (row.estimated_cod === undefined) row.estimated_cod = asDate(proj?.target_cod) ?? undefined
   }
 
   // If incoming row says is_selected, clear the flag on any existing rows first.
