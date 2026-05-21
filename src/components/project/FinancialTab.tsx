@@ -3,6 +3,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { formatCurrency } from '@/lib/utils'
 import { EditToolbar, ErrorBanner, FieldGrid, Field, FieldInput, FieldSelect } from './_editFields'
+import { OfftakerPricingTable, type PricingRow } from './OfftakerPricingTable'
 
 interface Financials {
   id: string
@@ -34,12 +35,12 @@ interface Financials {
   payback_years: number
 }
 
-type Section = 'cost' | 'transaction' | 'tax'
+type Section = 'cost' | 'tax'
 
-const CONTRACT_TYPES = ['Energy Services Agreement', 'Power Purchase Agreement', 'Lease', 'Cash Sale']
-const REVENUE_TYPES = ['Fixed Rate with Escalator', 'Fixed Rate', 'Indexed', 'Avoided Cost']
-const OFFTAKER_CREDITS = ['AAA', 'AA - IG', 'A - IG', 'BBB - IG', 'BB', 'Unrated']
-const SREC_TREATMENTS = ['Offtaker Retains', 'Developer Retains', 'REC Arbitrage', 'Not Applicable']
+// Contract types, revenue types, offtaker credits, and SREC treatments
+// now live in OfftakerPricingTable.tsx (the old Transaction Structure block
+// was replaced by that component). Only INCENTIVE_TYPES remains here for
+// the Tax & Incentives section.
 const INCENTIVE_TYPES = ['None', 'State', 'Federal', 'Utility', 'Local']
 
 // ── Excel-style cost breakdown table ─────────────────────────────────────
@@ -170,7 +171,7 @@ function SectionCard({
   )
 }
 
-export function FinancialTab({ financials, projectId, systemKwdc = 0 }: { financials: Financials | null; projectId: string; systemKwdc?: number }) {
+export function FinancialTab({ financials, projectId, systemKwdc = 0, pricingRows = [] }: { financials: Financials | null; projectId: string; systemKwdc?: number; pricingRows?: PricingRow[] }) {
   const router = useRouter()
   const [editingSection, setEditingSection] = useState<Section | null>(null)
   const [saving, setSaving] = useState(false)
@@ -182,18 +183,6 @@ export function FinancialTab({ financials, projectId, systemKwdc = 0 }: { financ
     estimated_dev_costs: financials?.estimated_dev_costs ?? 0,
     estimated_ix_costs: financials?.estimated_ix_costs ?? 0,
     development_fee: financials?.development_fee ?? 0,
-  })
-  // Transaction Structure — contract terms + customer-facing economics
-  const [transactionForm, setTransactionForm] = useState({
-    contract_type: financials?.contract_type ?? '',
-    revenue_type: financials?.revenue_type ?? '',
-    offtaker_credit: financials?.offtaker_credit ?? '',
-    term_months: financials?.term_months ?? 0,
-    year1_contract_price: financials?.year1_contract_price ?? 0,
-    escalation_rate: financials?.escalation_rate ?? 0,
-    srec_treatment: financials?.srec_treatment ?? '',
-    avoided_cost_kwh: financials?.avoided_cost_kwh ?? 0,
-    annual_savings: financials?.annual_savings ?? 0,
   })
   const [taxForm, setTaxForm] = useState({
     itc_rate: financials?.itc_rate ?? 0,
@@ -216,17 +205,6 @@ export function FinancialTab({ financials, projectId, systemKwdc = 0 }: { financ
       estimated_ix_costs: f.estimated_ix_costs ?? 0,
       development_fee: f.development_fee ?? 0,
     })
-    if (section === 'transaction') setTransactionForm({
-      contract_type: f.contract_type ?? '',
-      revenue_type: f.revenue_type ?? '',
-      offtaker_credit: f.offtaker_credit ?? '',
-      term_months: f.term_months ?? 0,
-      year1_contract_price: f.year1_contract_price ?? 0,
-      escalation_rate: f.escalation_rate ?? 0,
-      srec_treatment: f.srec_treatment ?? '',
-      avoided_cost_kwh: f.avoided_cost_kwh ?? 0,
-      annual_savings: f.annual_savings ?? 0,
-    })
     if (section === 'tax') setTaxForm({
       itc_rate: f.itc_rate ?? 0,
       itc_eligible_costs: f.itc_eligible_costs ?? 0,
@@ -247,17 +225,6 @@ export function FinancialTab({ financials, projectId, systemKwdc = 0 }: { financ
       estimated_dev_costs: Number(costForm.estimated_dev_costs) || 0,
       estimated_ix_costs: Number(costForm.estimated_ix_costs) || 0,
       development_fee: Number(costForm.development_fee) || 0,
-    }
-    if (section === 'transaction') payload = {
-      contract_type: transactionForm.contract_type,
-      revenue_type: transactionForm.revenue_type,
-      offtaker_credit: transactionForm.offtaker_credit,
-      term_months: Number(transactionForm.term_months) || 0,
-      year1_contract_price: Number(transactionForm.year1_contract_price) || 0,
-      escalation_rate: Number(transactionForm.escalation_rate) || 0,
-      srec_treatment: transactionForm.srec_treatment,
-      avoided_cost_kwh: Number(transactionForm.avoided_cost_kwh) || 0,
-      annual_savings: Number(transactionForm.annual_savings) || 0,
     }
     if (section === 'tax') payload = {
       itc_rate: Number(taxForm.itc_rate) || 0,
@@ -310,71 +277,11 @@ export function FinancialTab({ financials, projectId, systemKwdc = 0 }: { financ
         </SectionCard>
       </div>
 
-      {/* Transaction Structure — contract terms + customer-facing economics */}
-      <SectionCard
-        title="Transaction Structure"
-        editing={editingSection === 'transaction'}
-        saving={saving}
-        onEdit={() => startEdit('transaction')}
-        onCancel={() => { setEditingSection(null); setError(null) }}
-        onSave={() => save('transaction')}
-        error={editingSection === 'transaction' ? error : null}
-      >
-        <div>
-          {(() => {
-            const editing = editingSection === 'transaction'
-            return (
-              <FieldGrid>
-                <Field label="Contract Type">
-                  {editing
-                    ? <FieldSelect value={transactionForm.contract_type} options={CONTRACT_TYPES} onChange={v => setTransactionForm(p => ({ ...p, contract_type: v }))} />
-                    : (f.contract_type || '—')}
-                </Field>
-                <Field label="Revenue Type">
-                  {editing
-                    ? <FieldSelect value={transactionForm.revenue_type} options={REVENUE_TYPES} onChange={v => setTransactionForm(p => ({ ...p, revenue_type: v }))} />
-                    : (f.revenue_type || '—')}
-                </Field>
-                <Field label="Offtaker Credit">
-                  {editing
-                    ? <FieldSelect value={transactionForm.offtaker_credit} options={OFFTAKER_CREDITS} onChange={v => setTransactionForm(p => ({ ...p, offtaker_credit: v }))} />
-                    : (f.offtaker_credit || '—')}
-                </Field>
-                <Field label="Term">
-                  {editing
-                    ? <FieldInput type="number" value={transactionForm.term_months} onChange={v => setTransactionForm(p => ({ ...p, term_months: Number(v) as unknown as number }))} suffix="months" />
-                    : (f.term_months ? `${f.term_months} months (${(f.term_months / 12).toFixed(1)} yrs)` : '—')}
-                </Field>
-                <Field label="Year 1 Price">
-                  {editing
-                    ? <FieldInput type="number" value={transactionForm.year1_contract_price} onChange={v => setTransactionForm(p => ({ ...p, year1_contract_price: Number(v) as unknown as number }))} suffix="$/kWh" />
-                    : (f.year1_contract_price ? `$${f.year1_contract_price}/kWh` : '—')}
-                </Field>
-                <Field label="Escalation Rate">
-                  {editing
-                    ? <FieldInput type="number" value={transactionForm.escalation_rate} onChange={v => setTransactionForm(p => ({ ...p, escalation_rate: Number(v) as unknown as number }))} suffix="%" />
-                    : `${f.escalation_rate}%`}
-                </Field>
-                <Field label="SREC Treatment" full>
-                  {editing
-                    ? <FieldSelect value={transactionForm.srec_treatment} options={SREC_TREATMENTS} onChange={v => setTransactionForm(p => ({ ...p, srec_treatment: v }))} />
-                    : (f.srec_treatment || '—')}
-                </Field>
-                <Field label="Avoided Cost">
-                  {editing
-                    ? <FieldInput type="number" value={transactionForm.avoided_cost_kwh} onChange={v => setTransactionForm(p => ({ ...p, avoided_cost_kwh: Number(v) as unknown as number }))} suffix="$/kWh" />
-                    : (f.avoided_cost_kwh ? `$${f.avoided_cost_kwh}/kWh` : '—')}
-                </Field>
-                <Field label="Annual Savings">
-                  {editing
-                    ? <FieldInput type="number" value={transactionForm.annual_savings} onChange={v => setTransactionForm(p => ({ ...p, annual_savings: Number(v) as unknown as number }))} suffix="$" />
-                    : (f.annual_savings ? formatCurrency(f.annual_savings) : '—')}
-                </Field>
-              </FieldGrid>
-            )
-          })()}
-        </div>
-      </SectionCard>
+      {/* Offtaker Pricing — replaces the old single-row Transaction Structure
+          with a one-to-many table of proposal versions. */}
+      <div className="col-span-2">
+        <OfftakerPricingTable projectId={projectId} initialRows={pricingRows} />
+      </div>
 
       {/* Tax & Incentives */}
       <SectionCard

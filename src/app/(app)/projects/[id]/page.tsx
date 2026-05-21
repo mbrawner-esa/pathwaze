@@ -28,12 +28,14 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
     supabase.from('systems').select('*').eq('project_id', id).order('created_at'),
     supabase.from('project_threads').select('*').eq('project_id', id).order('created_at', { ascending: true }),
     supabase.from('project_notes').select('*, user:users(full_name, avatar_url)').eq('project_id', id).order('created_at', { ascending: false }),
-  ]) as unknown as [any, any, any, any, any, any, any, any, any, any, any, any]
+    supabase.from('offtaker_pricing').select('*').eq('project_id', id).order('created_at', { ascending: true }),
+  ]) as unknown as [any, any, any, any, any, any, any, any, any, any, any, any, any]
   const [
     { data: project }, { data: financials }, { data: milestones },
     { data: stakeholders }, { data: permits }, { data: docs }, { data: users },
     { data: buildings }, { data: meters }, { data: systems },
     { data: threads }, { data: notes },
+    { data: pricingRows },
   ] = results
 
   if (!project) notFound()
@@ -160,6 +162,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
         threads={threads ?? []}
         activity={activity}
         users={users ?? []}
+        pricingRows={pricingRows ?? []}
       />
     </div>
   )
