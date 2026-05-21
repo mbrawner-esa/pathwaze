@@ -22,9 +22,9 @@
  * Tax & Incentives section (project_financials). Default version_label uses
  * the pattern QT-YYMM-V[A]-Name (server-generated; user edits).
  */
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
-import { Plus, Star, Trash2, X, Send, MessageSquare, Pencil, Info } from 'lucide-react'
+import { Plus, Star, Trash2, X, Send, MessageSquare, Pencil, Info, List, ListOrdered, Bold } from 'lucide-react'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { Avatar } from '@/components/ui/Avatar'
 
@@ -586,7 +586,21 @@ export function OfftakerPricingTable({
               </SectionShell>
 
               {/* ───────────────────── 2. Utility Savings ───────────────────── */}
-              <SectionShell title="Utility Savings">
+              <SectionShell
+                title="Utility Savings"
+                rightSlot={
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10.5px] font-bold text-[#706E6B] uppercase tracking-wider">Utility escalation</span>
+                    {editing ? (
+                      <div className="w-20">
+                        <NumberInput value={editForm.utility_escalation_rate ?? 5} onChange={v => setEditForm(f => ({ ...f, utility_escalation_rate: v }))} suffix="%" />
+                      </div>
+                    ) : (
+                      <span className="text-[12.5px] font-medium text-[#181818]">{open.utility_escalation_rate ?? 5}%</span>
+                    )}
+                  </div>
+                }
+              >
                 <div className="px-5 py-4 space-y-4">
                   {linkedMeters().length === 0 ? (
                     <p className="text-[12.5px] text-[#A8A8A8] italic">Link a system that has an attached meter to compute utility savings.</p>
@@ -630,14 +644,9 @@ export function OfftakerPricingTable({
                       </tbody>
                     </table>
                   )}
-                  <div className="grid gap-4 pt-2 border-t border-[#f1f5f9]" style={{ gridTemplateColumns: '5fr 5fr 2fr' }}>
+                  <div className="grid grid-cols-2 gap-4 pt-2 border-t border-[#f1f5f9]">
                     <CalcField label="Total electric bill savings" value={formatCurrency(totalElectricBillSavings())} />
                     <CalcField label="Blended avoided cost" value={blendedAvoidedCost() > 0 ? fmtRate(blendedAvoidedCost()) : '—'} />
-                    <FieldCell label="Utility escalation">
-                      {editing
-                        ? <NumberInput value={editForm.utility_escalation_rate ?? 5} onChange={v => setEditForm(f => ({ ...f, utility_escalation_rate: v }))} suffix="%" />
-                        : `${open.utility_escalation_rate ?? 5}%`}
-                    </FieldCell>
                   </div>
                 </div>
               </SectionShell>
@@ -671,7 +680,11 @@ export function OfftakerPricingTable({
               {/* ─────────────────── 4. Contract Performance ─────────────────── */}
               <SectionShell title="Contract Performance">
                 <div className="px-5 py-4 grid grid-cols-2 gap-x-5 gap-y-4">
-                  <CalcField label="Year 1 net savings" value={formatCurrency(year1NetSavings())} />
+                  <CalcField
+                    label="Year 1 net savings"
+                    value={formatCurrency(year1NetSavings())}
+                    info="Total Electric Bill Savings − (Year 1 Price × Total Year 1 Production). Displayed in full dollars."
+                  />
                   <FieldCell label={
                     <InfoLabel
                       label="Customer term savings"
@@ -707,22 +720,14 @@ export function OfftakerPricingTable({
                 </div>
               </SectionShell>
 
-              {/* Notes */}
+              {/* Notes — rich text editor with bullets / numbered / bold */}
               <SectionShell title="Notes">
                 <div className="px-5 py-4">
                   {editing ? (
-                    <>
-                      <textarea
-                        value={editForm.notes ?? ''}
-                        onChange={e => setEditForm(f => ({ ...f, notes: e.target.value }))}
-                        rows={5}
-                        placeholder={`Internal notes about this proposal.\n\nUse lists by starting a line with - or 1. :\n- bullet item\n1. numbered item`}
-                        className="w-full px-3 py-2 border border-[#cbd5e1] rounded text-[13px] text-[#181818] resize-none focus:outline-none focus:border-[#70A0D0] focus:ring-2 focus:ring-[#70A0D0]/20 font-mono"
-                      />
-                      <p className="text-[10.5px] text-[#94a3b8] mt-1.5">
-                        Start a line with <code className="bg-[#f1f5f9] px-1 py-0.5 rounded">-</code> or <code className="bg-[#f1f5f9] px-1 py-0.5 rounded">1.</code> to make lists. Blank lines separate paragraphs.
-                      </p>
-                    </>
+                    <RichTextEditor
+                      value={editForm.notes ?? ''}
+                      onChange={html => setEditForm(f => ({ ...f, notes: html }))}
+                    />
                   ) : open.notes ? (
                     <NotesRender source={open.notes} />
                   ) : (
@@ -784,11 +789,12 @@ export function OfftakerPricingTable({
 
 // ─────────────────── Small inline helpers ───────────────────
 
-function SectionShell({ title, children }: { title: React.ReactNode; children: React.ReactNode }) {
+function SectionShell({ title, rightSlot, children }: { title: React.ReactNode; rightSlot?: React.ReactNode; children: React.ReactNode }) {
   return (
     <div className="bg-white rounded-lg border border-[#e2e8f0] overflow-hidden">
-      <div className="px-4 py-3 border-b border-[#f1f5f9] bg-[#F3F2F2]">
+      <div className="px-4 py-3 border-b border-[#f1f5f9] bg-[#F3F2F2] flex items-center justify-between gap-3">
         <h3 className="text-[10.5px] font-bold text-[#3E3E3C] uppercase tracking-[0.06em]">{title}</h3>
+        {rightSlot}
       </div>
       {children}
     </div>
@@ -808,7 +814,14 @@ function InfoLabel({ label, info }: { label: string; info: string }) {
   return (
     <span className="inline-flex items-center gap-1">
       {label}
-      <span title={info} className="inline-flex items-center cursor-help text-[#94a3b8]"><Info size={11} /></span>
+      <span className="relative group inline-flex items-center cursor-help text-[#94a3b8] hover:text-[#3E3E3C]">
+        <Info size={11} />
+        {/* Always-on hover tooltip — replaces the unreliable native title attr */}
+        <span className="pointer-events-none absolute left-1/2 -translate-x-1/2 bottom-[calc(100%+6px)] z-10 hidden group-hover:block w-56 px-2.5 py-1.5 text-[11px] font-normal normal-case tracking-normal leading-snug text-white bg-[#181818] rounded shadow-lg">
+          {info}
+          <span className="absolute left-1/2 -translate-x-1/2 top-full w-0 h-0 border-x-[5px] border-x-transparent border-t-[5px] border-t-[#181818]" />
+        </span>
+      </span>
     </span>
   )
 }
@@ -856,12 +869,30 @@ function formatThousandsCurrency(n: number): string {
   return formatCurrency(Number(n) * 1000)
 }
 
-// Render a plain-text notes string with simple list support:
-//   - lines starting with `- ` or `* ` become unordered list items
-//   - lines starting with `1. ` `2. ` etc become ordered list items
-//   - blank lines separate paragraphs
-//   - everything else is plain text with preserved line breaks
+// Render notes for display. New notes saved by RichTextEditor are HTML
+// (e.g., "<ul><li>foo</li></ul>"); older notes are plain text with
+// markdown-style list lines. We detect the format and render either way.
 function NotesRender({ source }: { source: string }) {
+  const trimmed = source.trim()
+  // If the source contains HTML tags (from the rich editor), render directly.
+  // Sanitization-light: we only allow content the user authored in our own editor.
+  if (/<(p|ul|ol|li|br|b|strong|i|em|div|span)\b/i.test(trimmed)) {
+    return (
+      <div
+        className="text-[13px] text-[#181818] leading-relaxed [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_li]:my-0.5 [&_p]:my-1.5"
+        // eslint-disable-next-line react/no-danger
+        dangerouslySetInnerHTML={{ __html: trimmed }}
+      />
+    )
+  }
+  return <LegacyNotesRender source={source} />
+}
+
+// Plain-text notes (pre-rich-editor era) with simple markdown lists:
+//   - lines starting with `- ` or `* ` → unordered list items
+//   - lines starting with `1. ` etc    → ordered list items
+//   - blank lines separate paragraphs
+function LegacyNotesRender({ source }: { source: string }) {
   type Block =
     | { kind: 'p'; text: string }
     | { kind: 'ul'; items: string[] }
@@ -923,13 +954,22 @@ function NotesRender({ source }: { source: string }) {
   )
 }
 
-function CalcField({ label, value }: { label: string; value: string }) {
+function CalcField({ label, value, info }: { label: string; value: string; info?: string }) {
   return (
     <div>
-      <p className="text-[10.5px] font-bold text-[#706E6B] uppercase tracking-wider mb-1 flex items-center gap-1">
-        {label}
+      <div className="text-[10.5px] font-bold text-[#706E6B] uppercase tracking-wider mb-1 flex items-center gap-1">
+        <span>{label}</span>
         <span className="inline-block px-1 py-0 text-[8.5px] font-semibold bg-[#EFF6FF] text-[#1d4ed8] rounded">CALC</span>
-      </p>
+        {info && (
+          <span className="relative group inline-flex items-center cursor-help text-[#94a3b8] hover:text-[#3E3E3C] ml-0.5">
+            <Info size={11} />
+            <span className="pointer-events-none absolute left-1/2 -translate-x-1/2 bottom-[calc(100%+6px)] z-10 hidden group-hover:block w-56 px-2.5 py-1.5 text-[11px] font-normal normal-case tracking-normal leading-snug text-white bg-[#181818] rounded shadow-lg">
+              {info}
+              <span className="absolute left-1/2 -translate-x-1/2 top-full w-0 h-0 border-x-[5px] border-x-transparent border-t-[5px] border-t-[#181818]" />
+            </span>
+          </span>
+        )}
+      </div>
       <div className="text-[13px] text-[#181818] font-medium">{value}</div>
     </div>
   )
@@ -973,5 +1013,68 @@ function DateInput({ value, onChange }: { value: string; onChange: (v: string) =
       onChange={e => onChange(e.target.value)}
       className="w-full px-2 py-1 text-[13px] text-[#181818] border border-[#cbd5e1] rounded focus:outline-none focus:border-[#70A0D0] focus:ring-2 focus:ring-[#70A0D0]/20"
     />
+  )
+}
+
+// Rich text editor with bullet / numbered / bold buttons. Uses
+// contentEditable + document.execCommand under the hood. Output is HTML
+// stored in the `notes` column; NotesRender displays it via
+// dangerouslySetInnerHTML.
+function RichTextEditor({ value, onChange }: { value: string; onChange: (html: string) => void }) {
+  const ref = useRef<HTMLDivElement>(null)
+
+  // Set the initial HTML only once on mount (and when the editor switches
+  // between rows). React doesn't manage contentEditable content directly.
+  useEffect(() => {
+    if (ref.current && ref.current.innerHTML !== (value || '')) {
+      ref.current.innerHTML = value || ''
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  function exec(cmd: 'insertUnorderedList' | 'insertOrderedList' | 'bold') {
+    // Keep the editor focused so execCommand applies to its selection.
+    ref.current?.focus()
+    document.execCommand(cmd, false)
+    if (ref.current) onChange(ref.current.innerHTML)
+  }
+
+  return (
+    <div className="border border-[#cbd5e1] rounded focus-within:border-[#70A0D0] focus-within:ring-2 focus-within:ring-[#70A0D0]/20 bg-white">
+      <div className="flex items-center gap-0.5 px-2 py-1 border-b border-[#e2e8f0] bg-[#fafbfc]">
+        <ToolbarBtn onClick={() => exec('bold')} title="Bold (Ctrl+B)">
+          <Bold size={13} />
+        </ToolbarBtn>
+        <ToolbarBtn onClick={() => exec('insertUnorderedList')} title="Bulleted list">
+          <List size={13} />
+        </ToolbarBtn>
+        <ToolbarBtn onClick={() => exec('insertOrderedList')} title="Numbered list">
+          <ListOrdered size={13} />
+        </ToolbarBtn>
+      </div>
+      <div
+        ref={ref}
+        contentEditable
+        suppressContentEditableWarning
+        role="textbox"
+        aria-multiline
+        onInput={e => onChange((e.target as HTMLDivElement).innerHTML)}
+        className="px-3 py-2 min-h-[120px] text-[13px] text-[#181818] leading-relaxed focus:outline-none [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_li]:my-0.5"
+      />
+    </div>
+  )
+}
+
+function ToolbarBtn({ children, onClick, title }: { children: React.ReactNode; onClick: () => void; title: string }) {
+  return (
+    <button
+      type="button"
+      // onMouseDown instead of onClick so the editor doesn't lose focus before exec runs.
+      onMouseDown={e => { e.preventDefault(); onClick() }}
+      title={title}
+      className="px-1.5 py-1 rounded text-[#3E3E3C] hover:bg-[#f1f5f9] hover:text-[#181818]"
+    >
+      {children}
+    </button>
   )
 }
