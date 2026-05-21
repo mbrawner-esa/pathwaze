@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { sendInviteEmail } from '@/lib/email'
 
-const VALID_ROLES = ['admin', 'team', 'investor'] as const
+const VALID_ROLES = ['admin', 'manager', 'team', 'investor'] as const
 
 function isValidEmail(s: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s)

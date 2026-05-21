@@ -21,7 +21,7 @@ interface PendingInvite {
   accepted_at: string | null
 }
 
-const ROLES: AdminUserRow['role'][] = ['admin', 'team', 'investor']
+const ROLES: AdminUserRow['role'][] = ['admin', 'manager', 'team', 'investor']
 
 const STATUS_PILL: Record<string, { bg: string; text: string }> = {
   pending:  { bg: '#fef3c7', text: '#92400e' },
@@ -31,6 +31,7 @@ const STATUS_PILL: Record<string, { bg: string; text: string }> = {
 
 const ROLE_PILL: Record<string, { bg: string; text: string }> = {
   admin:    { bg: '#eef2ff', text: '#3730A3' },
+  manager:  { bg: '#fef3c7', text: '#92400e' },
   team:     { bg: '#f1f5f9', text: '#475569' },
   investor: { bg: '#f5f3ff', text: '#6d28d9' },
 }

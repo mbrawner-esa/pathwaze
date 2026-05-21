@@ -2,13 +2,14 @@
 import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { MoreHorizontal, Pencil, Slack, Copy, Archive, Trash2, X } from 'lucide-react'
+import { canArchiveProject, canDeleteProject } from '@/lib/permissions'
 
 interface Props {
   projectId: string
   projectName: string
   slackChannelId: string | null
   stage: string | null
-  userRole: 'admin' | 'team' | 'investor' | string
+  userRole: 'admin' | 'manager' | 'team' | 'investor' | string
 }
 
 type ModalKind = 'rename' | 'slack' | 'duplicate' | 'archive' | 'unarchive' | 'delete' | null
@@ -30,7 +31,8 @@ export function ProjectActionsMenu({ projectId, projectName, slackChannelId, sta
   }, [open])
 
   const isArchived = stage === 'Archived'
-  const isAdmin = userRole === 'admin'
+  const canArchive = canArchiveProject(userRole)
+  const canDelete = canDeleteProject(userRole)
 
   return (
     <>
@@ -50,17 +52,18 @@ export function ProjectActionsMenu({ projectId, projectName, slackChannelId, sta
             <MenuItem icon={<Copy size={13} />} onClick={() => { setOpen(false); setModal('duplicate') }}>
               Duplicate project
             </MenuItem>
-            <div className="my-1 border-t border-[#f1f5f9]" />
-            {!isArchived ? (
+            {(canArchive || canDelete) && <div className="my-1 border-t border-[#f1f5f9]" />}
+            {canArchive && !isArchived && (
               <MenuItem icon={<Archive size={13} />} onClick={() => { setOpen(false); setModal('archive') }}>
                 Archive project
               </MenuItem>
-            ) : (
+            )}
+            {canArchive && isArchived && (
               <MenuItem icon={<Archive size={13} />} onClick={() => { setOpen(false); setModal('unarchive') }}>
                 Unarchive project
               </MenuItem>
             )}
-            {isAdmin && (
+            {canDelete && (
               <MenuItem icon={<Trash2 size={13} />} onClick={() => { setOpen(false); setModal('delete') }} danger>
                 Delete project
               </MenuItem>

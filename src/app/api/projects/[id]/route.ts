@@ -49,6 +49,19 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   // Fetch before-state so we can diff stage for Slack
   const { data: before } = await supabase.from('projects').select('stage, slack_channel_id, name').eq('id', id).single()
 
+  // Archive / unarchive is admin-only (defense in depth — UI already hides the
+  // menu items for non-admins, but block at the API too).
+  const isArchiveAction =
+    (update.stage === 'Archived') ||
+    (update.stage !== undefined && (before as { stage?: string } | null)?.stage === 'Archived') ||
+    (update.archived_at !== undefined)
+  if (isArchiveAction) {
+    const { data: me } = await supabase.from('users').select('role').eq('id', user.id).single() as { data: { role?: string } | null }
+    if (me?.role !== 'admin') {
+      return NextResponse.json({ error: 'Only admins can archive or unarchive projects' }, { status: 403 })
+    }
+  }
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data, error } = await (supabase.from('projects') as any).update(update).eq('id', id).select().single()
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
