@@ -1,13 +1,20 @@
 'use client'
 /**
- * Offtaker Pricing — table of versioned proposal options for the customer.
+ * Offtaker Pricing — versioned proposal options for the customer offtake.
  *
- * Replaces the old single-row "Transaction Structure" section. Each row is a
- * full proposal (contract type, term, year-1 rate, escalator, etc). One row
- * per project may be marked as Selected (the customer's accepted proposal).
+ * Each row is a full proposal organized into four sections:
+ *   1. Project Information   — linked systems, computed size + Year-1 energy,
+ *                              estimated NTP / COD
+ *   2. Utility Savings       — per-meter electric bill savings (user-entered),
+ *                              computed per-meter and blended avoided cost
+ *   3. Contract Terms        — revenue type, term, escalator, year-1 price,
+ *                              computed Year-1 net savings, customer term
+ *                              savings + NPV (user-entered)
+ *   4. Environmental Attributes — SREC treatment, computed total SRECs
  *
- * Click a row → right-side drawer slides in with editable fields, free-form
- * notes, and a threaded discussion.
+ * One row per project may be marked is_selected (the customer's accepted
+ * proposal). Contract Type + Offtaker Credit live separately on the project's
+ * Tax & Incentives section (project_financials).
  */
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
@@ -15,9 +22,7 @@ import { Plus, Star, Trash2, X, Send, MessageSquare, Pencil } from 'lucide-react
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { Avatar } from '@/components/ui/Avatar'
 
-const CONTRACT_TYPES = ['Energy Services Agreement', 'Power Purchase Agreement', 'Lease', 'Cash Sale']
 const REVENUE_TYPES = ['Fixed Rate with Escalator', 'Fixed Rate', 'Indexed', 'Avoided Cost']
-const OFFTAKER_CREDITS = ['AAA', 'AA - IG', 'A - IG', 'BBB - IG', 'BB', 'Unrated']
 const SREC_TREATMENTS = ['Offtaker Retains', 'Developer Retains', 'REC Arbitrage', 'Not Applicable']
 
 export interface PricingRow {
@@ -25,18 +30,42 @@ export interface PricingRow {
   project_id: string
   version_label: string
   is_selected: boolean
-  contract_type: string | null
+  // Project Information
+  linked_system_ids: string[] | null
+  estimated_ntp: string | null
+  estimated_cod: string | null
+  // Utility Savings
+  meter_savings: Record<string, number> | null
+  utility_escalation_rate: number | null
+  // Contract Terms
   revenue_type: string | null
-  offtaker_credit: string | null
   term_months: number | null
-  year1_contract_price: number | null
   escalation_rate: number | null
+  year1_contract_price: number | null
+  customer_term_savings: number | null
+  customer_term_npv: number | null
+  // Environmental Attributes
   srec_treatment: string | null
-  avoided_cost_kwh: number | null
-  annual_savings: number | null
+  // Misc
   notes: string | null
   created_at: string
   updated_at: string
+}
+
+interface SystemRow {
+  id: string
+  name: string
+  size_kwdc: number | null
+  annual_production_kwh: number | null
+  meter_id: string | null
+  building_id: string | null
+}
+
+interface MeterRow {
+  id: string
+  meter_num: string | null
+  account_num: string | null
+  building_id: string | null
 }
 
 interface ThreadEntry {
@@ -52,9 +81,13 @@ interface ThreadEntry {
 export function OfftakerPricingTable({
   projectId,
   initialRows,
+  systems = [],
+  meters = [],
 }: {
   projectId: string
   initialRows: PricingRow[]
+  systems?: SystemRow[]
+  meters?: MeterRow[]
 }) {
   const router = useRouter()
   const [rows, setRows] = useState<PricingRow[]>(initialRows)
@@ -85,6 +118,88 @@ export function OfftakerPricingTable({
     else { setThreads([]); setEditing(false); setErr(null) }
   }, [openId, loadThreads])
 
+  // ── Computed values for the open row ────────────────────────────────
+  // These compute live as the user edits, so the user sees the impact
+  // of changes before saving.
+  function getCalcSource(): PricingRow | Partial<PricingRow> {
+    return editing ? { ...open, ...editForm } : (open ?? {})
+  }
+
+  function linkedSystems(): SystemRow[] {
+    const src = getCalcSource()
+    const ids = (src.linked_system_ids ?? []) as string[]
+    return systems.filter(s => ids.includes(s.id))
+  }
+
+  function linkedMeters(): MeterRow[] {
+    // Meters linked to any of the linked systems via systems.meter_id.
+    const ls = linkedSystems()
+    const meterIds = new Set(ls.map(s => s.meter_id).filter(Boolean) as string[])
+    return meters.filter(m => meterIds.has(m.id))
+  }
+
+  function totalSystemKwdc(): number {
+    return linkedSystems().reduce((sum, s) => sum + (s.size_kwdc ?? 0), 0)
+  }
+
+  function totalYear1Production(): number {
+    return linkedSystems().reduce((sum, s) => sum + (s.annual_production_kwh ?? 0), 0)
+  }
+
+  function meterProductionShare(meterId: string): number {
+    // Production attributed to a meter = sum of its linked systems' Year-1 production.
+    const ls = linkedSystems()
+    return ls
+      .filter(s => s.meter_id === meterId)
+      .reduce((sum, s) => sum + (s.annual_production_kwh ?? 0), 0)
+  }
+
+  function meterSavings(meterId: string): number {
+    const src = getCalcSource()
+    const m = (src.meter_savings ?? {}) as Record<string, number>
+    return Number(m[meterId] ?? 0)
+  }
+
+  function meterAvoidedCost(meterId: string): number {
+    const prod = meterProductionShare(meterId)
+    if (!prod) return 0
+    return meterSavings(meterId) / prod
+  }
+
+  function totalElectricBillSavings(): number {
+    return linkedMeters().reduce((sum, m) => sum + meterSavings(m.id), 0)
+  }
+
+  function blendedAvoidedCost(): number {
+    const prod = totalYear1Production()
+    if (!prod) return 0
+    return totalElectricBillSavings() / prod
+  }
+
+  function year1NetSavings(): number {
+    const src = getCalcSource()
+    const price = Number(src.year1_contract_price ?? 0)
+    return totalElectricBillSavings() - (price * totalYear1Production())
+  }
+
+  function totalSRECs(): number {
+    return totalYear1Production() / 1000
+  }
+
+  function fmtKwh(n: number): string {
+    if (!n) return '0 kWh'
+    return `${Math.round(n).toLocaleString()} kWh`
+  }
+  function fmtKwdc(n: number): string {
+    if (!n) return '0 kWdc'
+    return `${Number(n).toLocaleString(undefined, { maximumFractionDigits: 2 })} kWdc`
+  }
+  function fmtRate(n: number): string {
+    return `$${n.toFixed(4)}/kWh`
+  }
+
+  // ── Mutations ────────────────────────────────────────────────────────
+
   async function addOption() {
     setBusy(true); setErr(null)
     try {
@@ -110,7 +225,12 @@ export function OfftakerPricingTable({
   }
 
   function startEdit(r: PricingRow) {
-    setEditForm({ ...r })
+    setEditForm({
+      ...r,
+      // Defensive: arrays + objects must be cloned so editing doesn't mutate state
+      linked_system_ids: [...(r.linked_system_ids ?? [])],
+      meter_savings: { ...(r.meter_savings ?? {}) },
+    })
     setEditing(true)
     setErr(null)
   }
@@ -193,6 +313,21 @@ export function OfftakerPricingTable({
     }
   }
 
+  // ── Per-row table values ─────────────────────────────────────────────
+  // These compute from the saved data (not editForm) — used for the
+  // collapsed table view.
+
+  function rowSystemCount(r: PricingRow): number {
+    return (r.linked_system_ids ?? []).length
+  }
+  function rowSystemKwdc(r: PricingRow): number {
+    const ids = r.linked_system_ids ?? []
+    return systems.filter(s => ids.includes(s.id)).reduce((s, sy) => s + (sy.size_kwdc ?? 0), 0)
+  }
+  function rowTotalSavings(r: PricingRow): number {
+    return Object.values(r.meter_savings ?? {}).reduce((s, v) => s + Number(v), 0)
+  }
+
   return (
     <div className="card overflow-hidden">
       <div className="px-6 py-4 border-b border-[#f1f5f9] flex items-center justify-between">
@@ -229,11 +364,11 @@ export function OfftakerPricingTable({
           <thead>
             <tr className="border-b border-[#f1f5f9] bg-[#fafafa]">
               <th className="text-left px-5 py-2.5 text-[10.5px] font-bold text-[#706E6B] uppercase tracking-wider">Option</th>
-              <th className="text-left px-3 py-2.5 text-[10.5px] font-bold text-[#706E6B] uppercase tracking-wider">Contract</th>
+              <th className="text-left px-3 py-2.5 text-[10.5px] font-bold text-[#706E6B] uppercase tracking-wider">Systems</th>
+              <th className="text-left px-3 py-2.5 text-[10.5px] font-bold text-[#706E6B] uppercase tracking-wider">Size</th>
               <th className="text-left px-3 py-2.5 text-[10.5px] font-bold text-[#706E6B] uppercase tracking-wider">Term</th>
               <th className="text-left px-3 py-2.5 text-[10.5px] font-bold text-[#706E6B] uppercase tracking-wider">Yr 1 Price</th>
-              <th className="text-left px-3 py-2.5 text-[10.5px] font-bold text-[#706E6B] uppercase tracking-wider">Escalator</th>
-              <th className="text-left px-3 py-2.5 text-[10.5px] font-bold text-[#706E6B] uppercase tracking-wider">Annual Savings</th>
+              <th className="text-left px-3 py-2.5 text-[10.5px] font-bold text-[#706E6B] uppercase tracking-wider">Total Savings</th>
               <th className="text-right px-5 py-2.5 text-[10.5px] font-bold text-[#706E6B] uppercase tracking-wider">Selected</th>
             </tr>
           </thead>
@@ -250,11 +385,11 @@ export function OfftakerPricingTable({
                     <span className="text-[13px] font-medium text-[#181818]">{r.version_label}</span>
                   </div>
                 </td>
-                <td className="px-3 py-3 text-[12.5px] text-[#3E3E3C]">{r.contract_type || '—'}</td>
+                <td className="px-3 py-3 text-[12.5px] text-[#3E3E3C]">{rowSystemCount(r) || '—'}</td>
+                <td className="px-3 py-3 text-[12.5px] text-[#3E3E3C]">{rowSystemKwdc(r) ? fmtKwdc(rowSystemKwdc(r)) : '—'}</td>
                 <td className="px-3 py-3 text-[12.5px] text-[#3E3E3C]">{r.term_months ? `${r.term_months} mo` : '—'}</td>
-                <td className="px-3 py-3 text-[12.5px] text-[#3E3E3C]">{r.year1_contract_price != null ? `$${r.year1_contract_price}/kWh` : '—'}</td>
-                <td className="px-3 py-3 text-[12.5px] text-[#3E3E3C]">{r.escalation_rate != null ? `${r.escalation_rate}%` : '—'}</td>
-                <td className="px-3 py-3 text-[12.5px] text-[#3E3E3C]">{r.annual_savings != null ? formatCurrency(r.annual_savings) : '—'}</td>
+                <td className="px-3 py-3 text-[12.5px] text-[#3E3E3C]">{r.year1_contract_price != null ? `$${Number(r.year1_contract_price).toFixed(4)}/kWh` : '—'}</td>
+                <td className="px-3 py-3 text-[12.5px] text-[#3E3E3C]">{rowTotalSavings(r) ? formatCurrency(rowTotalSavings(r)) : '—'}</td>
                 <td className="px-5 py-3 text-right">
                   <button
                     onClick={e => { e.stopPropagation(); toggleSelected(r) }}
@@ -276,7 +411,7 @@ export function OfftakerPricingTable({
       {open && (
         <>
           <div onClick={() => setOpenId(null)} className="fixed inset-0 bg-black/30 z-40" />
-          <div className="fixed top-[52px] right-0 bottom-0 z-50 bg-white w-full max-w-[680px] shadow-2xl flex flex-col">
+          <div className="fixed top-[52px] right-0 bottom-0 z-50 bg-white w-full max-w-[720px] shadow-2xl flex flex-col">
             {/* Header */}
             <div className="px-6 py-5 border-b border-[#e2e8f0] bg-white">
               <div className="flex items-start justify-between gap-3 mb-3">
@@ -341,66 +476,174 @@ export function OfftakerPricingTable({
             </div>
 
             {/* Body */}
-            <div className="overflow-y-auto flex-1 px-6 py-5 bg-[#fafbfc]">
-              {/* Fields */}
-              <div className="bg-white rounded-lg border border-[#e2e8f0] overflow-hidden mb-5">
-                <div className="px-4 py-3 border-b border-[#f1f5f9] bg-[#F3F2F2]">
-                  <h3 className="text-[10.5px] font-bold text-[#3E3E3C] uppercase tracking-[0.06em]">Contract terms</h3>
+            <div className="overflow-y-auto flex-1 px-6 py-5 bg-[#fafbfc] space-y-5">
+
+              {/* ───────────────────── 1. Project Information ───────────────────── */}
+              <SectionShell title="Project Information">
+                <div className="px-5 py-4 space-y-4">
+                  <FieldCell label="Linked systems" full>
+                    {editing ? (
+                      <div className="space-y-1">
+                        {systems.length === 0 ? (
+                          <p className="text-[12px] text-[#A8A8A8] italic">No systems on this project yet.</p>
+                        ) : systems.map(s => {
+                          const checked = (editForm.linked_system_ids ?? []).includes(s.id)
+                          return (
+                            <label key={s.id} className="flex items-center gap-2 cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                onChange={e => {
+                                  const cur = editForm.linked_system_ids ?? []
+                                  const next = e.target.checked ? [...cur, s.id] : cur.filter(x => x !== s.id)
+                                  setEditForm(f => ({ ...f, linked_system_ids: next }))
+                                }}
+                                className="w-4 h-4 rounded border-[#cbd5e1]"
+                              />
+                              <span className="text-[13px] text-[#181818]">{s.name}</span>
+                              <span className="text-[11.5px] text-[#706E6B]">· {fmtKwdc(s.size_kwdc ?? 0)} · {fmtKwh(s.annual_production_kwh ?? 0)}/yr</span>
+                            </label>
+                          )
+                        })}
+                      </div>
+                    ) : linkedSystems().length === 0 ? (
+                      <span className="text-[13px] text-[#A8A8A8] italic">None linked</span>
+                    ) : (
+                      <ul className="space-y-0.5">
+                        {linkedSystems().map(s => (
+                          <li key={s.id} className="text-[13px] text-[#181818]">
+                            {s.name}
+                            <span className="text-[11.5px] text-[#706E6B] ml-2">· {fmtKwdc(s.size_kwdc ?? 0)} · {fmtKwh(s.annual_production_kwh ?? 0)}/yr</span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </FieldCell>
+                  <div className="grid grid-cols-2 gap-4">
+                    <CalcField label="System size DC" value={fmtKwdc(totalSystemKwdc())} />
+                    <CalcField label="Year 1 energy production" value={fmtKwh(totalYear1Production())} />
+                    <FieldCell label="Estimated NTP">
+                      {editing
+                        ? <DateInput value={editForm.estimated_ntp ?? ''} onChange={v => setEditForm(f => ({ ...f, estimated_ntp: v || null }))} />
+                        : (open.estimated_ntp ? formatDate(open.estimated_ntp) : '—')}
+                    </FieldCell>
+                    <FieldCell label="Estimated COD">
+                      {editing
+                        ? <DateInput value={editForm.estimated_cod ?? ''} onChange={v => setEditForm(f => ({ ...f, estimated_cod: v || null }))} />
+                        : (open.estimated_cod ? formatDate(open.estimated_cod) : '—')}
+                    </FieldCell>
+                  </div>
                 </div>
-                <div className="px-5 py-5 grid grid-cols-2 gap-x-5 gap-y-4">
-                  <FieldCell label="Contract type">
+              </SectionShell>
+
+              {/* ───────────────────── 2. Utility Savings ───────────────────── */}
+              <SectionShell title="Utility Savings">
+                <div className="px-5 py-4 space-y-4">
+                  {linkedMeters().length === 0 ? (
+                    <p className="text-[12.5px] text-[#A8A8A8] italic">Link a system that has an attached meter to compute utility savings.</p>
+                  ) : (
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-[#f1f5f9]">
+                          <th className="text-left py-2 text-[10.5px] font-bold text-[#706E6B] uppercase tracking-wider">Meter</th>
+                          <th className="text-right py-2 text-[10.5px] font-bold text-[#706E6B] uppercase tracking-wider">Production (kWh)</th>
+                          <th className="text-right py-2 text-[10.5px] font-bold text-[#706E6B] uppercase tracking-wider">Bill Savings ($)</th>
+                          <th className="text-right py-2 text-[10.5px] font-bold text-[#706E6B] uppercase tracking-wider">Avoided Cost</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {linkedMeters().map(m => {
+                          const label = m.meter_num || m.account_num || m.id.slice(0, 8)
+                          return (
+                            <tr key={m.id} className="border-b border-[#f1f5f9] last:border-b-0">
+                              <td className="py-2 text-[13px] text-[#181818]">{label}</td>
+                              <td className="py-2 text-right text-[13px] text-[#3E3E3C]">{fmtKwh(meterProductionShare(m.id))}</td>
+                              <td className="py-2 text-right">
+                                {editing ? (
+                                  <input
+                                    type="number"
+                                    step="0.01"
+                                    value={meterSavings(m.id) || ''}
+                                    onChange={e => {
+                                      const cur = editForm.meter_savings ?? {}
+                                      setEditForm(f => ({ ...f, meter_savings: { ...cur, [m.id]: Number(e.target.value) || 0 } }))
+                                    }}
+                                    className="w-28 px-2 py-1 text-[13px] text-right border border-[#cbd5e1] rounded focus:outline-none focus:border-[#70A0D0]"
+                                  />
+                                ) : (
+                                  <span className="text-[13px] text-[#181818]">{formatCurrency(meterSavings(m.id))}</span>
+                                )}
+                              </td>
+                              <td className="py-2 text-right text-[13px] text-[#3E3E3C]">{meterAvoidedCost(m.id) > 0 ? fmtRate(meterAvoidedCost(m.id)) : '—'}</td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  )}
+                  <div className="grid grid-cols-3 gap-4 pt-2 border-t border-[#f1f5f9]">
+                    <CalcField label="Total electric bill savings" value={formatCurrency(totalElectricBillSavings())} />
+                    <CalcField label="Blended avoided cost" value={blendedAvoidedCost() > 0 ? fmtRate(blendedAvoidedCost()) : '—'} />
+                    <FieldCell label="Utility escalation">
+                      {editing
+                        ? <NumberInput value={editForm.utility_escalation_rate ?? 5} onChange={v => setEditForm(f => ({ ...f, utility_escalation_rate: v }))} suffix="%" />
+                        : `${open.utility_escalation_rate ?? 5}%`}
+                    </FieldCell>
+                  </div>
+                </div>
+              </SectionShell>
+
+              {/* ───────────────────── 3. Contract Terms ───────────────────── */}
+              <SectionShell title="Contract Terms">
+                <div className="px-5 py-4 grid grid-cols-2 gap-x-5 gap-y-4">
+                  <FieldCell label="Contract term">
                     {editing
-                      ? <SelectInput value={editForm.contract_type ?? ''} options={CONTRACT_TYPES} onChange={v => setEditForm(f => ({ ...f, contract_type: v }))} />
-                      : (open.contract_type || '—')}
+                      ? <NumberInput value={editForm.term_months ?? 0} onChange={v => setEditForm(f => ({ ...f, term_months: v }))} suffix="months" />
+                      : (open.term_months ? `${open.term_months} months (${(open.term_months / 12).toFixed(1)} yrs)` : '—')}
                   </FieldCell>
                   <FieldCell label="Revenue type">
                     {editing
                       ? <SelectInput value={editForm.revenue_type ?? ''} options={REVENUE_TYPES} onChange={v => setEditForm(f => ({ ...f, revenue_type: v }))} />
                       : (open.revenue_type || '—')}
                   </FieldCell>
-                  <FieldCell label="Offtaker credit">
-                    {editing
-                      ? <SelectInput value={editForm.offtaker_credit ?? ''} options={OFFTAKER_CREDITS} onChange={v => setEditForm(f => ({ ...f, offtaker_credit: v }))} />
-                      : (open.offtaker_credit || '—')}
-                  </FieldCell>
-                  <FieldCell label="Term">
-                    {editing
-                      ? <NumberInput value={editForm.term_months ?? 0} onChange={v => setEditForm(f => ({ ...f, term_months: v }))} suffix="months" />
-                      : (open.term_months ? `${open.term_months} months (${(open.term_months / 12).toFixed(1)} yrs)` : '—')}
-                  </FieldCell>
-                  <FieldCell label="Year 1 price">
-                    {editing
-                      ? <NumberInput value={editForm.year1_contract_price ?? 0} onChange={v => setEditForm(f => ({ ...f, year1_contract_price: v }))} suffix="$/kWh" />
-                      : (open.year1_contract_price != null ? `$${open.year1_contract_price}/kWh` : '—')}
-                  </FieldCell>
                   <FieldCell label="Escalation rate">
                     {editing
                       ? <NumberInput value={editForm.escalation_rate ?? 0} onChange={v => setEditForm(f => ({ ...f, escalation_rate: v }))} suffix="%" />
                       : (open.escalation_rate != null ? `${open.escalation_rate}%` : '—')}
                   </FieldCell>
-                  <FieldCell label="SREC treatment" full>
+                  <FieldCell label="Year 1 price">
+                    {editing
+                      ? <NumberInput value={editForm.year1_contract_price ?? 0} decimals={4} onChange={v => setEditForm(f => ({ ...f, year1_contract_price: v }))} suffix="$/kWh" />
+                      : (open.year1_contract_price != null ? `$${Number(open.year1_contract_price).toFixed(4)}/kWh` : '—')}
+                  </FieldCell>
+                  <CalcField label="Year 1 net savings" value={formatCurrency(year1NetSavings())} />
+                  <FieldCell label="Customer term savings">
+                    {editing
+                      ? <NumberInput value={editForm.customer_term_savings ?? 0} onChange={v => setEditForm(f => ({ ...f, customer_term_savings: v }))} suffix="$" />
+                      : (open.customer_term_savings != null ? formatCurrency(open.customer_term_savings) : '—')}
+                  </FieldCell>
+                  <FieldCell label="Customer term NPV" full>
+                    {editing
+                      ? <NumberInput value={editForm.customer_term_npv ?? 0} onChange={v => setEditForm(f => ({ ...f, customer_term_npv: v }))} suffix="$" />
+                      : (open.customer_term_npv != null ? formatCurrency(open.customer_term_npv) : '—')}
+                  </FieldCell>
+                </div>
+              </SectionShell>
+
+              {/* ───────────────────── 4. Environmental Attributes ───────────────────── */}
+              <SectionShell title="Environmental Attributes">
+                <div className="px-5 py-4 grid grid-cols-2 gap-x-5 gap-y-4">
+                  <FieldCell label="SREC treatment">
                     {editing
                       ? <SelectInput value={editForm.srec_treatment ?? ''} options={SREC_TREATMENTS} onChange={v => setEditForm(f => ({ ...f, srec_treatment: v }))} />
                       : (open.srec_treatment || '—')}
                   </FieldCell>
-                  <FieldCell label="Avoided cost">
-                    {editing
-                      ? <NumberInput value={editForm.avoided_cost_kwh ?? 0} onChange={v => setEditForm(f => ({ ...f, avoided_cost_kwh: v }))} suffix="$/kWh" />
-                      : (open.avoided_cost_kwh != null ? `$${open.avoided_cost_kwh}/kWh` : '—')}
-                  </FieldCell>
-                  <FieldCell label="Annual savings">
-                    {editing
-                      ? <NumberInput value={editForm.annual_savings ?? 0} onChange={v => setEditForm(f => ({ ...f, annual_savings: v }))} suffix="$" />
-                      : (open.annual_savings != null ? formatCurrency(open.annual_savings) : '—')}
-                  </FieldCell>
+                  <CalcField label="Total SRECs" value={totalSRECs() > 0 ? `${totalSRECs().toLocaleString(undefined, { maximumFractionDigits: 1 })} SRECs/yr` : '—'} />
                 </div>
-              </div>
+              </SectionShell>
 
               {/* Notes */}
-              <div className="bg-white rounded-lg border border-[#e2e8f0] overflow-hidden mb-5">
-                <div className="px-4 py-3 border-b border-[#f1f5f9] bg-[#F3F2F2]">
-                  <h3 className="text-[10.5px] font-bold text-[#3E3E3C] uppercase tracking-[0.06em]">Notes</h3>
-                </div>
+              <SectionShell title="Notes">
                 <div className="px-5 py-4">
                   {editing ? (
                     <textarea
@@ -416,20 +659,16 @@ export function OfftakerPricingTable({
                     <p className="text-[12.5px] text-[#A8A8A8] italic">No notes yet.</p>
                   )}
                 </div>
-              </div>
+              </SectionShell>
 
-              {/* Error */}
               {err && (
-                <div className="mb-5 px-3 py-2 bg-[#fef2f2] border border-[#fecaca] rounded text-[12px] text-[#991b1b]">{err}</div>
+                <div className="px-3 py-2 bg-[#fef2f2] border border-[#fecaca] rounded text-[12px] text-[#991b1b]">{err}</div>
               )}
 
               {/* Threads */}
-              <div className="bg-white rounded-lg border border-[#e2e8f0] overflow-hidden">
-                <div className="px-4 py-3 border-b border-[#f1f5f9] flex items-center gap-2 bg-[#F3F2F2]">
-                  <MessageSquare size={13} className="text-[#3E3E3C]" />
-                  <span className="text-[10.5px] font-bold text-[#3E3E3C] uppercase tracking-[0.06em]">Threads</span>
-                  <span className="text-[11px] text-[#706E6B]">{threads.length}</span>
-                </div>
+              <SectionShell title={
+                <span className="inline-flex items-center gap-2"><MessageSquare size={12} /> Threads <span className="text-[11px] text-[#706E6B] font-normal">{threads.length}</span></span>
+              }>
                 <div className="px-5 py-4">
                   {loadingThreads ? (
                     <p className="text-xs text-[#706E6B]">Loading…</p>
@@ -464,7 +703,7 @@ export function OfftakerPricingTable({
                     </button>
                   </div>
                 </div>
-              </div>
+              </SectionShell>
             </div>
           </div>
         </>
@@ -473,13 +712,36 @@ export function OfftakerPricingTable({
   )
 }
 
-// ── Small inline field helpers (matching the row-detail design) ─────────────
+// ─────────────────── Small inline helpers ───────────────────
+
+function SectionShell({ title, children }: { title: React.ReactNode; children: React.ReactNode }) {
+  return (
+    <div className="bg-white rounded-lg border border-[#e2e8f0] overflow-hidden">
+      <div className="px-4 py-3 border-b border-[#f1f5f9] bg-[#F3F2F2]">
+        <h3 className="text-[10.5px] font-bold text-[#3E3E3C] uppercase tracking-[0.06em]">{title}</h3>
+      </div>
+      {children}
+    </div>
+  )
+}
 
 function FieldCell({ label, full, children }: { label: string; full?: boolean; children: React.ReactNode }) {
   return (
     <div className={full ? 'col-span-2' : ''}>
       <p className="text-[10.5px] font-bold text-[#706E6B] uppercase tracking-wider mb-1">{label}</p>
       <div className="text-[13px] text-[#181818]">{children}</div>
+    </div>
+  )
+}
+
+function CalcField({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <p className="text-[10.5px] font-bold text-[#706E6B] uppercase tracking-wider mb-1 flex items-center gap-1">
+        {label}
+        <span className="inline-block px-1 py-0 text-[8.5px] font-semibold bg-[#EFF6FF] text-[#1d4ed8] rounded">CALC</span>
+      </p>
+      <div className="text-[13px] text-[#181818] font-medium">{value}</div>
     </div>
   )
 }
@@ -497,16 +759,30 @@ function SelectInput({ value, options, onChange }: { value: string; options: rea
   )
 }
 
-function NumberInput({ value, onChange, suffix }: { value: number; onChange: (v: number) => void; suffix?: string }) {
+function NumberInput({ value, onChange, suffix, decimals }: { value: number; onChange: (v: number) => void; suffix?: string; decimals?: number }) {
   return (
     <div className="flex items-center gap-1.5">
       <input
         type="number"
+        step={decimals ? Math.pow(10, -decimals) : 'any'}
         value={value || ''}
         onChange={e => onChange(Number(e.target.value) || 0)}
         className="w-full px-2 py-1 text-[13px] text-[#181818] border border-[#cbd5e1] rounded focus:outline-none focus:border-[#70A0D0] focus:ring-2 focus:ring-[#70A0D0]/20"
       />
       {suffix && <span className="text-[11px] text-[#706E6B] flex-shrink-0">{suffix}</span>}
     </div>
+  )
+}
+
+function DateInput({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  // value is ISO 'yyyy-mm-dd' or empty
+  const v = value ? String(value).slice(0, 10) : ''
+  return (
+    <input
+      type="date"
+      value={v}
+      onChange={e => onChange(e.target.value)}
+      className="w-full px-2 py-1 text-[13px] text-[#181818] border border-[#cbd5e1] rounded focus:outline-none focus:border-[#70A0D0] focus:ring-2 focus:ring-[#70A0D0]/20"
+    />
   )
 }

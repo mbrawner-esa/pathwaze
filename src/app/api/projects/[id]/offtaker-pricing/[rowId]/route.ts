@@ -3,9 +3,14 @@ import { NextRequest, NextResponse } from 'next/server'
 
 const ALLOWED = new Set([
   'version_label', 'is_selected',
-  'contract_type', 'revenue_type', 'offtaker_credit', 'term_months',
+  'revenue_type', 'term_months',
   'year1_contract_price', 'escalation_rate', 'srec_treatment',
-  'avoided_cost_kwh', 'annual_savings', 'notes',
+  'notes',
+  // v2 fields
+  'linked_system_ids', 'meter_savings',
+  'estimated_ntp', 'estimated_cod',
+  'utility_escalation_rate',
+  'customer_term_savings', 'customer_term_npv',
 ])
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string; rowId: string }> }) {

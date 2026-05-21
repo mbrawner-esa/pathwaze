@@ -37,11 +37,12 @@ interface Financials {
 
 type Section = 'cost' | 'tax'
 
-// Contract types, revenue types, offtaker credits, and SREC treatments
-// now live in OfftakerPricingTable.tsx (the old Transaction Structure block
-// was replaced by that component). Only INCENTIVE_TYPES remains here for
-// the Tax & Incentives section.
+// Contract Type + Offtaker Credit moved from the old Transaction Structure
+// block into Tax & Incentives. Revenue types + SREC treatments live in
+// OfftakerPricingTable.tsx (one per proposal).
 const INCENTIVE_TYPES = ['None', 'State', 'Federal', 'Utility', 'Local']
+const CONTRACT_TYPES = ['Energy Services Agreement', 'Power Purchase Agreement', 'Lease', 'Cash Sale']
+const OFFTAKER_CREDITS = ['AAA', 'AA - IG', 'A - IG', 'BBB - IG', 'BB', 'Unrated']
 
 // ── Excel-style cost breakdown table ─────────────────────────────────────
 function CostBreakdownTable({
@@ -171,7 +172,8 @@ function SectionCard({
   )
 }
 
-export function FinancialTab({ financials, projectId, systemKwdc = 0, pricingRows = [] }: { financials: Financials | null; projectId: string; systemKwdc?: number; pricingRows?: PricingRow[] }) {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function FinancialTab({ financials, projectId, systemKwdc = 0, pricingRows = [], systems = [], meters = [] }: { financials: Financials | null; projectId: string; systemKwdc?: number; pricingRows?: PricingRow[]; systems?: any[]; meters?: any[] }) {
   const router = useRouter()
   const [editingSection, setEditingSection] = useState<Section | null>(null)
   const [saving, setSaving] = useState(false)
@@ -192,6 +194,9 @@ export function FinancialTab({ financials, projectId, systemKwdc = 0, pricingRow
     safe_harbor_required: financials?.safe_harbor_required ?? false,
     incentive_type: financials?.incentive_type ?? '',
     other_incentives_total: financials?.other_incentives_total ?? 0,
+    // Moved over from the old Transaction Structure section.
+    contract_type: financials?.contract_type ?? '',
+    offtaker_credit: financials?.offtaker_credit ?? '',
   })
 
   if (!financials) return <div className="card p-6 text-[#706E6B]">No financial data available.</div>
@@ -213,6 +218,8 @@ export function FinancialTab({ financials, projectId, systemKwdc = 0, pricingRow
       safe_harbor_required: !!f.safe_harbor_required,
       incentive_type: f.incentive_type ?? '',
       other_incentives_total: f.other_incentives_total ?? 0,
+      contract_type: f.contract_type ?? '',
+      offtaker_credit: f.offtaker_credit ?? '',
     })
     setEditingSection(section)
   }
@@ -234,6 +241,8 @@ export function FinancialTab({ financials, projectId, systemKwdc = 0, pricingRow
       safe_harbor_required: !!taxForm.safe_harbor_required,
       incentive_type: taxForm.incentive_type,
       other_incentives_total: Number(taxForm.other_incentives_total) || 0,
+      contract_type: taxForm.contract_type,
+      offtaker_credit: taxForm.offtaker_credit,
     }
     try {
       const res = await fetch(`/api/projects/${projectId}/financials`, {
@@ -280,7 +289,7 @@ export function FinancialTab({ financials, projectId, systemKwdc = 0, pricingRow
       {/* Offtaker Pricing — replaces the old single-row Transaction Structure
           with a one-to-many table of proposal versions. */}
       <div className="col-span-2">
-        <OfftakerPricingTable projectId={projectId} initialRows={pricingRows} />
+        <OfftakerPricingTable projectId={projectId} initialRows={pricingRows} systems={systems} meters={meters} />
       </div>
 
       {/* Tax & Incentives */}
@@ -298,6 +307,16 @@ export function FinancialTab({ financials, projectId, systemKwdc = 0, pricingRow
             const editing = editingSection === 'tax'
             return (
               <FieldGrid>
+                <Field label="Contract Type">
+                  {editing
+                    ? <FieldSelect value={taxForm.contract_type} options={CONTRACT_TYPES} onChange={v => setTaxForm(p => ({ ...p, contract_type: v }))} />
+                    : (f.contract_type || '—')}
+                </Field>
+                <Field label="Offtaker Credit">
+                  {editing
+                    ? <FieldSelect value={taxForm.offtaker_credit} options={OFFTAKER_CREDITS} onChange={v => setTaxForm(p => ({ ...p, offtaker_credit: v }))} />
+                    : (f.offtaker_credit || '—')}
+                </Field>
                 <Field label="ITC Rate">
                   {editing
                     ? <FieldInput type="number" value={taxForm.itc_rate} onChange={v => setTaxForm(p => ({ ...p, itc_rate: Number(v) as unknown as number }))} suffix="%" />

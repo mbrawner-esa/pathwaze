@@ -5,9 +5,14 @@ import { NextRequest, NextResponse } from 'next/server'
 // to id, project_id, created_at, etc.
 const ALLOWED = new Set([
   'version_label', 'is_selected',
-  'contract_type', 'revenue_type', 'offtaker_credit', 'term_months',
+  'revenue_type', 'term_months',
   'year1_contract_price', 'escalation_rate', 'srec_treatment',
-  'avoided_cost_kwh', 'annual_savings', 'notes',
+  'notes',
+  // v2 fields
+  'linked_system_ids', 'meter_savings',
+  'estimated_ntp', 'estimated_cod',
+  'utility_escalation_rate',
+  'customer_term_savings', 'customer_term_npv',
 ])
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -45,6 +50,17 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       .eq('project_id', id) as { count: number | null }
     const letter = String.fromCharCode('A'.charCodeAt(0) + (count ?? 0))
     row.version_label = `Option ${letter}`
+  }
+  // Pre-populate per-proposal dates from the project's master schedule.
+  // Each proposal can edit them independently after.
+  if (row.estimated_ntp === undefined || row.estimated_cod === undefined) {
+    const { data: proj } = await supabase
+      .from('projects')
+      .select('start_date, target_cod')
+      .eq('id', id)
+      .single() as { data: { start_date?: string | null; target_cod?: string | null } | null }
+    if (row.estimated_ntp === undefined && proj?.start_date) row.estimated_ntp = proj.start_date
+    if (row.estimated_cod === undefined && proj?.target_cod) row.estimated_cod = proj.target_cod
   }
 
   // If incoming row says is_selected, clear the flag on any existing rows first.

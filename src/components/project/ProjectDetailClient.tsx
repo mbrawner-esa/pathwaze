@@ -82,7 +82,7 @@ export function ProjectDetailClient({ project, financials, milestones, stakehold
         {activeTab === 'stakeholders' && <StakeholdersTab stakeholders={stakeholders} projectId={project.id} />}
         {activeTab === 'permitting' && <PermittingTab project={project} permits={permits} />}
         {activeTab === 'technical' && <TechnicalTab project={{ ...project, _financials: financials }} buildings={buildings} meters={meters} systems={systems} />}
-        {activeTab === 'financial' && <FinancialTab financials={financials} projectId={project.id} systemKwdc={project.system_kwdc} pricingRows={pricingRows} />}
+        {activeTab === 'financial' && <FinancialTab financials={financials} projectId={project.id} systemKwdc={project.system_kwdc} pricingRows={pricingRows} systems={systems} meters={meters} />}
         {activeTab === 'schedule' && <ScheduleTab milestones={milestones} />}
         {activeTab === 'dataroom' && <DataRoomTab docs={docs} projectId={project.id} />}
         {activeTab === 'threads' && <ThreadsTab threads={threads} channelLinked={!!project.slack_channel_id} />}
