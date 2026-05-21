@@ -19,12 +19,16 @@
  *
  * One row per project may be marked is_selected (the customer's accepted
  * proposal). Contract Type + Offtaker Credit live separately on the project's
- * Tax & Incentives section (project_financials). Default version_label uses
- * the pattern QT-YYMM-V[A]-Name (server-generated; user edits).
+ * Tax & Incentives section (project_financials).
+ *
+ * Each row = ONE proposal Option (auto-named "Option A", "Option B", …).
+ * Edits to the same option increment an internal `version` counter; the
+ * actual field-by-field history flows into the project activity feed via
+ * activity_log entries written by the PATCH endpoint.
  */
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
-import { Plus, Star, Trash2, X, Send, MessageSquare, Pencil, Info, List, ListOrdered, Bold } from 'lucide-react'
+import { Plus, Trash2, X, Send, MessageSquare, Pencil, Info, List, ListOrdered, Bold, Circle, CheckCircle2 } from 'lucide-react'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { Avatar } from '@/components/ui/Avatar'
 
@@ -35,6 +39,7 @@ export interface PricingRow {
   id: string
   project_id: string
   version_label: string
+  version: number | null
   is_selected: boolean
   // Project Information
   linked_system_ids: string[] | null
@@ -391,8 +396,11 @@ export function OfftakerPricingTable({
               >
                 <td className="px-5 py-3">
                   <div className="flex items-center gap-2">
-                    {r.is_selected && <Star size={12} className="text-[#E6C87A]" fill="#E6C87A" />}
+                    {r.is_selected && <CheckCircle2 size={13} className="text-[#10b981]" />}
                     <span className="text-[13px] font-medium text-[#181818]">{r.version_label}</span>
+                    {r.version != null && r.version > 1 && (
+                      <span className="text-[10px] font-semibold uppercase tracking-wider px-1 py-0.5 rounded bg-[#F1F5F9] text-[#475569]">v{r.version}</span>
+                    )}
                   </div>
                 </td>
                 <td className="px-3 py-3 text-[12.5px] text-[#3E3E3C]">{rowSystemCount(r) || '—'}</td>
@@ -403,12 +411,19 @@ export function OfftakerPricingTable({
                 <td className="px-5 py-3 text-right">
                   <div className="inline-flex items-center gap-1">
                     <button
-                      onClick={e => { e.stopPropagation(); toggleSelected(r) }}
+                      onClick={e => {
+                        e.stopPropagation()
+                        if (r.is_selected) {
+                          if (confirm(`Unselect "${r.version_label}"?`)) toggleSelected(r)
+                        } else {
+                          if (confirm(`Mark "${r.version_label}" as the selected proposal?`)) toggleSelected(r)
+                        }
+                      }}
                       disabled={busy}
-                      title={r.is_selected ? 'Unselect' : 'Mark as selected proposal'}
-                      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold transition-colors ${r.is_selected ? 'bg-[#E6C87A]/30 text-[#92400E]' : 'bg-[#f1f5f9] text-[#706E6B] hover:bg-[#e2e8f0]'}`}
+                      title={r.is_selected ? 'Unselect this proposal' : 'Mark as the selected proposal'}
+                      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold transition-colors ${r.is_selected ? 'bg-[#D1FAE5] text-[#047857] hover:bg-[#A7F3D0]' : 'bg-white border border-[#cbd5e1] text-[#3E3E3C] hover:bg-[#fafbfc]'}`}
                     >
-                      <Star size={10} fill={r.is_selected ? '#E6C87A' : 'none'} />
+                      {r.is_selected ? <CheckCircle2 size={10} /> : <Circle size={10} />}
                       {r.is_selected ? 'Selected' : 'Select'}
                     </button>
                     <button
@@ -441,9 +456,14 @@ export function OfftakerPricingTable({
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-1.5">
                     <span className="text-[10px] font-semibold text-[#706E6B] uppercase tracking-[0.08em]">Pricing option</span>
+                    {open.version != null && open.version > 1 && (
+                      <span className="inline-flex items-center text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-[#F1F5F9] text-[#475569]">
+                        v{open.version}
+                      </span>
+                    )}
                     {open.is_selected && (
-                      <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded" style={{ background: '#E6C87A', color: '#92400E' }}>
-                        <Star size={9} fill="#92400E" /> Selected
+                      <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-[#D1FAE5] text-[#047857]">
+                        <CheckCircle2 size={10} /> Selected
                       </span>
                     )}
                   </div>
@@ -474,17 +494,19 @@ export function OfftakerPricingTable({
                   ) : (
                     <>
                       <button
-                        onClick={() => toggleSelected(open)}
+                        onClick={() => {
+                          if (open.is_selected) {
+                            if (confirm('Unselect this option?')) toggleSelected(open)
+                          } else {
+                            toggleSelected(open)
+                          }
+                        }}
                         disabled={busy}
                         title={open.is_selected ? 'Unselect this option' : 'Mark this as the selected proposal'}
-                        className="px-2.5 py-1 text-[12px] font-semibold inline-flex items-center gap-1 rounded transition-colors"
-                        style={{
-                          background: open.is_selected ? '#E6C87A' : '#f1f5f9',
-                          color: open.is_selected ? '#92400E' : '#3E3E3C',
-                        }}
+                        className={`px-2.5 py-1 text-[12px] font-semibold inline-flex items-center gap-1.5 rounded transition-colors ${open.is_selected ? 'bg-[#D1FAE5] text-[#047857] hover:bg-[#A7F3D0]' : 'bg-white border border-[#cbd5e1] text-[#3E3E3C] hover:bg-[#fafbfc]'}`}
                       >
-                        <Star size={11} fill={open.is_selected ? '#92400E' : 'none'} />
-                        {open.is_selected ? 'Selected' : 'Mark selected'}
+                        {open.is_selected ? <CheckCircle2 size={12} /> : <Circle size={12} />}
+                        {open.is_selected ? 'Selected' : 'Mark as selected'}
                       </button>
                       <button onClick={() => startEdit(open)} title="Edit" className="text-[#706E6B] hover:text-[#181818] hover:bg-[#F3F2F2] p-1.5 rounded transition-colors">
                         <Pencil size={16} />

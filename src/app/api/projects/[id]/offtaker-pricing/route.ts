@@ -44,18 +44,16 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     if (ALLOWED.has(k)) row[k] = v
   }
   if (!row.version_label) {
-    // Default version label: QT-YYMM-V[N]-Name where N is a 1-based number
-    // that increments per project (V1, V2, V3, …). User edits the trailing
-    // "Name" after saving.
+    // Default label: "Option A", "Option B", "Option C", …
+    // Each row is one proposal option for the customer. Edits to the same
+    // option increment its `version` field (handled in PATCH); the activity
+    // log captures the actual field-level changes.
     const { count } = await supabase
       .from('offtaker_pricing')
       .select('id', { count: 'exact', head: true })
       .eq('project_id', id) as { count: number | null }
-    const versionNum = (count ?? 0) + 1
-    const now = new Date()
-    const yy = String(now.getFullYear()).slice(-2)
-    const mm = String(now.getMonth() + 1).padStart(2, '0')
-    row.version_label = `QT-${yy}${mm}-V${versionNum}-Name`
+    const letter = String.fromCharCode('A'.charCodeAt(0) + (count ?? 0))
+    row.version_label = `Option ${letter}`
   }
   // Pre-populate per-proposal dates from the project's master schedule.
   // Each proposal can edit them independently after. Note: target_cod is

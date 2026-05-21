@@ -32,10 +32,48 @@ function tsToWhen(s: string): string {
   return new Date(s).toLocaleDateString()
 }
 
+// Pretty labels for the offtaker_pricing field names.
+const PRICING_FIELD_LABELS: Record<string, string> = {
+  version_label: 'name',
+  revenue_type: 'revenue type',
+  term_months: 'contract term',
+  year1_contract_price: 'Year 1 price',
+  escalation_rate: 'escalation rate',
+  srec_treatment: 'SREC treatment',
+  estimated_ntp: 'estimated NTP',
+  estimated_cod: 'estimated COD',
+  utility_escalation_rate: 'utility escalation',
+  customer_term_savings: 'customer term savings',
+  customer_term_npv: 'customer term NPV',
+  quote_created_at: 'quote date',
+  linked_system_ids: 'linked systems',
+  meter_savings: 'meter savings',
+}
+
+function fmtPricingValue(field: string, v: unknown): string {
+  if (v == null || v === '') return '—'
+  if (Array.isArray(v)) return `${v.length} item${v.length === 1 ? '' : 's'}`
+  if (typeof v === 'object') return '—'
+  if (field === 'year1_contract_price') return `$${Number(v).toFixed(4)}/kWh`
+  if (field === 'term_months') return `${v} mo`
+  if (field === 'escalation_rate' || field === 'utility_escalation_rate') return `${v}%`
+  if (field === 'customer_term_savings' || field === 'customer_term_npv') return `$${Number(v).toLocaleString()}K`
+  return String(v)
+}
+
 function describeSystem(entry: ActivityEntry): string {
   const what = (entry.action ?? '').replace(/_/g, ' ')
   const meta = entry.metadata ?? {}
-  const md = meta as { from?: unknown; to?: unknown; name?: unknown; field?: unknown }
+  const md = meta as { from?: unknown; to?: unknown; name?: unknown; field?: unknown; option_label?: unknown; new_version?: unknown }
+
+  // Pricing-option field change → friendly description with option + version.
+  if (entry.entity_type === 'offtaker_pricing' && entry.action === 'field_changed' && md.field) {
+    const f = String(md.field)
+    const label = PRICING_FIELD_LABELS[f] ?? f.replace(/_/g, ' ')
+    const opt = md.option_label ? String(md.option_label) : 'a pricing option'
+    const ver = md.new_version ? ` (v${md.new_version})` : ''
+    return `changed ${label} on ${opt}${ver}: ${fmtPricingValue(f, md.from)} → ${fmtPricingValue(f, md.to)}`
+  }
 
   // Common patterns
   if (entry.action === 'stage_changed' && md.from && md.to) return `moved stage from ${md.from} → ${md.to}`
