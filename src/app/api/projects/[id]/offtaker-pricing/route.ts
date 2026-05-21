@@ -44,18 +44,18 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     if (ALLOWED.has(k)) row[k] = v
   }
   if (!row.version_label) {
-    // Default version label: QT-YYMM-V[A]-Name (user edits the trailing "Name"
-    // after saving). Letter increments per project so successive proposals
-    // get unique labels even on the same month.
+    // Default version label: QT-YYMM-V[N]-Name where N is a 1-based number
+    // that increments per project (V1, V2, V3, …). User edits the trailing
+    // "Name" after saving.
     const { count } = await supabase
       .from('offtaker_pricing')
       .select('id', { count: 'exact', head: true })
       .eq('project_id', id) as { count: number | null }
-    const letter = String.fromCharCode('A'.charCodeAt(0) + (count ?? 0))
+    const versionNum = (count ?? 0) + 1
     const now = new Date()
     const yy = String(now.getFullYear()).slice(-2)
     const mm = String(now.getMonth() + 1).padStart(2, '0')
-    row.version_label = `QT-${yy}${mm}-V${letter}-Name`
+    row.version_label = `QT-${yy}${mm}-V${versionNum}-Name`
   }
   // Pre-populate per-proposal dates from the project's master schedule.
   // Each proposal can edit them independently after. Note: target_cod is

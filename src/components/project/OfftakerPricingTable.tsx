@@ -707,7 +707,7 @@ export function OfftakerPricingTable({
                       ? <SelectInput value={editForm.srec_treatment ?? ''} options={SREC_TREATMENTS} onChange={v => setEditForm(f => ({ ...f, srec_treatment: v }))} />
                       : (open.srec_treatment || '—')}
                   </FieldCell>
-                  <CalcField label="Total SRECs" value={totalSRECs() > 0 ? `${totalSRECs().toLocaleString(undefined, { maximumFractionDigits: 1 })} SRECs/yr` : '—'} />
+                  <CalcField label="Total SRECs" value={totalSRECs() > 0 ? `${Math.round(totalSRECs()).toLocaleString()} SRECs/yr` : '—'} />
                 </div>
               </SectionShell>
 
@@ -817,14 +817,24 @@ function InfoLabel({ label, info }: { label: string; info: string }) {
   )
 }
 
-// Currency-formatted input: shows $0.00 prefix in a read-only span, user types
-// the number. Supports custom decimal precision and an optional suffix
-// (e.g., "/kWh", "K"). Strips $ and commas on save so the underlying value is
-// always a plain number.
+// Currency-formatted input: shows $ prefix in a read-only span, user types
+// the number. Supports custom decimal precision and an optional suffix.
+//
+// Important: re-formatting happens ONLY on blur. While focused, we keep the
+// text exactly as the user typed it — previously a useEffect re-ran on every
+// keystroke, reformatting "8" to "8.00" mid-typing and producing garbled
+// values like "8.01" when the user typed "8610".
 function CurrencyInput({ value, onChange, decimals = 2, suffix }: { value: number; onChange: (v: number) => void; decimals?: number; suffix?: string }) {
-  const [text, setText] = useState<string>(formatForEdit(value, decimals))
-  // Re-sync when external value changes (e.g., when editForm resets)
-  useEffect(() => { setText(formatForEdit(value, decimals)) }, [value, decimals])
+  const [text, setText] = useState<string>(() => formatForEdit(value, decimals))
+  const [hasFocus, setHasFocus] = useState(false)
+
+  // Re-sync text from the external value only when the user isn't actively
+  // typing. Lets the form be programmatically reset (e.g., when opening a
+  // different row) without stomping the user's in-progress typing.
+  useEffect(() => {
+    if (!hasFocus) setText(formatForEdit(value, decimals))
+  }, [value, decimals, hasFocus])
+
   return (
     <div className="flex items-center gap-1.5">
       <div className="flex-1 flex items-center border border-[#cbd5e1] rounded focus-within:border-[#70A0D0] focus-within:ring-2 focus-within:ring-[#70A0D0]/20 bg-white">
@@ -833,15 +843,18 @@ function CurrencyInput({ value, onChange, decimals = 2, suffix }: { value: numbe
           type="text"
           inputMode="decimal"
           value={text}
+          onFocus={() => setHasFocus(true)}
+          onBlur={() => { setHasFocus(false); setText(formatForEdit(value, decimals)) }}
           onChange={e => {
-            // Allow free typing; strip $ and commas, parse on blur.
+            // Keep the text exactly as typed; only parse to a number for the
+            // underlying form state. Strip non-numeric chars (except . and -)
+            // before parsing so "$1,234.56" turns into 1234.56.
+            setText(e.target.value)
             const raw = e.target.value.replace(/[^0-9.\-]/g, '')
-            setText(e.target.value.replace(/[$]/g, ''))
             const n = parseFloat(raw)
             if (Number.isFinite(n)) onChange(n)
             else if (raw === '' || raw === '-') onChange(0)
           }}
-          onBlur={() => setText(formatForEdit(value, decimals))}
           className="flex-1 px-2 py-1 text-[13px] text-[#181818] bg-transparent focus:outline-none"
         />
       </div>
