@@ -31,6 +31,7 @@ import { useRouter } from 'next/navigation'
 import { Plus, Trash2, X, Send, MessageSquare, Pencil, Info, List, ListOrdered, Bold, Circle, CheckCircle2 } from 'lucide-react'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { Avatar } from '@/components/ui/Avatar'
+import { MessageText, type MentionUser } from '@/components/ui/MessageText'
 
 const REVENUE_TYPES = ['Fixed Rate with Escalator', 'Fixed Rate', 'Indexed', 'Avoided Cost']
 const SREC_TREATMENTS = ['Offtaker Retains', 'Developer Retains', 'REC Arbitrage', 'Not Applicable']
@@ -95,11 +96,13 @@ export function OfftakerPricingTable({
   initialRows,
   systems = [],
   meters = [],
+  users = [],
 }: {
   projectId: string
   initialRows: PricingRow[]
   systems?: SystemRow[]
   meters?: MeterRow[]
+  users?: MentionUser[]
 }) {
   const router = useRouter()
   const [rows, setRows] = useState<PricingRow[]>(initialRows)
@@ -770,7 +773,9 @@ export function OfftakerPricingTable({
                               <span className="text-[13px] font-semibold text-[#181818]">{t.user_name ?? 'User'}</span>
                               <span className="text-[10.5px] text-[#706E6B]">{formatDate(t.created_at)}</span>
                             </div>
-                            <p className="text-[13px] text-[#181818] mt-0.5 whitespace-pre-wrap">{t.message}</p>
+                            <p className="text-[13px] text-[#181818] mt-0.5 whitespace-pre-wrap">
+                              <MessageText text={t.message} users={users} />
+                            </p>
                           </div>
                         </div>
                       ))}

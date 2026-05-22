@@ -1,6 +1,7 @@
 'use client'
 import { useState, useMemo, useEffect, useCallback } from 'react'
 import { Search, List, LayoutGrid, X, Plus, Send, MessageSquare, CheckCircle, Activity, Slack, Pencil, Paperclip, ExternalLink, Trash2, Upload, Download, ChevronDown, Copy, Link2, Lock } from 'lucide-react'
+import { MessageText } from '@/components/ui/MessageText'
 import Link from 'next/link'
 import { formatDate } from '@/lib/utils'
 import { Avatar } from '@/components/ui/Avatar'
@@ -1624,7 +1625,7 @@ export function TasksClient({ tasks: initialTasks, projects, users }: { tasks: a
                               <span className="text-[13px] font-semibold text-[#181818]">{c.user?.full_name ?? 'User'}</span>
                               <span className="text-[10.5px] text-[#706E6B]">{formatDate(c.created_at)}</span>
                             </div>
-                            <p className="text-[13px] text-[#181818] mt-0.5">{c.message}</p>
+                            <p className="text-[13px] text-[#181818] mt-0.5"><MessageText text={c.message} users={users} /></p>
                           </div>
                         </div>
                       ))}

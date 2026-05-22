@@ -1,6 +1,7 @@
 'use client'
 import { Avatar } from '@/components/ui/Avatar'
 import { Slack } from 'lucide-react'
+import { MessageText, type MentionUser } from '@/components/ui/MessageText'
 
 export interface ProjectThread {
   id: string
@@ -16,7 +17,7 @@ function tsToDate(s: string): string {
   return new Date(s).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
 }
 
-export function ThreadsTab({ threads, channelLinked }: { threads: ProjectThread[]; channelLinked: boolean }) {
+export function ThreadsTab({ threads, channelLinked, users = [] }: { threads: ProjectThread[]; channelLinked: boolean; users?: MentionUser[] }) {
   if (!channelLinked) {
     return (
       <div className="card overflow-hidden">
@@ -59,7 +60,9 @@ export function ThreadsTab({ threads, channelLinked }: { threads: ProjectThread[
                   <span className="text-[13px] font-semibold text-[#181818]">{t.user_name ?? 'Slack user'}</span>
                   <span className="text-[10.5px] text-[#706E6B]">{tsToDate(t.created_at)}</span>
                 </div>
-                <p className="text-[13px] text-[#181818] mt-0.5 whitespace-pre-wrap">{t.message}</p>
+                <p className="text-[13px] text-[#181818] mt-0.5 whitespace-pre-wrap">
+                  <MessageText text={t.message} users={users} />
+                </p>
               </div>
             </div>
           ))}

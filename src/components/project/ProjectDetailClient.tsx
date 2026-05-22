@@ -82,10 +82,10 @@ export function ProjectDetailClient({ project, financials, milestones, stakehold
         {activeTab === 'stakeholders' && <StakeholdersTab stakeholders={stakeholders} projectId={project.id} />}
         {activeTab === 'permitting' && <PermittingTab project={project} permits={permits} />}
         {activeTab === 'technical' && <TechnicalTab project={{ ...project, _financials: financials }} buildings={buildings} meters={meters} systems={systems} />}
-        {activeTab === 'financial' && <FinancialTab financials={financials} projectId={project.id} systemKwdc={project.system_kwdc} pricingRows={pricingRows} systems={systems} meters={meters} />}
+        {activeTab === 'financial' && <FinancialTab financials={financials} projectId={project.id} systemKwdc={project.system_kwdc} pricingRows={pricingRows} systems={systems} meters={meters} users={users} />}
         {activeTab === 'schedule' && <ScheduleTab milestones={milestones} />}
         {activeTab === 'dataroom' && <DataRoomTab docs={docs} projectId={project.id} />}
-        {activeTab === 'threads' && <ThreadsTab threads={threads} channelLinked={!!project.slack_channel_id} />}
+        {activeTab === 'threads' && <ThreadsTab threads={threads} channelLinked={!!project.slack_channel_id} users={users} />}
           </div>
         </div>
       </div>
@@ -94,7 +94,7 @@ export function ProjectDetailClient({ project, financials, milestones, stakehold
       {activeTab !== 'threads' && (
         <div className="px-8 pt-6 pb-10 mx-auto w-full" style={{ maxWidth: 1760 }}>
           <ProjectActivityActions projectId={project.id} projectName={project.name} users={users} />
-          <ProjectActivityFeed entries={activity as ActivityEntry[]} />
+          <ProjectActivityFeed entries={activity as ActivityEntry[]} users={users} />
         </div>
       )}
     </div>

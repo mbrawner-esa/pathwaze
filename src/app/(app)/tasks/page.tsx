@@ -30,7 +30,7 @@ export default async function TasksPage() {
       .order('created_at', { ascending: false }),
     // Archived projects hidden from the project picker; see /admin/archived for recovery.
     supabase.from('projects').select('id, name, project_number').neq('stage', 'Archived').order('name'),
-    supabase.from('users').select('id, full_name, avatar_url').eq('status', 'active'),
+    supabase.from('users').select('id, full_name, avatar_url, slack_user_id').eq('status', 'active'),
   ])
 
   // Type-subscription filter for team-role users.

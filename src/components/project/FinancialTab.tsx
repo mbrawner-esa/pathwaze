@@ -173,7 +173,7 @@ function SectionCard({
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function FinancialTab({ financials, projectId, systemKwdc = 0, pricingRows = [], systems = [], meters = [] }: { financials: Financials | null; projectId: string; systemKwdc?: number; pricingRows?: PricingRow[]; systems?: any[]; meters?: any[] }) {
+export function FinancialTab({ financials, projectId, systemKwdc = 0, pricingRows = [], systems = [], meters = [], users = [] }: { financials: Financials | null; projectId: string; systemKwdc?: number; pricingRows?: PricingRow[]; systems?: any[]; meters?: any[]; users?: any[] }) {
   const router = useRouter()
   const [editingSection, setEditingSection] = useState<Section | null>(null)
   const [saving, setSaving] = useState(false)
@@ -289,7 +289,7 @@ export function FinancialTab({ financials, projectId, systemKwdc = 0, pricingRow
       {/* Offtaker Pricing — replaces the old single-row Transaction Structure
           with a one-to-many table of proposal versions. */}
       <div className="col-span-2">
-        <OfftakerPricingTable projectId={projectId} initialRows={pricingRows} systems={systems} meters={meters} />
+        <OfftakerPricingTable projectId={projectId} initialRows={pricingRows} systems={systems} meters={meters} users={users} />
       </div>
 
       {/* Tax & Incentives */}

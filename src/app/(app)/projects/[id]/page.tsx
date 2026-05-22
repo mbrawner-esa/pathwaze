@@ -22,7 +22,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
     supabase.from('stakeholders').select('*').eq('project_id', id),
     supabase.from('permits').select('*').eq('project_id', id),
     supabase.from('dataroom_docs').select('*').eq('project_id', id),
-    supabase.from('users').select('id, full_name, avatar_url').eq('status', 'active').order('full_name'),
+    supabase.from('users').select('id, full_name, avatar_url, slack_user_id').eq('status', 'active').order('full_name'),
     supabase.from('buildings').select('*').eq('project_id', id).order('created_at'),
     supabase.from('meters').select('*').eq('project_id', id).order('created_at'),
     supabase.from('systems').select('*').eq('project_id', id).order('created_at'),

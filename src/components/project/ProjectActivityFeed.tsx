@@ -1,6 +1,7 @@
 'use client'
 import { Avatar } from '@/components/ui/Avatar'
 import { Activity, MessageSquare, Tag, StickyNote, Calendar, Paperclip } from 'lucide-react'
+import { MessageText, type MentionUser } from '@/components/ui/MessageText'
 
 export interface ActivityEntry {
   id: string
@@ -85,7 +86,7 @@ function describeSystem(entry: ActivityEntry): string {
   return what
 }
 
-export function ProjectActivityFeed({ entries }: { entries: ActivityEntry[] }) {
+export function ProjectActivityFeed({ entries, users = [] }: { entries: ActivityEntry[]; users?: MentionUser[] }) {
   return (
     <div className="card overflow-hidden">
       <div className="px-6 py-4 border-b border-[#f1f5f9] flex items-center gap-2">
@@ -110,7 +111,9 @@ export function ProjectActivityFeed({ entries }: { entries: ActivityEntry[] }) {
                       : <span className="text-[#3E3E3C]">{describeSystem(e)}</span>}
                   </p>
                   {e.kind === 'message' && e.message && (
-                    <p className="text-[12.5px] text-[#3E3E3C] mt-0.5 line-clamp-2 italic">&ldquo;{e.message}&rdquo;</p>
+                    <p className="text-[12.5px] text-[#3E3E3C] mt-0.5 line-clamp-2 italic">
+                      &ldquo;<MessageText text={e.message} users={users} />&rdquo;
+                    </p>
                   )}
                   {e.kind === 'note' && e.body && (
                     <p className="text-[12.5px] text-[#3E3E3C] mt-0.5 whitespace-pre-wrap line-clamp-3">{e.body}</p>
