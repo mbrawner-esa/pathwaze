@@ -906,3 +906,67 @@ function formatThousandsCurrency(n: number): string {
   return `${formatCurrency(v)}K`
 }
 
+// ── Small inline helpers used by the drawer field grid ────────────────
+// (These were accidentally cut during a refactor; restoring.)
+
+function CalcField({ label, value, info }: { label: string; value: string; info?: string }) {
+  return (
+    <div>
+      <div className="text-[10.5px] font-bold text-[#706E6B] uppercase tracking-wider mb-1 flex items-center gap-1">
+        <span>{label}</span>
+        <span className="inline-block px-1 py-0 text-[8.5px] font-semibold bg-[#EFF6FF] text-[#1d4ed8] rounded">CALC</span>
+        {info && (
+          <span className="relative group inline-flex items-center cursor-help text-[#94a3b8] hover:text-[#3E3E3C] ml-0.5">
+            <Info size={11} />
+            <span className="pointer-events-none absolute left-1/2 -translate-x-1/2 bottom-[calc(100%+6px)] z-10 hidden group-hover:block w-56 px-2.5 py-1.5 text-[11px] font-normal normal-case tracking-normal leading-snug text-white bg-[#181818] rounded shadow-lg">
+              {info}
+              <span className="absolute left-1/2 -translate-x-1/2 top-full w-0 h-0 border-x-[5px] border-x-transparent border-t-[5px] border-t-[#181818]" />
+            </span>
+          </span>
+        )}
+      </div>
+      <div className="text-[13px] text-[#181818] font-medium">{value}</div>
+    </div>
+  )
+}
+
+function SelectInput({ value, options, onChange }: { value: string; options: readonly string[]; onChange: (v: string) => void }) {
+  return (
+    <select
+      value={value}
+      onChange={e => onChange(e.target.value)}
+      className="w-full px-2 py-1 text-[13px] text-[#181818] bg-white border border-[#cbd5e1] rounded focus:outline-none focus:border-[#70A0D0] focus:ring-2 focus:ring-[#70A0D0]/20"
+    >
+      <option value="">—</option>
+      {options.map(o => <option key={o}>{o}</option>)}
+    </select>
+  )
+}
+
+function NumberInput({ value, onChange, suffix, decimals }: { value: number; onChange: (v: number) => void; suffix?: string; decimals?: number }) {
+  return (
+    <div className="flex items-center gap-1.5">
+      <input
+        type="number"
+        step={decimals ? Math.pow(10, -decimals) : 'any'}
+        value={value || ''}
+        onChange={e => onChange(Number(e.target.value) || 0)}
+        className="w-full px-2 py-1 text-[13px] text-[#181818] border border-[#cbd5e1] rounded focus:outline-none focus:border-[#70A0D0] focus:ring-2 focus:ring-[#70A0D0]/20"
+      />
+      {suffix && <span className="text-[11px] text-[#706E6B] flex-shrink-0">{suffix}</span>}
+    </div>
+  )
+}
+
+function DateInput({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const v = value ? String(value).slice(0, 10) : ''
+  return (
+    <input
+      type="date"
+      value={v}
+      onChange={e => onChange(e.target.value)}
+      className="w-full px-2 py-1 text-[13px] text-[#181818] border border-[#cbd5e1] rounded focus:outline-none focus:border-[#70A0D0] focus:ring-2 focus:ring-[#70A0D0]/20"
+    />
+  )
+}
+
