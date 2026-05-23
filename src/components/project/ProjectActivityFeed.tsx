@@ -2,6 +2,7 @@
 import { Avatar } from '@/components/ui/Avatar'
 import { Activity, MessageSquare, Tag, StickyNote, Calendar, Paperclip } from 'lucide-react'
 import { MessageText, type MentionUser } from '@/components/ui/MessageText'
+import { NotesRender } from '@/components/ui/NotesRender'
 
 export interface ActivityEntry {
   id: string
@@ -116,7 +117,9 @@ export function ProjectActivityFeed({ entries, users = [] }: { entries: Activity
                     </p>
                   )}
                   {e.kind === 'note' && e.body && (
-                    <p className="text-[12.5px] text-[#3E3E3C] mt-0.5 whitespace-pre-wrap line-clamp-3">{e.body}</p>
+                    <div className="text-[12.5px] text-[#3E3E3C] mt-0.5 line-clamp-3">
+                      <NotesRender source={e.body} />
+                    </div>
                   )}
                   {e.kind === 'note' && e.note_type === 'event' && e.event_date && (
                     <p className="text-[11.5px] text-[#706E6B] mt-0.5">📅 {new Date(e.event_date).toLocaleDateString()}</p>

@@ -117,20 +117,27 @@ export function Section({ title, children }: { title: string; children: ReactNod
   )
 }
 
+// Rich-text notes field. Uses RichTextEditor under the hood so Buildings /
+// Permits / and any other table notes get the bold / bulleted / numbered
+// toolbar consistent with task and pricing notes. Value is HTML; pair with
+// NotesRender on the display side.
+import { RichTextEditor } from '@/components/ui/RichTextEditor'
+
 export function DrawerTextarea({
   label, value, onChange, placeholder, rows = 3,
 }: {
   label: string; value: string; onChange: (v: string) => void; placeholder?: string; rows?: number
 }) {
+  // rows param kept for API compat; translates to a minHeight in pixels.
+  const minHeight = Math.max(60, (rows ?? 3) * 24)
   return (
     <div className="mb-3">
       <label className="block text-[11px] font-semibold text-[#3E3E3C] mb-1.5">{label}</label>
-      <textarea
+      <RichTextEditor
         value={value}
-        onChange={e => onChange(e.target.value)}
+        onChange={onChange}
         placeholder={placeholder}
-        rows={rows}
-        className="w-full px-3 py-2 text-[13px] border border-[#e2e8f0] rounded-md focus:outline-none focus:border-[#70A0D0] focus:ring-2 focus:ring-[#70A0D0]/20 resize-y"
+        minHeight={minHeight}
       />
     </div>
   )

@@ -3,6 +3,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { StickyNote, Calendar, Paperclip, CheckSquare, X } from 'lucide-react'
+import { RichTextEditor } from '@/components/ui/RichTextEditor'
 
 const TASK_TYPES = ['Design', 'Engineering', 'Permitting', 'Interconnection', 'Financial', 'Legal', 'Construction', 'Operations', 'Administrative']
 
@@ -131,9 +132,12 @@ function NewTaskModal({ projectId, projectName, users, onClose }: { projectId: s
             </div>
             <div className="col-span-2">
               <label className="block text-[12px] font-medium text-[#3E3E3C] mb-1.5">Description</label>
-              <textarea value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} rows={3}
+              <RichTextEditor
+                value={form.description}
+                onChange={html => setForm(f => ({ ...f, description: html }))}
                 placeholder="Add additional context (optional)"
-                className="w-full px-3 py-2 border border-[#cbd5e1] rounded text-[13px] resize-none focus:outline-none focus:border-[#70A0D0]" />
+                minHeight={88}
+              />
             </div>
           </div>
 
@@ -230,9 +234,12 @@ function NoteForm({ projectId, type, onClose }: { projectId: string; type: 'note
       )}
       <input value={title} onChange={e => setTitle(e.target.value)} placeholder={type === 'event' ? 'Event title' : 'Note title (optional)'} autoFocus
         className="w-full px-3 py-2 text-[13px] border border-[#e2e8f0] rounded-md mb-2" />
-      <textarea value={body} onChange={e => setBody(e.target.value)} rows={3}
+      <RichTextEditor
+        value={body}
+        onChange={setBody}
         placeholder={type === 'event' ? 'Notes about this event' : 'Write a note…'}
-        className="w-full px-3 py-2 text-[13px] border border-[#e2e8f0] rounded-md resize-y" />
+        minHeight={96}
+      />
       {err && <div className="mt-2 px-3 py-2 bg-[#fef2f2] border border-[#fecaca] rounded text-[12px] text-[#991b1b]">{err}</div>}
       <CloseRow onClose={onClose} busy={busy} onSubmit={save} label={type === 'event' ? 'Add event' : 'Add note'} />
     </div>
