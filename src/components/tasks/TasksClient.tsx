@@ -2,6 +2,8 @@
 import { useState, useMemo, useEffect, useCallback } from 'react'
 import { Search, List, LayoutGrid, X, Plus, Send, MessageSquare, CheckCircle, Activity, Slack, Pencil, Paperclip, ExternalLink, Trash2, Upload, Download, ChevronDown, Copy, Link2, Lock } from 'lucide-react'
 import { MessageText } from '@/components/ui/MessageText'
+import { RichTextEditor } from '@/components/ui/RichTextEditor'
+import { NotesRender } from '@/components/ui/NotesRender'
 import Link from 'next/link'
 import { formatDate } from '@/lib/utils'
 import { Avatar } from '@/components/ui/Avatar'
@@ -194,11 +196,8 @@ export function TasksClient({ tasks: initialTasks, projects, users }: { tasks: a
   const [pendingLinks, setPendingLinks] = useState<Array<{ entity_type: string; entity_id: string; label: string }>>([])
   const [newLinkType, setNewLinkType] = useState<'building'|'meter'|'system'|'permit'|'stakeholder'|'project'>('building')
   const [newLinkEntityId, setNewLinkEntityId] = useState('')
-  // Pending files: either local File objects (to upload) or external URL links
+  // Pending files staged in the new-task modal — uploaded after create.
   const [pendingFiles, setPendingFiles] = useState<File[]>([])
-  const [pendingFileLinks, setPendingFileLinks] = useState<Array<{ name: string; url: string }>>([])
-  const [newFileLinkNameModal, setNewFileLinkNameModal] = useState('')
-  const [newFileLinkUrlModal, setNewFileLinkUrlModal] = useState('')
 
   const types = ['All', ...Array.from(new Set(initialTasks.map(t => t.type).filter(Boolean)))]
   const statuses = ['All', ...ALL_STATUSES]
@@ -535,10 +534,7 @@ export function TasksClient({ tasks: initialTasks, projects, users }: { tasks: a
     setCreateError(null)
     setPendingLinks([])
     setPendingFiles([])
-    setPendingFileLinks([])
     setNewLinkEntityId('')
-    setNewFileLinkNameModal('')
-    setNewFileLinkUrlModal('')
   }
 
   // Pre-fill the New Task modal with the selected task's fields so the user
@@ -596,13 +592,6 @@ export function TasksClient({ tasks: initialTasks, projects, users }: { tasks: a
           body: JSON.stringify({ entity_type: l.entity_type, entity_id: l.entity_id }),
         }))
       }
-      for (const fl of pendingFileLinks) {
-        tasks.push(fetch(`/api/tasks/${created.id}/files`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ file_name: fl.name, file_url: fl.url }),
-        }))
-      }
       for (const file of pendingFiles) {
         tasks.push((async () => {
           const browserSb = createBrowserClient()
@@ -626,10 +615,7 @@ export function TasksClient({ tasks: initialTasks, projects, users }: { tasks: a
       setForm({ project_id: '', title: '', description: '', type: 'Administrative', priority: 'Medium', assignee_id: '', approver_id: '', requires_approval: false, due_date: '', visibility: 'public' })
       setPendingLinks([])
       setPendingFiles([])
-      setPendingFileLinks([])
       setNewLinkEntityId('')
-      setNewFileLinkNameModal('')
-      setNewFileLinkUrlModal('')
       router.refresh()
     } catch (err) {
       console.error('Create task error:', err)
@@ -1247,12 +1233,11 @@ export function TasksClient({ tasks: initialTasks, projects, users }: { tasks: a
                     )}
                     <div className="col-span-2">
                       <label className="label block mb-1">Description</label>
-                      <textarea
+                      <RichTextEditor
                         value={editForm.description}
-                        onChange={e => setEditForm(f => ({ ...f, description: e.target.value }))}
+                        onChange={html => setEditForm(f => ({ ...f, description: html }))}
                         placeholder="Add additional context (optional)"
-                        rows={4}
-                        className="w-full px-3 py-2 border border-[#cbd5e1] rounded text-[13px] text-[#181818] resize-none focus:outline-none focus:border-[#70A0D0] focus:ring-2 focus:ring-[#70A0D0]/20"
+                        minHeight={120}
                       />
                     </div>
                   </div>
@@ -1302,7 +1287,9 @@ export function TasksClient({ tasks: initialTasks, projects, users }: { tasks: a
                   {selected.description && (
                     <div className="mb-5">
                       <p className="label mb-2">Description</p>
-                      <p className="text-sm text-[#181818] bg-white border border-[#e2e8f0] rounded-lg p-3.5 whitespace-pre-wrap">{selected.description}</p>
+                      <div className="bg-white border border-[#e2e8f0] rounded-lg p-3.5">
+                        <NotesRender source={selected.description} />
+                      </div>
                     </div>
                   )}
                 </>
@@ -1733,9 +1720,12 @@ export function TasksClient({ tasks: initialTasks, projects, users }: { tasks: a
                   </div>
                   <div className="col-span-2">
                     <label className="block text-[12px] font-medium text-[#3E3E3C] mb-1.5">Description</label>
-                    <textarea value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
-                      className="w-full px-3 py-2 border border-[#cbd5e1] rounded text-[13px] text-[#181818] h-20 resize-none focus:outline-none focus:border-[#70A0D0] focus:ring-2 focus:ring-[#70A0D0]/20 transition-all"
-                      placeholder="Add additional context (optional)" />
+                    <RichTextEditor
+                      value={form.description}
+                      onChange={html => setForm(f => ({ ...f, description: html }))}
+                      placeholder="Add additional context (optional)"
+                      minHeight={88}
+                    />
                   </div>
                 </div>
               </div>
@@ -1903,13 +1893,15 @@ export function TasksClient({ tasks: initialTasks, projects, users }: { tasks: a
                 </div>
               )}
 
-              {/* Section: Files (optional) */}
+              {/* Section: Files (optional) — upload only.
+                  External-link entry was removed per UX feedback; users link
+                  external resources via the Related section instead. */}
               <div>
                 <div className="px-6 py-2.5 bg-[#f1f5f9] border-y border-[#e2e8f0]">
                   <h3 className="text-[10.5px] font-bold text-[#3E3E3C] uppercase tracking-[0.06em]">Files (optional)</h3>
                 </div>
                 <div className="px-6 py-5 bg-white space-y-3">
-                  {(pendingFiles.length > 0 || pendingFileLinks.length > 0) && (
+                  {pendingFiles.length > 0 && (
                     <ul className="divide-y divide-[#f1f5f9] border border-[#e2e8f0] rounded">
                       {pendingFiles.map((f, i) => (
                         <li key={`file-${i}`} className="flex items-center gap-2 px-3 py-2">
@@ -1921,62 +1913,20 @@ export function TasksClient({ tasks: initialTasks, projects, users }: { tasks: a
                           </button>
                         </li>
                       ))}
-                      {pendingFileLinks.map((l, i) => (
-                        <li key={`link-${i}`} className="flex items-center gap-2 px-3 py-2">
-                          <ExternalLink size={13} className="text-[#706E6B] flex-shrink-0" />
-                          <span className="text-[12.5px] text-[#181818] flex-1 truncate">{l.name}</span>
-                          <span className="text-[11px] text-[#706E6B] truncate max-w-[180px]">{l.url}</span>
-                          <button type="button" onClick={() => setPendingFileLinks(prev => prev.filter((_, idx) => idx !== i))} className="text-[#94a3b8] hover:text-[#dc2626]">
-                            <Trash2 size={12} />
-                          </button>
-                        </li>
-                      ))}
                     </ul>
                   )}
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-[11px] font-semibold text-[#706E6B] uppercase tracking-wider mb-1.5">Upload</label>
-                      <input
-                        type="file"
-                        multiple
-                        onChange={e => {
-                          const list = Array.from(e.target.files ?? [])
-                          if (list.length) setPendingFiles(prev => [...prev, ...list])
-                          e.target.value = ''
-                        }}
-                        className="block w-full text-[11.5px] text-[#3E3E3C] file:mr-2 file:py-1 file:px-2 file:rounded file:border-0 file:text-[11.5px] file:font-semibold file:bg-[#70A0D0] file:text-white hover:file:bg-[#2C5485] file:cursor-pointer cursor-pointer"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[11px] font-semibold text-[#706E6B] uppercase tracking-wider mb-1.5">External link</label>
-                      <div className="flex gap-1.5">
-                        <input
-                          type="text"
-                          value={newFileLinkNameModal}
-                          onChange={e => setNewFileLinkNameModal(e.target.value)}
-                          placeholder="Label"
-                          className="w-24 px-2 py-1.5 border border-[#cbd5e1] rounded text-[12px] focus:outline-none focus:border-[#70A0D0]"
-                        />
-                        <input
-                          type="url"
-                          value={newFileLinkUrlModal}
-                          onChange={e => setNewFileLinkUrlModal(e.target.value)}
-                          placeholder="https://…"
-                          className="flex-1 px-2 py-1.5 border border-[#cbd5e1] rounded text-[12px] focus:outline-none focus:border-[#70A0D0]"
-                        />
-                        <button
-                          type="button"
-                          disabled={!newFileLinkNameModal.trim() || !newFileLinkUrlModal.trim()}
-                          onClick={() => {
-                            setPendingFileLinks(prev => [...prev, { name: newFileLinkNameModal.trim(), url: newFileLinkUrlModal.trim() }])
-                            setNewFileLinkNameModal(''); setNewFileLinkUrlModal('')
-                          }}
-                          className="btn-secondary h-[30px]"
-                        >
-                          Add
-                        </button>
-                      </div>
-                    </div>
+                  <div>
+                    <label className="block text-[11px] font-semibold text-[#706E6B] uppercase tracking-wider mb-1.5">Upload</label>
+                    <input
+                      type="file"
+                      multiple
+                      onChange={e => {
+                        const list = Array.from(e.target.files ?? [])
+                        if (list.length) setPendingFiles(prev => [...prev, ...list])
+                        e.target.value = ''
+                      }}
+                      className="block w-full text-[11.5px] text-[#3E3E3C] file:mr-2 file:py-1 file:px-2 file:rounded file:border-0 file:text-[11.5px] file:font-semibold file:bg-[#70A0D0] file:text-white hover:file:bg-[#2C5485] file:cursor-pointer cursor-pointer"
+                    />
                   </div>
                 </div>
               </div>
