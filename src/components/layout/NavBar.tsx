@@ -7,7 +7,6 @@ import {
   BriefcaseIcon,
   ClipboardDocumentCheckIcon,
   UserGroupIcon,
-  FolderIcon,
 } from '@heroicons/react/24/solid'
 import { createClient } from '@/lib/supabase/client'
 import { useState, useEffect } from 'react'
