@@ -67,26 +67,64 @@ app UI, browser tabs, iOS home screen, and email.
 The email template also pulls `appUrl` from the `NEXT_PUBLIC_APP_URL` env
 var (set in Vercel) — no code change needed when domain changes.
 
-## DB Schema
-12 tables: projects, project_financials, milestones, tasks, task_threads, stakeholders, stakeholder_tasks, stakeholder_feed, dataroom_docs, users, activity_log, permits, investor_access
+## DB Schema (current)
+Core: projects, project_financials, milestones, project_threads, project_notes,
+activity_log, users, invited_emails, investor_access.
+Site assets: buildings, meters, systems, permits, stakeholders, dataroom_docs.
+Tasks: tasks, task_threads, task_files, task_links, stakeholder_tasks.
+Pricing: offtaker_pricing, offtaker_pricing_threads.
+
+See `supabase/migrations/` for the canonical schema — each migration is
+numbered (001…031+) and is idempotent (CREATE/ALTER … IF NOT EXISTS).
+
+## Roles
+- **admin** — full access, only role that can archive or delete projects
+- **manager** — sees + edits everything; cannot archive/delete projects
+- **team** — sees all projects; tasks gated by visibility + task-type subscriptions
+- **investor** — investor portal only
+
+Permission helpers live in `src/lib/permissions.ts`. Use them in BOTH UI and
+server route handlers (defense in depth).
 
 ## Routes
-- /auth/login — login page
-- /dashboard — portfolio KPIs
-- /projects — project list with filters
-- /projects/[id] — project detail (8 tabs)
-- /tasks — task list/kanban
+- /auth/login — login
+- /auth/pending — pending-approval landing
+- /dashboard — portfolio KPIs + tasks-due + recent threads + active projects
+- /projects — project list with filters (archived projects hidden by default)
+- /projects/[id] — project detail (Threads / Site / Utility / Stakeholders /
+  Permitting / Technical / Financial tabs; tab is honored via ?tab=)
+- /tasks — task list + kanban; visibility + task-type subscription filters
 - /stakeholders — CRM directory
-- /dataroom — dataroom health dashboard
+- /dataroom — health dashboard
+- /settings — profile + notification prefs + task subscriptions
+- /admin/users — invite + manage users (admin only)
+- /admin/archived — view + restore + delete archived projects (admin only)
 - /investor/[token] — investor read-only portal
+- /email-logo — edge route that rasterizes the lockup PNG for emails (public)
 
 ## Conventions
 - All DB queries via Supabase client
 - Server components for initial data fetch, client components for interactivity
 - RLS enforces access — never filter by role in application code alone
 - Financial tab is read-only by default; Edit button toggles edit mode
+- Notes / Description / threaded message inputs across the app share two UI primitives:
+  - `src/components/ui/RichTextEditor.tsx` — bold / bulleted / numbered toolbar
+  - `src/components/ui/NotesRender.tsx`    — renders HTML notes + legacy plain-text fallback
+  Anywhere a new notes/description box is added, use these — don't introduce a fresh textarea.
+- Slack-style mentions / channel refs / URLs in thread messages render via
+  `src/components/ui/MessageText.tsx`. Pass the active users list so `<@USERID>`
+  tokens resolve to display names.
 
 ## Team
 - Morgan Brawner (admin): MB, #2F3E50
 - Sarah Chen (team): SC, #6E879E
 - James Wright (team): JW, #E6C87A
+
+## Workflow preferences
+- **End-of-day summary**: at the close of any working session, produce an EOD
+  summary in table format covering (a) what shipped today (commits +
+  migrations + features), (b) what's in flight or unblocked, (c) anything
+  that needs the user's manual action (Supabase SQL, Vercel env vars,
+  IT request, etc.).
+- **Default to table format** when listing tasks, status, or comparisons.
+- **No commits without user request**. Always ask before pushing.
