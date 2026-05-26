@@ -55,7 +55,7 @@ async function notifyTaskAssigned(supabase: any, task: any, actorId: string) {
   if (!assignee?.email) return
   if (assignee.notify_email_task_assigned === false) return
 
-  const origin = process.env.NEXT_PUBLIC_APP_URL || 'https://pathwaze.vercel.app'
+  const origin = process.env.NEXT_PUBLIC_APP_URL || 'https://pathwaze.esa-solar.com'
   const taskUrl = `${origin}/tasks?id=${task.id}`
   const assignerName = actor?.full_name || actor?.email?.split('@')[0] || 'A teammate'
 

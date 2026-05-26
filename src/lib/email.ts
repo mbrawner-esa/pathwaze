@@ -88,7 +88,7 @@ async function send(args: { to: string; subject: string; html: string }): Promis
 // it's publicly reachable.
 
 function appUrl(): string {
-  return process.env.NEXT_PUBLIC_APP_URL || 'https://pathwaze.vercel.app'
+  return process.env.NEXT_PUBLIC_APP_URL || 'https://pathwaze.esa-solar.com'
 }
 
 function shell(bodyHtml: string): string {

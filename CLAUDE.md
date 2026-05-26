@@ -42,7 +42,7 @@ app UI, browser tabs, iOS home screen, and email.
 4. **`public/email-logo.png`** — Pre-rendered icon+wordmark lockup (600×150
    PNG, dark variant for navy email header) used by the invite email
    template (`src/lib/email.ts`). To regenerate after a logo change:
-   `curl -s -o public/email-logo.png https://pathwaze.vercel.app/email-logo`
+   `curl -s -o public/email-logo.png https://pathwaze.esa-solar.com/email-logo`
    (this fetches a fresh render from the edge route below).
 
 5. **`src/app/email-logo/route.tsx`** — Edge route that rasterizes the full
