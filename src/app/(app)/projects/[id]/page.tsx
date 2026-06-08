@@ -97,27 +97,37 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
     .eq('project_id', id)
     .order('uploaded_at', { ascending: false }) as any
 
+  // Drawing collections (with owner) + each collection's action-plan sections (with item counts).
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: asBuiltPlan } = await supabase
-    .from('action_plans').select('id')
-    .eq('drawing_type', 'as_built').eq('is_active', true)
-    .order('version', { ascending: false }).limit(1).maybeSingle() as any
+  const { data: collectionsRaw } = await supabase
+    .from('drawing_collections')
+    .select('*, owner:users!owner_id(id, full_name, avatar_url)')
+    .eq('is_active', true)
+    .order('sort_order') as any
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let planSections: any[] = []
-  if (asBuiltPlan) {
+  const planIds = Array.from(new Set(((collectionsRaw ?? []) as any[]).map(c => c.action_plan_id).filter(Boolean)))
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const sectionsByPlan: Record<string, any[]> = {}
+  if (planIds.length) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: secs } = await supabase
       .from('action_plan_sections')
-      .select('key, label, is_universal, sort_order, items:action_plan_items(count)')
-      .eq('action_plan_id', asBuiltPlan.id)
+      .select('action_plan_id, key, label, is_universal, sort_order, items:action_plan_items(count)')
+      .in('action_plan_id', planIds)
       .order('sort_order') as any
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    planSections = (secs ?? []).map((s: any) => ({
-      key: s.key, label: s.label, is_universal: s.is_universal,
-      item_count: Array.isArray(s.items) ? (s.items[0]?.count ?? 0) : 0,
-    }))
+    for (const s of (secs ?? []) as any[]) {
+      ;(sectionsByPlan[s.action_plan_id] ??= []).push({
+        key: s.key, label: s.label, is_universal: s.is_universal,
+        item_count: Array.isArray(s.items) ? (s.items[0]?.count ?? 0) : 0,
+      })
+    }
   }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const collections = ((collectionsRaw ?? []) as any[]).map(c => ({
+    ...c, sections: c.action_plan_id ? (sectionsByPlan[c.action_plan_id] ?? []) : [],
+  }))
 
   return (
     <div>
@@ -194,7 +204,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
         users={users ?? []}
         pricingRows={pricingRows ?? []}
         drawings={drawings ?? []}
-        planSections={planSections}
+        collections={collections}
       />
     </div>
   )

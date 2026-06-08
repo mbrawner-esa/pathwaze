@@ -29,7 +29,7 @@ export async function POST(req: NextRequest) {
 
   const body = await req.json()
   const { project_id, file_name, storage_path, file_url, file_size, content_type, set_label,
-          drawing_type, area_id, discipline_key } = body
+          drawing_type, area_id, discipline_key, collection_id } = body
   if (!project_id || !file_name) {
     return NextResponse.json({ error: 'project_id and file_name required' }, { status: 400 })
   }
@@ -45,6 +45,7 @@ export async function POST(req: NextRequest) {
       content_type: content_type ?? null,
       set_label: set_label ?? null,
       drawing_type: drawing_type ?? 'as_built',
+      collection_id: collection_id ?? null,
       area_id: area_id ?? null,
       discipline_key: discipline_key ?? null,
       uploaded_by: user.id,
