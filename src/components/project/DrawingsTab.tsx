@@ -2,6 +2,7 @@
 import { useRef, useState } from 'react'
 import { createClient as createBrowserClient } from '@/lib/supabase/client'
 import { Upload, FileText, ChevronRight, Trash2, Plus } from 'lucide-react'
+import { DrawingReviewView } from './DrawingReviewView'
 
 // ── Types ────────────────────────────────────────────────────────────
 export interface PlanSection { key: string; label: string; is_universal: boolean; item_count: number }
@@ -70,6 +71,7 @@ function Avatar({ user, size = 22 }: { user?: Owner | null; size?: number }) {
 export function DrawingsTab({ projectId, drawings: initial, areas, collections: initialCollections, users, reviewTypes }: Props) {
   const [collections, setCollections] = useState<Collection[]>(initialCollections)
   const [activeId, setActiveId] = useState<string | null>(null)
+  const [reviewDrawingId, setReviewDrawingId] = useState<string | null>(null)
   const [drawings, setDrawings] = useState<Drawing[]>(initial)
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -124,7 +126,17 @@ export function DrawingsTab({ projectId, drawings: initial, areas, collections: 
   }
 
   function openReview(d: Drawing) {
-    if (reviewOf(d)) alert('The drawing review checklist opens here — coming in the next phase (P3).')
+    if (reviewOf(d)) setReviewDrawingId(d.id)
+  }
+
+  async function refreshDrawings() {
+    const res = await fetch(`/api/drawings?project_id=${projectId}`)
+    if (res.ok) setDrawings(await res.json())
+  }
+
+  // ── Review view (a drawing's checklist) ────────────────────────────
+  if (reviewDrawingId) {
+    return <DrawingReviewView drawingId={reviewDrawingId} onBack={() => { setReviewDrawingId(null); refreshDrawings() }} />
   }
 
   // ── Landing: collections ───────────────────────────────────────────
