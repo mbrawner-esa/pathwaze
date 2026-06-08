@@ -89,6 +89,36 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
     userRole = me?.role ?? 'team'
   }
 
+  // Drawings tab: drawings (with area + review) + the As-Built action plan's sections (with item counts).
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: drawings } = await supabase
+    .from('drawings')
+    .select('*, area:buildings(id, name, category), review:drawing_reviews(id, status, reviewer_id, due_date)')
+    .eq('project_id', id)
+    .order('uploaded_at', { ascending: false }) as any
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: asBuiltPlan } = await supabase
+    .from('action_plans').select('id')
+    .eq('drawing_type', 'as_built').eq('is_active', true)
+    .order('version', { ascending: false }).limit(1).maybeSingle() as any
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let planSections: any[] = []
+  if (asBuiltPlan) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: secs } = await supabase
+      .from('action_plan_sections')
+      .select('key, label, is_universal, sort_order, items:action_plan_items(count)')
+      .eq('action_plan_id', asBuiltPlan.id)
+      .order('sort_order') as any
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    planSections = (secs ?? []).map((s: any) => ({
+      key: s.key, label: s.label, is_universal: s.is_universal,
+      item_count: Array.isArray(s.items) ? (s.items[0]?.count ?? 0) : 0,
+    }))
+  }
+
   return (
     <div>
       {/* Sticky breadcrumb bar — full-width bg, inner content constrained */}
@@ -163,6 +193,8 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
         activity={activity}
         users={users ?? []}
         pricingRows={pricingRows ?? []}
+        drawings={drawings ?? []}
+        planSections={planSections}
       />
     </div>
   )
