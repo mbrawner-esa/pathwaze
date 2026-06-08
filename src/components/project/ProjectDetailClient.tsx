@@ -31,7 +31,7 @@ const TABS = [
 const VALID_TAB_IDS = new Set(TABS.map(t => t.id))
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function ProjectDetailClient({ project, financials, milestones, stakeholders, permits, docs, buildings, meters, systems, threads = [], activity = [], users = [], pricingRows = [], drawings = [], collections = [] }: any) {
+export function ProjectDetailClient({ project, financials, milestones, stakeholders, permits, docs, buildings, meters, systems, threads = [], activity = [], users = [], pricingRows = [], drawings = [], collections = [], reviewTypes = [] }: any) {
   const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
@@ -87,7 +87,7 @@ export function ProjectDetailClient({ project, financials, milestones, stakehold
         {activeTab === 'financial' && <FinancialTab financials={financials} projectId={project.id} systemKwdc={project.system_kwdc} pricingRows={pricingRows} systems={systems} meters={meters} users={users} />}
         {activeTab === 'schedule' && <ScheduleTab milestones={milestones} />}
         {activeTab === 'dataroom' && <DataRoomTab docs={docs} projectId={project.id} />}
-        {activeTab === 'drawings' && <DrawingsTab projectId={project.id} drawings={drawings} areas={buildings} collections={collections} users={users} />}
+        {activeTab === 'drawings' && <DrawingsTab projectId={project.id} drawings={drawings} areas={buildings} collections={collections} users={users} reviewTypes={reviewTypes} />}
         {activeTab === 'threads' && <ThreadsTab threads={threads} channelLinked={!!project.slack_channel_id} users={users} />}
           </div>
         </div>

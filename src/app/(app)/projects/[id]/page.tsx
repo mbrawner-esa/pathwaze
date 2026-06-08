@@ -129,6 +129,13 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
     ...c, sections: c.action_plan_id ? (sectionsByPlan[c.action_plan_id] ?? []) : [],
   }))
 
+  // Review types = available action plans (drives the "Select review type" dropdown).
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: reviewTypesRaw } = await supabase
+    .from('action_plans').select('id, name').eq('is_active', true).order('name') as any
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const reviewTypes = ((reviewTypesRaw ?? []) as any[]).map(p => ({ id: p.id, name: p.name }))
+
   return (
     <div>
       {/* Sticky breadcrumb bar — full-width bg, inner content constrained */}
@@ -205,6 +212,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
         pricingRows={pricingRows ?? []}
         drawings={drawings ?? []}
         collections={collections}
+        reviewTypes={reviewTypes}
       />
     </div>
   )

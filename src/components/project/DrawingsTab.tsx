@@ -28,6 +28,7 @@ export interface Drawing {
   review?: { id: string; status: string } | { id: string; status: string }[] | null
 }
 export interface SimpleUser { id: string; full_name: string; avatar_url?: string | null }
+export interface ReviewType { id: string; name: string }
 
 interface Props {
   projectId: string
@@ -35,6 +36,7 @@ interface Props {
   areas: Area[]
   collections: Collection[]
   users: SimpleUser[]
+  reviewTypes: ReviewType[]
 }
 
 const CATEGORY_PILL: Record<string, { bg: string; text: string }> = {
@@ -65,7 +67,7 @@ function Avatar({ user, size = 22 }: { user?: Owner | null; size?: number }) {
   )
 }
 
-export function DrawingsTab({ projectId, drawings: initial, areas, collections: initialCollections, users }: Props) {
+export function DrawingsTab({ projectId, drawings: initial, areas, collections: initialCollections, users, reviewTypes }: Props) {
   const [collections, setCollections] = useState<Collection[]>(initialCollections)
   const [activeId, setActiveId] = useState<string | null>(null)
   const [drawings, setDrawings] = useState<Drawing[]>(initial)
@@ -128,9 +130,14 @@ export function DrawingsTab({ projectId, drawings: initial, areas, collections: 
   // ── Landing: collections ───────────────────────────────────────────
   if (!active) {
     return <Landing
-      collections={collections} drawings={drawings} areas={areas} users={users}
+      collections={collections} drawings={drawings} areas={areas} users={users} reviewTypes={reviewTypes}
       onOpen={setActiveId}
-      onCreate={c => setCollections(prev => [...prev, { ...c, sections: c.sections ?? [] }])}
+      onCreate={c => setCollections(prev => {
+        // Inherit sections from a sibling collection that uses the same review type (action plan),
+        // so a freshly created collection is reviewable immediately this session.
+        const sections = c.action_plan_id ? (prev.find(x => x.action_plan_id === c.action_plan_id)?.sections ?? []) : []
+        return [...prev, { ...c, sections }]
+      })}
     />
   }
 
@@ -232,13 +239,14 @@ export function DrawingsTab({ projectId, drawings: initial, areas, collections: 
 }
 
 // ── Landing ─────────────────────────────────────────────────────────────
-function Landing({ collections, drawings, areas, users, onOpen, onCreate }: {
-  collections: Collection[]; drawings: Drawing[]; areas: Area[]; users: SimpleUser[]
+function Landing({ collections, drawings, areas, users, reviewTypes, onOpen, onCreate }: {
+  collections: Collection[]; drawings: Drawing[]; areas: Area[]; users: SimpleUser[]; reviewTypes: ReviewType[]
   onOpen: (id: string) => void; onCreate: (c: Collection) => void
 }) {
   const [creating, setCreating] = useState(false)
   const [name, setName] = useState('')
   const [ownerId, setOwnerId] = useState('')
+  const [reviewTypeId, setReviewTypeId] = useState(reviewTypes.length === 1 ? reviewTypes[0].id : '')
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState<string | null>(null)
 
@@ -247,12 +255,12 @@ function Landing({ collections, drawings, areas, users, onOpen, onCreate }: {
     setSaving(true); setErr(null)
     const res = await fetch('/api/drawing-collections', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: name.trim(), owner_id: ownerId || null }),
+      body: JSON.stringify({ name: name.trim(), owner_id: ownerId || null, action_plan_id: reviewTypeId || null }),
     })
     setSaving(false)
     if (res.ok) {
       onCreate(await res.json())
-      setCreating(false); setName(''); setOwnerId('')
+      setCreating(false); setName(''); setOwnerId(''); setReviewTypeId(reviewTypes.length === 1 ? reviewTypes[0].id : '')
     } else { const b = await res.json().catch(() => ({})); setErr(b?.error || 'Failed to create') }
   }
 
@@ -289,6 +297,11 @@ function Landing({ collections, drawings, areas, users, onOpen, onCreate }: {
             <div className="text-[13px] font-bold text-[#080707]">New drawing type</div>
             <input autoFocus value={name} onChange={e => setName(e.target.value)} placeholder="Name (e.g. Solar PV Design)"
               className="border border-[#DDDBDA] rounded-md px-2.5 py-1.5 text-[13px]" />
+            <select value={reviewTypeId} onChange={e => setReviewTypeId(e.target.value)}
+              className="border border-[#DDDBDA] rounded-md px-2.5 py-1.5 text-[13px]">
+              <option value="">Select review type…</option>
+              {reviewTypes.map(rt => <option key={rt.id} value={rt.id}>{rt.name}</option>)}
+            </select>
             <select value={ownerId} onChange={e => setOwnerId(e.target.value)}
               className="border border-[#DDDBDA] rounded-md px-2.5 py-1.5 text-[13px]">
               <option value="">Owner (optional)…</option>
