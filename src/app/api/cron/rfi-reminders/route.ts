@@ -25,6 +25,7 @@ export async function GET(req: NextRequest) {
     }
   }
 
+  const dry = req.nextUrl.searchParams.get('dry') === '1'
   const supabase = serviceClient()
   const today = new Date().toISOString().slice(0, 10)
 
@@ -36,10 +37,14 @@ export async function GET(req: NextRequest) {
 
   let notified = 0
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const wouldNotify: any[] = []
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   for (const r of (overdue ?? []) as any[]) {
     const tag = `RFI ${rfiNo(r.rfi_number)}`
     const html = `<p><b>${tag} is overdue</b> (due ${r.due_date}).</p><p><a href="${rfiUrl(r.id)}">${r.subject}</a></p>`
     const text = `⏰ ${tag} is overdue (due ${r.due_date}): ${r.subject}`
+    const target = r.ball_in_court_user_id ? `user:${r.ball_in_court_user_id}` : r.ball_in_court_stakeholder_id ? `stakeholder:${r.ball_in_court_stakeholder_id}` : null
+    if (dry) { wouldNotify.push({ rfi: tag, subject: r.subject, due_date: r.due_date, target }); continue }
     if (r.ball_in_court_user_id) {
       await sendDM(supabase, r.ball_in_court_user_id, text)
       await emailUser(supabase, r.ball_in_court_user_id, `Overdue: ${tag}`, html)
@@ -50,5 +55,6 @@ export async function GET(req: NextRequest) {
     }
   }
 
+  if (dry) return NextResponse.json({ ok: true, dry: true, overdue: (overdue ?? []).length, wouldNotify })
   return NextResponse.json({ ok: true, overdue: (overdue ?? []).length, notified })
 }
