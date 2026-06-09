@@ -4,7 +4,7 @@
 > A new Claude Code session should read this + CLAUDE.md to get oriented
 > without relying on prior chat context.
 
-Last updated: 2026-05-26
+Last updated: 2026-06-09
 
 ---
 
@@ -17,9 +17,19 @@ Last updated: 2026-05-26
 | 3 | **`EMAIL_NOTIFY_SELF=true` dev override** | ~10 min | Env-var flag so email notifications can be solo-tested without a 2nd account. Parallel to the existing `SLACK_DM_SELF` flag. |
 | 4 | **Schedule tab Phase 1b (Gantt)** | Medium | Phase 1a (milestones table + opt-in tasks via `show_on_schedule`) lives on the `schedule-tab` branch. ⚠️ That branch's migrations are numbered 022/023, which now COLLIDE with main's 022/023. Renumber them to 032/033+ before merging. |
 | 5 | **Box integration (deep)** | Large | Beyond the current dataroom usage — broader Box read/write across projects. `src/app/api/box/upload/route.ts` is currently a stub (`// TODO: Upload to Box using Box SDK`). |
-| 6 | **@-mention input picker** | Medium | Typing `@` in a thread/notes editor pops a user dropdown to insert a mention. Display side is DONE (`MessageText.tsx` renders `<@USERID>` tokens). This is the input side. |
+| 6 | **@-mention input picker** | ✅ Done (partial) | Input side shipped: `RichTextEditor` now has `@` autocomplete (pass `mentionUsers`), inserting a `<span class="mention" data-uid>` chip. Live in RFI responses (notifies the mentioned user). **Remaining:** enable it in task/notes/thread editors by passing the users list. |
 | 7 | **In-app help page (`/help`)** | Medium | Single page with sticky sidebar TOC. Mirrors the onboarding deck content + FAQ. Should be updated when major features ship. |
 | 8 | **Update digest email** | Medium | On hold per user. Idea: admin composes a "what's new" note, clicks a button in /admin, opted-in users get an email. Infra TBD. |
+| 9 | **@-mention in task/notes/thread editors** | Small | Capability is built (`RichTextEditor` `mentionUsers`). Just pass the active users list into the task-description, project-notes, and thread composers to light it up there too. |
+| 10 | **Action-plan admin editor** | Medium | UI to define/edit a collection's review checklist (action plan) so a newly created drawing-type collection becomes reviewable without a code seed/migration. Today only the seeded **As-Built** plan has items. |
+| 11 | **RFI email-reply (no login)** | Large | Procore's marquee: EOR/AHJ reply to an RFI by email without logging in. Needs the inbound-email webhook (shares infra with #1/#2). v1 RFIs are in-app + outbound email only. |
+
+### ✅ Shipped 2026-06-09 — Drawings + RFIs (see `CHANGELOG.md`)
+As-Built **Drawings** tab (collections → upload → link area+discipline → review
+against a seeded action plan → findings), **Delegate→task** + **Create RFI**, a
+full Procore-style **RFIs** module, and **Phase 6 notifications** (branded email +
+Slack + feed; Risk escalation; daily overdue-RFI cron). Migrations **032–041**;
+buckets `drawings` + `rfi-files`. Branch `feature/drawings-rfis`.
 
 ---
 
@@ -41,6 +51,9 @@ Last updated: 2026-05-26
 | Item | Owner | Status |
 |------|-------|--------|
 | IT: add `pathwaze.esa-solar.com` to Exchange safe-senders list (kills "Show images" on emails for internal users) | IT / Morgan | Pending |
+| Merge `feature/drawings-rfis` → `main` to activate the Vercel cron (overdue-RFI reminders run on Production only) | Morgan | Pending |
+| Drawings + RFIs migrations **032–041** applied to Supabase | Morgan | Done |
+| `CRON_SECRET` set in Vercel (Production) + `vercel.json` cron declared | Morgan / Claude | Done |
 | Onboarding deck — embed 11 platform screenshots | Morgan | In progress (deck built, screenshots pending) |
 | Slack app Event Subscriptions URL → confirm points at new domain | Morgan | Verify |
 

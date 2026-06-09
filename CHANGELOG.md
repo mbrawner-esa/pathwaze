@@ -6,6 +6,35 @@
 
 ---
 
+## 2026-06-09
+
+- **As-Built Drawings** — new **Drawings** tab on every project. Drawings are
+  organized into **collections** (named, owned "drawing types" — As-Builts ships
+  seeded; add your own with an owner and a review type). Upload a drawing, link it
+  to an **area** (a Site-tab building row) + a **discipline**, and it gets a
+  **review** against that type's seeded **action plan**: the Universal questions
+  (synced across the area+type "set", with per-drawing override) plus the
+  discipline checklist. Each item takes a disposition (Confirmed / Field-Verify /
+  Unknown / Conflict / Risk), finding, sheet ref, and Survey SOW action, with a
+  live progress bar and inline **View PDF**.
+- **Delegate / Create RFI** — from any finding, **Delegate** spins up an
+  Engineering task (linked to the building) or **Create RFI** opens a formal
+  request; the finding then shows a chip linking to the task/RFI.
+- **RFIs** — new master-nav module modeled on Procore: portfolio log with
+  status/overdue filters, **per-project numbering (#001…)**, ball-in-court,
+  collapsible details, **linkages** (area / system / meter / stakeholder /
+  drawing), **Received From** (internal user or stakeholder, with inline add),
+  edit-any-time, and a responses thread with **rich text, file attachments, and
+  @-mentions**.
+- **Notifications** — branded emails (matching the invite template) + Slack DMs +
+  in-app feed for: task delegated, RFI created / responded / @-mention, **Risk
+  findings escalated to admins**, and a daily **overdue-RFI reminder** (Vercel
+  cron). All notification emails now share the branded shell.
+- **Platform** — `/tasks?id=` and notification links now open the **specific
+  task**; `RichTextEditor` gains a **link** button and **@-mention** autocomplete.
+- **Under the hood** — migrations **032–041**; new Storage buckets `drawings` and
+  `rfi-files`; service-client `no-store` fix (Next was caching cron query results).
+
 ## 2026-05-26
 
 - **Domain cutover** — production now lives at `https://pathwaze.esa-solar.com`
