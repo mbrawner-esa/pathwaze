@@ -146,7 +146,7 @@ export function DrawingsTab({ projectId, drawings: initial, areas, collections: 
 
   // ── Review view (a drawing's checklist) ────────────────────────────
   if (reviewDrawingId) {
-    return <DrawingReviewView drawingId={reviewDrawingId} onBack={() => { setReviewDrawingId(null); refreshDrawings() }} />
+    return <DrawingReviewView drawingId={reviewDrawingId} users={users} onBack={() => { setReviewDrawingId(null); refreshDrawings() }} />
   }
 
   // ── Landing: collections ───────────────────────────────────────────

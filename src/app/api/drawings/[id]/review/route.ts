@@ -43,7 +43,8 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: findings } = await (supabase.from('review_findings') as any)
-    .select('*').eq('drawing_review_id', review.id)
+    .select('*, task:tasks!delegated_task_id(id, status, title), rfi:rfis!rfi_id(id, rfi_number, status)')
+    .eq('drawing_review_id', review.id)
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let universal: any[] = []

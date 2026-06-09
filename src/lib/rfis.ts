@@ -1,0 +1,60 @@
+// Shared helpers for the RFI module.
+
+export interface NewRfiInput {
+  project_id: string
+  subject: string
+  question?: string | null
+  area_id?: string | null
+  drawing_id?: string | null
+  ball_in_court_user_id?: string | null
+  ball_in_court_stakeholder_id?: string | null
+  rfi_manager_id?: string | null
+  received_from?: string | null
+  due_date?: string | null
+  drawing_number?: string | null
+  spec_section?: string | null
+  location?: string | null
+  cost_impact?: string
+  schedule_impact?: string
+  is_private?: boolean
+  status?: 'draft' | 'open'
+}
+
+/**
+ * Create an RFI with the next per-project number. Returns the created row (or null).
+ * Defaults: RFI manager = creator, date_initiated = today (when opened).
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function createRfiFromFinding(supabase: any, userId: string, input: NewRfiInput) {
+  // Next per-project number (RPC defined in migration 035).
+  const { data: nextNum } = await supabase.rpc('next_rfi_number', { p_project: input.project_id })
+  const rfi_number = typeof nextNum === 'number' ? nextNum : 1
+  const status = input.status ?? 'open'
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (supabase.from('rfis') as any).insert({
+    project_id: input.project_id,
+    rfi_number,
+    subject: input.subject,
+    question: input.question ?? null,
+    status,
+    area_id: input.area_id ?? null,
+    drawing_id: input.drawing_id ?? null,
+    ball_in_court_user_id: input.ball_in_court_user_id ?? null,
+    ball_in_court_stakeholder_id: input.ball_in_court_stakeholder_id ?? null,
+    rfi_manager_id: input.rfi_manager_id ?? userId,
+    received_from: input.received_from ?? null,
+    due_date: input.due_date ?? null,
+    date_initiated: status === 'open' ? new Date().toISOString().slice(0, 10) : null,
+    drawing_number: input.drawing_number ?? null,
+    spec_section: input.spec_section ?? null,
+    location: input.location ?? null,
+    cost_impact: input.cost_impact ?? 'tbd',
+    schedule_impact: input.schedule_impact ?? 'tbd',
+    is_private: input.is_private ?? false,
+    created_by: userId,
+  }).select('*').single()
+
+  if (error) { console.error('[createRfi] insert failed:', error.message); return null }
+  return data
+}

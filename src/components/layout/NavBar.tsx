@@ -7,6 +7,7 @@ import {
   BriefcaseIcon,
   ClipboardDocumentCheckIcon,
   UserGroupIcon,
+  QuestionMarkCircleIcon,
 } from '@heroicons/react/24/solid'
 import { createClient } from '@/lib/supabase/client'
 import { useState, useEffect } from 'react'
@@ -64,6 +65,7 @@ const NAV_ITEMS = [
   { label: 'Projects', href: '/projects', Icon: BriefcaseIcon },
   { label: 'Tasks', href: '/tasks', Icon: ClipboardDocumentCheckIcon },
   { label: 'Stakeholders', href: '/stakeholders', Icon: UserGroupIcon },
+  { label: 'RFIs', href: '/rfis', Icon: QuestionMarkCircleIcon },
   // Dataroom hidden until Box integration is built
   // { label: 'Dataroom', href: '/dataroom', Icon: FolderIcon },
 ]

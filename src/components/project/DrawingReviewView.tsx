@@ -16,9 +16,14 @@ const STATUS_LABEL: Record<string, string> = { not_started: 'Not started', in_pr
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Any = any
-interface ItemState { disposition: string; finding_text: string; sheet_ref: string; sow_action: string; override: boolean }
+interface ItemState {
+  disposition: string; finding_text: string; sheet_ref: string; sow_action: string; override: boolean
+  task?: Any | null; rfi?: Any | null
+}
+export interface SimpleUser { id: string; full_name: string }
 
-export function DrawingReviewView({ drawingId, onBack }: { drawingId: string; onBack: () => void }) {
+export function DrawingReviewView({ drawingId, users = [], onBack }: { drawingId: string; users?: SimpleUser[]; onBack: () => void }) {
+  const [modal, setModal] = useState<{ kind: 'delegate' | 'rfi'; item: Any } | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [data, setData] = useState<Any>(null)
@@ -50,6 +55,8 @@ export function DrawingReviewView({ drawingId, onBack }: { drawingId: string; on
           sheet_ref: src?.sheet_ref ?? '',
           sow_action: src?.sow_action ?? '',
           override: !!override,
+          task: findingByItem[it.id]?.task ?? null,
+          rfi: findingByItem[it.id]?.rfi ?? null,
         }
       }
       setData(d); setItems(map); setStatus(d.review.status); setLoading(false)
@@ -213,11 +220,17 @@ export function DrawingReviewView({ drawingId, onBack }: { drawingId: string; on
                           className="w-full bg-white border border-[#DDDBDA] rounded-md px-2.5 py-2 text-[12.5px] min-h-[36px]" />
                       </div>
                     )}
-                    <div className="flex gap-2">
-                      <button className="text-[11.5px] font-semibold text-[#3E3E3C] border border-[#DDDBDA] rounded-md px-2.5 py-1.5 hover:bg-[#F3F2F2]"
-                        onClick={() => alert('Delegate → engineer task (P4).')}>Delegate ▸</button>
-                      <button className="text-[11.5px] font-bold text-[#0f766e] border border-[#99f6e4] rounded-md px-2.5 py-1.5 hover:bg-[#f0fdfa]"
-                        onClick={() => alert('Create RFI (P5).')}>Create RFI ▸</button>
+                    <div className="flex gap-2 items-center flex-wrap">
+                      {v.task ? (
+                        <a href={`/tasks?id=${v.task.id}`} className="text-[11px] font-semibold text-[#2C5485] bg-[#EFF4FA] border border-[#cfe0ef] rounded-full px-2.5 py-1">→ Task · {v.task.status}</a>
+                      ) : (
+                        <button className="text-[11.5px] font-semibold text-[#3E3E3C] border border-[#DDDBDA] rounded-md px-2.5 py-1.5 hover:bg-[#F3F2F2]" onClick={() => setModal({ kind: 'delegate', item: it })}>Delegate ▸</button>
+                      )}
+                      {v.rfi ? (
+                        <a href={`/rfis/${v.rfi.id}`} className="text-[11px] font-semibold text-[#0f766e] bg-[#f0fdfa] border border-[#99f6e4] rounded-full px-2.5 py-1">→ RFI #{v.rfi.rfi_number} · {v.rfi.status}</a>
+                      ) : (
+                        <button className="text-[11.5px] font-bold text-[#0f766e] border border-[#99f6e4] rounded-md px-2.5 py-1.5 hover:bg-[#f0fdfa]" onClick={() => setModal({ kind: 'rfi', item: it })}>Create RFI ▸</button>
+                      )}
                     </div>
                   </div>
                 )}
@@ -226,6 +239,90 @@ export function DrawingReviewView({ drawingId, onBack }: { drawingId: string; on
           })}
         </div>
       ))}
+
+      {modal && (
+        <ActionModal
+          kind={modal.kind}
+          drawingId={drawingId}
+          item={modal.item}
+          itemState={items[modal.item.id]}
+          drawingFile={d.file_name}
+          users={users}
+          onClose={() => setModal(null)}
+          onDone={patch => { setItem(modal.item.id, patch); setModal(null) }}
+        />
+      )}
+    </div>
+  )
+}
+
+// ── Delegate / Create-RFI modal ─────────────────────────────────────────
+function ActionModal({ kind, drawingId, item, itemState, drawingFile, users, onClose, onDone }: {
+  kind: 'delegate' | 'rfi'; drawingId: string; item: Any; itemState: ItemState; drawingFile: string
+  users: SimpleUser[]; onClose: () => void; onDone: (patch: Partial<ItemState>) => void
+}) {
+  const baseDesc = [`From drawing review: ${drawingFile}`, item.prompt,
+    itemState?.finding_text ? `Finding: ${itemState.finding_text}` : '',
+    itemState?.sheet_ref ? `Sheet/detail: ${itemState.sheet_ref}` : '',
+    itemState?.sow_action ? `Survey SOW action: ${itemState.sow_action}` : ''].filter(Boolean).join('\n')
+
+  const [title, setTitle] = useState(kind === 'delegate' ? `Field verify: ${item.prompt}` : item.prompt)
+  const [body, setBody] = useState(baseDesc)
+  const [assignee, setAssignee] = useState('')
+  const [due, setDue] = useState('')
+  const [cost, setCost] = useState('tbd')
+  const [sched, setSched] = useState('tbd')
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+
+  async function submit() {
+    setBusy(true); setErr(null)
+    if (kind === 'delegate') {
+      const res = await fetch(`/api/drawings/${drawingId}/review/delegate`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ item_id: item.id, assignee_id: assignee || null, title, description: body, due_date: due || null }),
+      })
+      setBusy(false)
+      if (res.ok) onDone({ task: (await res.json()).task })
+      else { const b = await res.json().catch(() => ({})); setErr(b?.error || 'Failed') }
+    } else {
+      const res = await fetch(`/api/drawings/${drawingId}/review/rfi`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ item_id: item.id, subject: title, question: body, ball_in_court_user_id: assignee || null, due_date: due || null, cost_impact: cost, schedule_impact: sched, drawing_number: itemState?.sheet_ref || null }),
+      })
+      setBusy(false)
+      if (res.ok) onDone({ rfi: (await res.json()).rfi })
+      else { const b = await res.json().catch(() => ({})); setErr(b?.error || 'Failed') }
+    }
+  }
+
+  const isDelegate = kind === 'delegate'
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={onClose}>
+      <div className="bg-white rounded-xl w-[540px] max-w-[94vw] overflow-hidden shadow-2xl" onClick={e => e.stopPropagation()}>
+        <div className="px-5 py-3.5 border-b border-[#ECEBEA] font-bold text-[15px] text-[#080707]">{isDelegate ? 'Delegate to Engineer' : 'Create RFI'}</div>
+        <div className="p-5 flex flex-col gap-3">
+          <label className="flex flex-col gap-1"><span className="lbl">{isDelegate ? 'Title' : 'Subject'}</span>
+            <input value={title} onChange={e => setTitle(e.target.value)} className="inp" /></label>
+          <label className="flex flex-col gap-1"><span className="lbl">{isDelegate ? 'Description' : 'Question'}</span>
+            <textarea value={body} onChange={e => setBody(e.target.value)} className="inp min-h-[80px]" /></label>
+          <div className="grid grid-cols-2 gap-3">
+            <label className="flex flex-col gap-1"><span className="lbl">{isDelegate ? 'Assignee' : 'Ball in Court (internal)'}</span>
+              <select value={assignee} onChange={e => setAssignee(e.target.value)} className="inp"><option value="">—</option>{users.map(u => <option key={u.id} value={u.id}>{u.full_name}</option>)}</select></label>
+            <label className="flex flex-col gap-1"><span className="lbl">Due date</span><input type="date" value={due} onChange={e => setDue(e.target.value)} className="inp" /></label>
+            {!isDelegate && <>
+              <label className="flex flex-col gap-1"><span className="lbl">Cost impact</span><select value={cost} onChange={e => setCost(e.target.value)} className="inp"><option value="tbd">TBD</option><option value="yes">Yes</option><option value="no">No</option></select></label>
+              <label className="flex flex-col gap-1"><span className="lbl">Schedule impact</span><select value={sched} onChange={e => setSched(e.target.value)} className="inp"><option value="tbd">TBD</option><option value="yes">Yes</option><option value="no">No</option></select></label>
+            </>}
+          </div>
+          {err && <div className="text-[12px] text-[#b91c1c]">{err}</div>}
+        </div>
+        <div className="px-5 py-3.5 border-t border-[#ECEBEA] bg-[#FBFCFE] flex justify-end gap-2">
+          <button className="btn-secondary" onClick={onClose}>Cancel</button>
+          <button className="btn-primary" disabled={busy} onClick={submit}>{busy ? 'Saving…' : isDelegate ? 'Create linked task' : 'Create & Send'}</button>
+        </div>
+      </div>
+      <style jsx>{`.inp{border:1px solid #DDDBDA;border-radius:7px;padding:7px 9px;font-size:13px;width:100%;font-family:inherit}.lbl{font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:#706E6B}`}</style>
     </div>
   )
 }
