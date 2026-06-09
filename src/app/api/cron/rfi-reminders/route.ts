@@ -9,7 +9,12 @@ export const dynamic = 'force-dynamic'
 function serviceClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL!
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-  return createSbClient(url, key, { auth: { persistSession: false } })
+  return createSbClient(url, key, {
+    auth: { persistSession: false },
+    // Bypass Next.js's fetch cache so PostgREST GETs always read fresh data.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    global: { fetch: (input: any, init: any) => fetch(input, { ...init, cache: 'no-store' }) },
+  })
 }
 
 // GET /api/cron/rfi-reminders
