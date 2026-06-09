@@ -17,7 +17,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     body: body.body.trim(),
     is_official: !!body.is_official,
     via: 'app',
-  }).select('*, author:users!author_id(id, full_name)').single()
+  }).select('*, author:users!author_id(id, full_name, avatar_url)').single()
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
   // Official response (optionally) closes the RFI and is recorded on the RFI.

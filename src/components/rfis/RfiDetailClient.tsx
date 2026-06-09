@@ -3,12 +3,16 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { ChevronLeft, ChevronDown, Pencil } from 'lucide-react'
+import { Avatar } from '@/components/ui/Avatar'
+import { RichTextEditor } from '@/components/ui/RichTextEditor'
+import { NotesRender } from '@/components/ui/NotesRender'
 
 type Any = any // eslint-disable-line @typescript-eslint/no-explicit-any
 
 const ballName = (r: Any) => r.ball_user?.full_name || r.ball_sh?.name || '—'
 const isOverdue = (r: Any) => r.status === 'open' && !!r.due_date && new Date(r.due_date) < new Date()
 const rfiNo = (n: number) => '#' + String(n ?? 0).padStart(3, '0')
+const plainText = (html: string) => (html || '').replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').trim()
 
 const LINK_TYPES: { key: string; label: string }[] = [
   { key: 'building', label: 'Area' }, { key: 'system', label: 'System' }, { key: 'meter', label: 'Meter' },
@@ -33,6 +37,7 @@ export function RfiDetailClient({ rfi: initial, responses: initialResp, links: i
   const [draft, setDraft] = useState('')
   const [busy, setBusy] = useState(false)
   const [detailsOpen, setDetailsOpen] = useState(false)
+  const [linksOpen, setLinksOpen] = useState(true)
   const [editing, setEditing] = useState(false)
 
   async function addLink() {
@@ -81,7 +86,9 @@ export function RfiDetailClient({ rfi: initial, responses: initialResp, links: i
               <span className="text-[10.5px] font-bold px-2.5 py-0.5 rounded-full" style={overdue ? { background: '#FEF2F2', color: '#b91c1c' } : rfi.status === 'closed' ? { background: '#F0FDF4', color: '#166534' } : { background: '#EFF6FF', color: '#1d4ed8' }}>
                 {overdue ? 'Overdue' : rfi.status === 'closed' ? 'Closed' : rfi.status === 'draft' ? 'Draft' : 'Open'}
               </span>
-              <span className="text-[12px] text-[#706E6B]">· {rfi.project?.name}</span>
+              <span className="text-[12px] text-[#706E6B]">· </span>
+              <Link href={`/projects/${rfi.project_id}`} className="text-[12px] font-semibold text-[#2C5485] hover:underline">{rfi.project?.name}</Link>
+              <button className="btn-secondary ml-auto" onClick={() => setEditing(true)}><Pencil size={13} /> Edit</button>
             </div>
             <h1 className="text-[20px] font-extrabold text-[#080707] mt-2">{rfi.subject}</h1>
             {rfi.status !== 'closed' && (
@@ -106,20 +113,23 @@ export function RfiDetailClient({ rfi: initial, responses: initialResp, links: i
             <div className="px-[18px] py-3 border-b border-[#ECEBEA] font-bold text-[13px] text-[#080707]">Responses <span className="text-[#706E6B] font-medium text-[11px]">{responses.length}</span></div>
             {responses.length === 0 && <div className="px-[18px] py-4 text-[12.5px] text-[#A8A8A8]">No responses yet.</div>}
             {responses.map(r => (
-              <div key={r.id} className="px-[18px] py-3.5 border-b border-[#ECEBEA] last:border-b-0">
-                <div className="text-[12.5px]"><b className="text-[#181818]">{r.author?.full_name ?? r.author_name ?? 'External'}</b>
-                  <span className="text-[#A8A8A8] ml-2">{new Date(r.created_at).toLocaleString()}{r.via === 'email' ? ' · via email' : ''}</span>
-                  {r.is_official && <span className="ml-2 text-[9.5px] font-extrabold uppercase text-[#166534] bg-[#F0FDF4] border border-[#bbf7d0] rounded px-1.5 py-0.5">Official</span>}
+              <div key={r.id} className="px-[18px] py-3.5 border-b border-[#ECEBEA] last:border-b-0 flex gap-3">
+                <Avatar name={r.author?.full_name ?? r.author_name ?? 'External'} imageUrl={r.author?.avatar_url} size="sm" />
+                <div className="flex-1 min-w-0">
+                  <div className="text-[12.5px]"><b className="text-[#181818]">{r.author?.full_name ?? r.author_name ?? 'External'}</b>
+                    <span className="text-[#A8A8A8] ml-2">{new Date(r.created_at).toLocaleString()}{r.via === 'email' ? ' · via email' : ''}</span>
+                    {r.is_official && <span className="ml-2 text-[9.5px] font-extrabold uppercase text-[#166534] bg-[#F0FDF4] border border-[#bbf7d0] rounded px-1.5 py-0.5">Official</span>}
+                  </div>
+                  <div className="text-[12.5px] text-[#3E3E3C] leading-relaxed mt-1"><NotesRender source={r.body || ''} /></div>
                 </div>
-                <div className="text-[12.5px] text-[#3E3E3C] leading-relaxed mt-1 whitespace-pre-wrap">{r.body}</div>
               </div>
             ))}
             {rfi.status !== 'closed' && (
               <div className="px-[18px] py-3.5 border-t border-[#ECEBEA] bg-[#FBFCFE]">
-                <textarea value={draft} onChange={e => setDraft(e.target.value)} placeholder="Add a response…" className="w-full border border-[#DDDBDA] rounded-md px-2.5 py-2 text-[12.5px] min-h-[60px]" />
+                <RichTextEditor value={draft} onChange={setDraft} placeholder="Add a response…" minHeight={70} />
                 <div className="flex justify-end gap-2 mt-2">
-                  <button className="btn-secondary" disabled={busy || !draft.trim()} onClick={() => addResponse(false, false)}>Add Response</button>
-                  <button className="btn-primary" disabled={busy || !draft.trim()} onClick={() => addResponse(true, true)}>Mark Official &amp; Close</button>
+                  <button className="btn-secondary" disabled={busy || !plainText(draft)} onClick={() => addResponse(false, false)}>Add Response</button>
+                  <button className="btn-primary" disabled={busy || !plainText(draft)} onClick={() => addResponse(true, true)}>Mark Official &amp; Close</button>
                 </div>
               </div>
             )}
@@ -131,7 +141,6 @@ export function RfiDetailClient({ rfi: initial, responses: initialResp, links: i
 
         {/* SIDE */}
         <div className="flex flex-col gap-4">
-          <button className="btn-secondary justify-center" onClick={() => setEditing(true)}><Pencil size={13} /> Edit RFI</button>
           <div className="card overflow-hidden">
             <button onClick={() => setDetailsOpen(o => !o)} className="w-full flex items-center justify-between px-4 py-3 font-bold text-[12px] text-[#080707] hover:bg-[#FBFCFE]">
               <span>Details</span>
@@ -158,9 +167,12 @@ export function RfiDetailClient({ rfi: initial, responses: initialResp, links: i
           </div>
 
           <div className="card overflow-hidden">
-            <div className="px-4 py-3 border-b border-[#ECEBEA] font-bold text-[12px] text-[#080707]">Linkages</div>
-            <div className="p-4 flex flex-col gap-2">
-              {links.length === 0 && <div className="text-[12px] text-[#A8A8A8]">No linked records yet.</div>}
+            <button onClick={() => setLinksOpen(o => !o)} className="w-full flex items-center justify-between px-4 py-3 font-bold text-[12px] text-[#080707] hover:bg-[#FBFCFE]">
+              <span>Linkages <span className="text-[#706E6B] font-medium">{links.length}</span></span>
+              <ChevronDown size={14} className={'transition-transform ' + (linksOpen ? 'rotate-180' : '')} />
+            </button>
+            {linksOpen && <div className="p-4 pt-0 flex flex-col gap-2 border-t border-[#ECEBEA]">
+              {links.length === 0 && <div className="text-[12px] text-[#A8A8A8] pt-3">No linked records yet.</div>}
               {links.map(l => (
                 <div key={l.id} className="flex items-center gap-2 text-[12.5px]">
                   <span className="text-[9.5px] font-bold uppercase tracking-wide text-[#706E6B] w-[74px] shrink-0">{LINK_TYPES.find(t => t.key === l.entity_type)?.label ?? l.entity_type}</span>
@@ -178,7 +190,7 @@ export function RfiDetailClient({ rfi: initial, responses: initialResp, links: i
                 </select>
                 <button className="btn-secondary" disabled={!linkEntity} onClick={addLink}>Add</button>
               </div>
-            </div>
+            </div>}
           </div>
 
           {rfi.drawing && (

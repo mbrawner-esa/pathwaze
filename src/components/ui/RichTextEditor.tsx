@@ -7,7 +7,7 @@
  * graceful fallback to plain-text markdown lists for legacy notes.
  */
 import { useEffect, useRef } from 'react'
-import { List, ListOrdered, Bold } from 'lucide-react'
+import { List, ListOrdered, Bold, Link2 } from 'lucide-react'
 
 export function RichTextEditor({
   value,
@@ -36,6 +36,15 @@ export function RichTextEditor({
     if (ref.current) onChange(ref.current.innerHTML)
   }
 
+  function addLink() {
+    ref.current?.focus()
+    const url = window.prompt('Link URL')
+    if (!url) return
+    const href = /^https?:\/\//i.test(url) ? url : `https://${url}`
+    document.execCommand('createLink', false, href)
+    if (ref.current) onChange(ref.current.innerHTML)
+  }
+
   return (
     <div className="border border-[#cbd5e1] rounded focus-within:border-[#70A0D0] focus-within:ring-2 focus-within:ring-[#70A0D0]/20 bg-white">
       <div className="flex items-center gap-0.5 px-2 py-1 border-b border-[#e2e8f0] bg-[#fafbfc]">
@@ -47,6 +56,9 @@ export function RichTextEditor({
         </ToolbarBtn>
         <ToolbarBtn onClick={() => exec('insertOrderedList')} title="Numbered list">
           <ListOrdered size={13} />
+        </ToolbarBtn>
+        <ToolbarBtn onClick={addLink} title="Add link">
+          <Link2 size={13} />
         </ToolbarBtn>
       </div>
       <div
