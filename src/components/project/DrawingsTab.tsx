@@ -1,7 +1,7 @@
 'use client'
 import { useRef, useState } from 'react'
 import { createClient as createBrowserClient } from '@/lib/supabase/client'
-import { Upload, FileText, ChevronRight, Trash2, Plus } from 'lucide-react'
+import { Upload, FileText, ChevronRight, Trash2, Plus, Pencil } from 'lucide-react'
 import { DrawingReviewView } from './DrawingReviewView'
 
 // ── Types ────────────────────────────────────────────────────────────
@@ -88,7 +88,8 @@ export function DrawingsTab({ projectId, drawings: initial, areas, collections: 
       for (const file of Array.from(files)) {
         const safe = file.name.replace(/[^\w.\-]+/g, '_')
         const path = `${projectId}/${Date.now()}-${safe}`
-        const { error: upErr } = await sb.storage.from('drawings').upload(path, file, { upsert: false })
+        const { error: upErr } = await sb.storage.from('drawings')
+          .upload(path, file, { upsert: false, contentType: file.type || 'application/pdf' })
         if (upErr) { setError(`Upload failed: ${upErr.message}`); continue }
         const res = await fetch('/api/drawings', {
           method: 'POST',
@@ -123,6 +124,15 @@ export function DrawingsTab({ projectId, drawings: initial, areas, collections: 
   async function removeDrawing(id: string) {
     if (!confirm('Remove this drawing and its review?')) return
     if ((await fetch(`/api/drawings/${id}`, { method: 'DELETE' })).ok) setDrawings(prev => prev.filter(d => d.id !== id))
+  }
+
+  async function renameDrawing(d: Drawing) {
+    const name = prompt('Rename drawing', d.file_name)?.trim()
+    if (!name || name === d.file_name) return
+    const res = await fetch(`/api/drawings/${d.id}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ file_name: name }),
+    })
+    if (res.ok) { const row = await res.json(); setDrawings(prev => prev.map(x => (x.id === d.id ? row : x))) }
   }
 
   function openReview(d: Drawing) {
@@ -194,7 +204,7 @@ export function DrawingsTab({ projectId, drawings: initial, areas, collections: 
             <p className="text-[11.5px] text-[#706E6B] mt-0.5">Assign each to an area{hasDisc ? ' and tag its discipline — that creates its review' : ''}.</p>
           </div>
           {needsLinking.map(d => (
-            <LinkRow key={d.id} d={d} areas={areas} disciplines={disciplines} hasDisc={hasDisc} onLink={linkDrawing} onRemove={removeDrawing} />
+            <LinkRow key={d.id} d={d} areas={areas} disciplines={disciplines} hasDisc={hasDisc} onLink={linkDrawing} onRemove={removeDrawing} onRename={renameDrawing} />
           ))}
         </div>
       )}
@@ -239,6 +249,7 @@ export function DrawingsTab({ projectId, drawings: initial, areas, collections: 
                     <span className="text-[10px] font-bold px-[9px] py-[3px] rounded-full" style={{ background: st.bg, color: st.text }}>{st.label}</span>
                     <button className="btn-secondary" onClick={() => openReview(d)}>{rev.status === 'not_started' ? 'Start review' : 'Review'} <ChevronRight size={12} /></button>
                   </> : <span className="text-[11px] text-[#A8A8A8]">No checklist</span>}
+                  <button className="text-[#A8A8A8] hover:text-[#70A0D0] p-1" onClick={() => renameDrawing(d)} title="Rename"><Pencil size={14} /></button>
                   <button className="text-[#A8A8A8] hover:text-[#b91c1c] p-1" onClick={() => removeDrawing(d.id)} title="Remove"><Trash2 size={14} /></button>
                 </div>
               )
@@ -339,10 +350,11 @@ function Landing({ collections, drawings, areas, users, reviewTypes, onOpen, onC
 }
 
 // ── Needs-linking row ──────────────────────────────────────────────────
-function LinkRow({ d, areas, disciplines, hasDisc, onLink, onRemove }: {
+function LinkRow({ d, areas, disciplines, hasDisc, onLink, onRemove, onRename }: {
   d: Drawing; areas: Area[]; disciplines: PlanSection[]; hasDisc: boolean
   onLink: (id: string, area: string, disc: string | null) => void
   onRemove: (id: string) => void
+  onRename: (d: Drawing) => void
 }) {
   const [area, setArea] = useState(d.area_id ?? '')
   const [disc, setDisc] = useState(d.discipline_key ?? '')
@@ -350,6 +362,7 @@ function LinkRow({ d, areas, disciplines, hasDisc, onLink, onRemove }: {
     <div className="flex items-center gap-[10px] px-[18px] py-[11px] border-b border-[#ECEBEA] last:border-b-0">
       <FileText size={18} className="text-[#b91c1c] shrink-0" />
       <span className="flex-1 min-w-0 text-[13px] font-semibold text-[#181818] truncate">{d.file_name}</span>
+      <button className="text-[#A8A8A8] hover:text-[#70A0D0] p-1" onClick={() => onRename(d)} title="Rename"><Pencil size={13} /></button>
       <select value={area} onChange={e => setArea(e.target.value)} className="border border-[#DDDBDA] rounded-md px-2 py-1.5 text-[12px]">
         <option value="">Assign area…</option>
         {areas.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}

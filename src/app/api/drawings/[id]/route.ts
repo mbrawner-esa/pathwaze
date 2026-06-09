@@ -11,7 +11,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
   const body = await req.json()
   const patch: Record<string, unknown> = {}
-  for (const k of ['area_id', 'discipline_key', 'set_label', 'drawing_type'] as const) {
+  for (const k of ['area_id', 'discipline_key', 'set_label', 'drawing_type', 'file_name'] as const) {
     if (k in body) patch[k] = body[k]
   }
   if (Object.keys(patch).length === 0) {

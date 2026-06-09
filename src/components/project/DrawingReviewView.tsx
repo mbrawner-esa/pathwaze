@@ -91,9 +91,16 @@ export function DrawingReviewView({ drawingId, onBack }: { drawingId: string; on
 
   async function viewPdf() {
     if (!data?.drawing?.storage_path) { alert('No file attached.'); return }
+    // Open the tab synchronously (avoids popup blockers), then point it at the
+    // signed URL. download:false serves the file inline so the PDF renders in-tab.
+    const w = window.open('', '_blank')
     const sb = createBrowserClient()
-    const { data: signed } = await sb.storage.from('drawings').createSignedUrl(data.drawing.storage_path, 120)
-    if (signed?.signedUrl) window.open(signed.signedUrl, '_blank')
+    const { data: signed } = await sb.storage.from('drawings')
+      .createSignedUrl(data.drawing.storage_path, 120, { download: false })
+    if (signed?.signedUrl) {
+      if (w) w.location.href = signed.signedUrl
+      else window.open(signed.signedUrl, '_blank')
+    } else { w?.close(); alert('Could not open file.') }
   }
 
   if (loading) return <div className="p-8 text-center text-[#706E6B] text-[13px]">Loading review…</div>
@@ -167,9 +174,11 @@ export function DrawingReviewView({ drawingId, onBack }: { drawingId: string; on
                 <div className="flex items-start gap-3">
                   <div className="flex-1 text-[13px] text-[#181818] leading-snug">
                     {it.prompt}
-                    {it.reviewer_hint && <span className="ml-2 text-[10px] font-bold text-[#2C5485] bg-[#EFF4FA] border border-[#cfe0ef] rounded px-1.5 py-0.5">⚙ engineer follow-up likely</span>}
+                    {it.hunting_for && (
+                      <span title={it.hunting_for}
+                        className="ml-1.5 inline-flex items-center justify-center w-[15px] h-[15px] rounded-full bg-[#F3F2F2] text-[#706E6B] text-[10px] font-bold cursor-help align-middle">?</span>
+                    )}
                     {sec.is_universal && v.override && <span className="ml-2 text-[10px] font-bold text-[#92400e] bg-[#FFFBEB] border border-[#FCD9A0] rounded px-1.5 py-0.5">✎ overridden</span>}
-                    {it.hunting_for && <div className="text-[11px] text-[#706E6B] mt-1 italic">{it.hunting_for}</div>}
                   </div>
                   <select value={v.disposition}
                     onChange={e => { setItem(it.id, { disposition: e.target.value }); setTimeout(() => save(it.id, sec.is_universal), 0) }}
