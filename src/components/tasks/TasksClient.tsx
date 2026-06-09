@@ -7,7 +7,7 @@ import { NotesRender } from '@/components/ui/NotesRender'
 import Link from 'next/link'
 import { formatDate } from '@/lib/utils'
 import { Avatar } from '@/components/ui/Avatar'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient as createBrowserClient } from '@/lib/supabase/client'
 
 // Map a task_links entity_type to the project-page tab that hosts it,
@@ -126,6 +126,13 @@ export function TasksClient({ tasks: initialTasks, projects, users }: { tasks: a
   const [sortBy, setSortBy] = useState<'default' | 'due_date' | 'priority'>('default')
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({})
   const [selectedTask, setSelectedTask] = useState<string | null>(null)
+  // Deep-link: /tasks?id=<taskId> opens that task's drawer (from notifications,
+  // RFI/finding chips, etc.).
+  const searchParams = useSearchParams()
+  useEffect(() => {
+    const idParam = searchParams.get('id')
+    if (idParam) setSelectedTask(idParam)
+  }, [searchParams])
   const [showNewModal, setShowNewModal] = useState(false)
   const [saving, setSaving] = useState(false)
   const [createError, setCreateError] = useState<string | null>(null)

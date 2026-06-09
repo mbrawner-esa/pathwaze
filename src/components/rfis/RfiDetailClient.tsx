@@ -2,7 +2,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { ChevronLeft } from 'lucide-react'
+import { ChevronLeft, ChevronDown, Pencil } from 'lucide-react'
 
 type Any = any // eslint-disable-line @typescript-eslint/no-explicit-any
 
@@ -23,7 +23,7 @@ function entityLabel(catalog: Any, type: string, idv: string): string {
   return e.name || '(unnamed)'
 }
 
-export function RfiDetailClient({ rfi: initial, responses: initialResp, links: initialLinks, catalog }: { rfi: Any; responses: Any[]; distribution: Any[]; users: Any[]; links: Any[]; catalog: Any }) {
+export function RfiDetailClient({ rfi: initial, responses: initialResp, links: initialLinks, catalog, users }: { rfi: Any; responses: Any[]; distribution: Any[]; users: Any[]; links: Any[]; catalog: Any }) {
   const router = useRouter()
   const [rfi, setRfi] = useState<Any>(initial)
   const [responses, setResponses] = useState<Any[]>(initialResp)
@@ -32,6 +32,8 @@ export function RfiDetailClient({ rfi: initial, responses: initialResp, links: i
   const [linkEntity, setLinkEntity] = useState('')
   const [draft, setDraft] = useState('')
   const [busy, setBusy] = useState(false)
+  const [detailsOpen, setDetailsOpen] = useState(false)
+  const [editing, setEditing] = useState(false)
 
   async function addLink() {
     if (!linkEntity) return
@@ -129,9 +131,13 @@ export function RfiDetailClient({ rfi: initial, responses: initialResp, links: i
 
         {/* SIDE */}
         <div className="flex flex-col gap-4">
+          <button className="btn-secondary justify-center" onClick={() => setEditing(true)}><Pencil size={13} /> Edit RFI</button>
           <div className="card overflow-hidden">
-            <div className="px-4 py-3 border-b border-[#ECEBEA] font-bold text-[12px] text-[#080707]">Details</div>
-            {[
+            <button onClick={() => setDetailsOpen(o => !o)} className="w-full flex items-center justify-between px-4 py-3 font-bold text-[12px] text-[#080707] hover:bg-[#FBFCFE]">
+              <span>Details</span>
+              <ChevronDown size={14} className={'transition-transform ' + (detailsOpen ? 'rotate-180' : '')} />
+            </button>
+            {detailsOpen && [
               ['Status', overdue ? 'Open · Overdue' : (rfi.status?.[0]?.toUpperCase() + rfi.status?.slice(1))],
               ['Ball in Court', ballName(rfi)],
               ['RFI Manager', rfi.manager?.full_name ?? '—'],
@@ -192,6 +198,69 @@ export function RfiDetailClient({ rfi: initial, responses: initialResp, links: i
           )}
         </div>
       </div>
+
+      {editing && (
+        <EditRfiModal rfi={rfi} users={users} onClose={() => setEditing(false)}
+          onSave={async body => { await patch(body); setEditing(false) }} />
+      )}
     </div>
   )
+}
+
+// ── Edit RFI modal ──────────────────────────────────────────────────────
+function EditRfiModal({ rfi, users, onClose, onSave }: { rfi: Any; users: Any[]; onClose: () => void; onSave: (body: Any) => Promise<void> }) {
+  const [f, setF] = useState<Any>({
+    subject: rfi.subject ?? '', question: rfi.question ?? '', received_from: rfi.received_from ?? '',
+    ball_in_court_user_id: rfi.ball_in_court_user_id ?? '', rfi_manager_id: rfi.rfi_manager_id ?? '',
+    due_date: rfi.due_date ?? '', drawing_number: rfi.drawing_number ?? '', spec_section: rfi.spec_section ?? '',
+    location: rfi.location ?? '', cost_impact: rfi.cost_impact ?? 'tbd', schedule_impact: rfi.schedule_impact ?? 'tbd',
+    priority: rfi.priority ?? 'normal',
+  })
+  const [saving, setSaving] = useState(false)
+  const set = (k: string, v: Any) => setF((p: Any) => ({ ...p, [k]: v }))
+
+  async function save() {
+    setSaving(true)
+    await onSave({
+      ...f,
+      ball_in_court_user_id: f.ball_in_court_user_id || null,
+      rfi_manager_id: f.rfi_manager_id || null,
+      due_date: f.due_date || null,
+    })
+    setSaving(false)
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={onClose}>
+      <div className="bg-white rounded-xl w-[580px] max-w-[94vw] max-h-[90vh] overflow-auto shadow-2xl" onClick={e => e.stopPropagation()}>
+        <div className="px-5 py-3.5 border-b border-[#ECEBEA] font-bold text-[15px] text-[#080707]">Edit RFI #{String(rfi.rfi_number ?? 0).padStart(3, '0')}</div>
+        <div className="p-5 flex flex-col gap-3">
+          <Lbl t="Subject"><input value={f.subject} onChange={e => set('subject', e.target.value)} className="einp" /></Lbl>
+          <Lbl t="Question"><textarea value={f.question} onChange={e => set('question', e.target.value)} className="einp min-h-[70px]" /></Lbl>
+          <Lbl t="Received from"><input value={f.received_from} onChange={e => set('received_from', e.target.value)} className="einp" /></Lbl>
+          <div className="grid grid-cols-2 gap-3">
+            <Lbl t="Ball in Court (internal)"><select value={f.ball_in_court_user_id} onChange={e => set('ball_in_court_user_id', e.target.value)} className="einp"><option value="">—</option>{users.map(u => <option key={u.id} value={u.id}>{u.full_name}</option>)}</select></Lbl>
+            <Lbl t="RFI Manager"><select value={f.rfi_manager_id} onChange={e => set('rfi_manager_id', e.target.value)} className="einp"><option value="">—</option>{users.map(u => <option key={u.id} value={u.id}>{u.full_name}</option>)}</select></Lbl>
+            <Lbl t="Due date"><input type="date" value={f.due_date} onChange={e => set('due_date', e.target.value)} className="einp" /></Lbl>
+            <Lbl t="Priority"><select value={f.priority} onChange={e => set('priority', e.target.value)} className="einp"><option value="low">Low</option><option value="normal">Normal</option><option value="high">High</option></select></Lbl>
+            <Lbl t="Drawing number"><input value={f.drawing_number} onChange={e => set('drawing_number', e.target.value)} className="einp" /></Lbl>
+            <Lbl t="Spec section"><input value={f.spec_section} onChange={e => set('spec_section', e.target.value)} className="einp" /></Lbl>
+            <Lbl t="Location"><input value={f.location} onChange={e => set('location', e.target.value)} className="einp" /></Lbl>
+            <div />
+            <Lbl t="Cost impact"><select value={f.cost_impact} onChange={e => set('cost_impact', e.target.value)} className="einp"><option value="tbd">TBD</option><option value="yes">Yes</option><option value="no">No</option></select></Lbl>
+            <Lbl t="Schedule impact"><select value={f.schedule_impact} onChange={e => set('schedule_impact', e.target.value)} className="einp"><option value="tbd">TBD</option><option value="yes">Yes</option><option value="no">No</option></select></Lbl>
+          </div>
+        </div>
+        <div className="px-5 py-3.5 border-t border-[#ECEBEA] bg-[#FBFCFE] flex justify-end gap-2">
+          <button className="btn-secondary" onClick={onClose}>Cancel</button>
+          <button className="btn-primary" disabled={saving || !f.subject.trim()} onClick={save}>{saving ? 'Saving…' : 'Save changes'}</button>
+        </div>
+      </div>
+      <style jsx>{`.einp{border:1px solid #DDDBDA;border-radius:7px;padding:7px 9px;font-size:13px;width:100%;font-family:inherit}`}</style>
+    </div>
+  )
+}
+
+function Lbl({ t, children }: { t: string; children: React.ReactNode }) {
+  return <label className="flex flex-col gap-1"><span className="text-[10.5px] font-bold uppercase tracking-wide text-[#706E6B]">{t}</span>{children}</label>
 }
