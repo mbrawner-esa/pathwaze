@@ -64,12 +64,11 @@ export async function createRfiFromFinding(supabase: any, userId: string, input:
 
   // Notify (best-effort): log to the feed; email the ball-in-court if the RFI is open.
   const tag = `RFI ${rfiNo(data.rfi_number)}`
-  const link = `<p><a href="${rfiUrl(data.id)}">${tag}: ${data.subject}</a></p>`
   await logActivity(supabase, { entity_type: 'rfi', entity_id: data.id, action: status === 'open' ? 'opened an RFI' : 'drafted an RFI', user_id: userId, metadata: { rfi_id: data.id } })
   if (status === 'open') {
-    const subj = `${tag} needs your input`
-    if (data.ball_in_court_user_id) await emailUser(supabase, data.ball_in_court_user_id, subj, link)
-    else if (data.ball_in_court_stakeholder_id) await emailStakeholder(supabase, data.ball_in_court_stakeholder_id, subj, link)
+    const msg = { subject: `${tag} needs your input`, heading: `${tag} assigned to you`, message: `<b>${data.subject}</b>`, ctaLabel: 'Open RFI', ctaUrl: rfiUrl(data.id) }
+    if (data.ball_in_court_user_id) await emailUser(supabase, data.ball_in_court_user_id, msg)
+    else if (data.ball_in_court_stakeholder_id) await emailStakeholder(supabase, data.ball_in_court_stakeholder_id, msg)
   }
   return data
 }

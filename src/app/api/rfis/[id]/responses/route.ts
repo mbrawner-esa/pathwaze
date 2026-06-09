@@ -49,7 +49,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     .select('rfi_number, subject, ball_in_court_user_id, ball_in_court_stakeholder_id').eq('id', id).maybeSingle()
   if (rfi) {
     const tag = `RFI ${rfiNo(rfi.rfi_number)}`
-    const link = `<p><a href="${rfiUrl(id)}">${tag}: ${rfi.subject}</a></p>`
+    const url = rfiUrl(id)
     const notified = new Set<string>([user.id])
 
     // @-mentions → in-app + email
@@ -57,20 +57,19 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     for (const uid of mentioned) {
       notified.add(uid)
       await logActivity(supabase, { entity_type: 'rfi', entity_id: id, action: 'mentioned you in an RFI', user_id: user.id, metadata: { rfi_id: id } })
-      await emailUser(supabase, uid, `You were mentioned on ${tag}`, `<p>You were mentioned in a response.</p>${link}`)
+      await emailUser(supabase, uid, { subject: `You were mentioned on ${tag}`, heading: `You were mentioned on ${tag}`, message: `You were mentioned in a response on <b>${rfi.subject}</b>.`, ctaLabel: 'Open RFI', ctaUrl: url })
     }
 
     // Response → notify ball-in-court + distribution
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: dist } = await (supabase.from('rfi_distribution') as any).select('user_id, stakeholder_id, contact_email').eq('rfi_id', id)
-    const subj = `New response on ${tag}`
-    const bodyHtml = `<p>A new response was posted.</p>${link}`
-    if (rfi.ball_in_court_user_id && !notified.has(rfi.ball_in_court_user_id)) { notified.add(rfi.ball_in_court_user_id); await emailUser(supabase, rfi.ball_in_court_user_id, subj, bodyHtml) }
-    if (rfi.ball_in_court_stakeholder_id) await emailStakeholder(supabase, rfi.ball_in_court_stakeholder_id, subj, bodyHtml)
+    const msg = { subject: `New response on ${tag}`, heading: `New response on ${tag}`, message: `A new response was posted on <b>${rfi.subject}</b>.`, ctaLabel: 'View RFI', ctaUrl: url }
+    if (rfi.ball_in_court_user_id && !notified.has(rfi.ball_in_court_user_id)) { notified.add(rfi.ball_in_court_user_id); await emailUser(supabase, rfi.ball_in_court_user_id, msg) }
+    if (rfi.ball_in_court_stakeholder_id) await emailStakeholder(supabase, rfi.ball_in_court_stakeholder_id, msg)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     for (const d of (dist ?? []) as any[]) {
-      if (d.user_id && !notified.has(d.user_id)) { notified.add(d.user_id); await emailUser(supabase, d.user_id, subj, bodyHtml) }
-      else if (d.stakeholder_id) await emailStakeholder(supabase, d.stakeholder_id, subj, bodyHtml)
+      if (d.user_id && !notified.has(d.user_id)) { notified.add(d.user_id); await emailUser(supabase, d.user_id, msg) }
+      else if (d.stakeholder_id) await emailStakeholder(supabase, d.stakeholder_id, msg)
     }
     await logActivity(supabase, { entity_type: 'rfi', entity_id: id, action: 'responded to an RFI', user_id: user.id, metadata: { rfi_id: id } })
   }

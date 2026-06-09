@@ -46,16 +46,16 @@ export async function GET(req: NextRequest) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   for (const r of (overdue ?? []) as any[]) {
     const tag = `RFI ${rfiNo(r.rfi_number)}`
-    const html = `<p><b>${tag} is overdue</b> (due ${r.due_date}).</p><p><a href="${rfiUrl(r.id)}">${r.subject}</a></p>`
     const text = `⏰ ${tag} is overdue (due ${r.due_date}): ${r.subject}`
+    const msg = { subject: `Overdue: ${tag}`, heading: `${tag} is overdue`, message: `<b>${r.subject}</b> — was due ${r.due_date}.`, ctaLabel: 'Open RFI', ctaUrl: rfiUrl(r.id) }
     const target = r.ball_in_court_user_id ? `user:${r.ball_in_court_user_id}` : r.ball_in_court_stakeholder_id ? `stakeholder:${r.ball_in_court_stakeholder_id}` : null
     if (dry) { wouldNotify.push({ rfi: tag, subject: r.subject, due_date: r.due_date, target }); continue }
     if (r.ball_in_court_user_id) {
       await sendDM(supabase, r.ball_in_court_user_id, text)
-      await emailUser(supabase, r.ball_in_court_user_id, `Overdue: ${tag}`, html)
+      await emailUser(supabase, r.ball_in_court_user_id, msg)
       notified++
     } else if (r.ball_in_court_stakeholder_id) {
-      await emailStakeholder(supabase, r.ball_in_court_stakeholder_id, `Overdue: ${tag}`, html)
+      await emailStakeholder(supabase, r.ball_in_court_stakeholder_id, msg)
       notified++
     }
   }

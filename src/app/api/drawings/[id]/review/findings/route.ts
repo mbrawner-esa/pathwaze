@@ -1,5 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
-import { sendDM } from '@/lib/slack'
+import { sendDM, appUrl } from '@/lib/slack'
 import { logActivity, emailUser } from '@/lib/rfi-notify'
 import { NextRequest, NextResponse } from 'next/server'
 
@@ -77,11 +77,17 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { data: admins } = await (supabase.from('users') as any).select('id').eq('role', 'admin').eq('status', 'active')
       const text = `⚠ RISK flagged in drawing review: ${drawing.file_name ?? 'a drawing'}${finding_text ? ` — ${finding_text}` : ''}`
-      const html = `<p><b>Risk flagged</b> during a drawing review.</p><p>${drawing.file_name ?? ''}</p>${finding_text ? `<p>${finding_text}</p>` : ''}`
+      const ctaUrl = drawing.project_id ? appUrl(`/projects/${drawing.project_id}?tab=drawings`) : undefined
+      const msg = {
+        subject: 'Risk flagged in a drawing review',
+        heading: '⚠ Risk flagged in a drawing review',
+        message: `<b>${drawing.file_name ?? 'A drawing'}</b>${finding_text ? ` — ${finding_text}` : ''}`,
+        ctaLabel: ctaUrl ? 'Open project drawings' : undefined, ctaUrl,
+      }
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       for (const adm of (admins ?? []) as any[]) {
         await sendDM(supabase, adm.id, text)
-        await emailUser(supabase, adm.id, 'Risk flagged in a drawing review', html)
+        await emailUser(supabase, adm.id, msg)
       }
       if (drawing.project_id) await logActivity(supabase, { entity_type: 'project', entity_id: drawing.project_id, action: 'flagged a RISK in a drawing review', user_id: user.id, metadata: { project_id: drawing.project_id } })
     } catch (e) { console.error('[risk escalate]', e) }

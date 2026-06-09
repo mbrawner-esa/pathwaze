@@ -26,19 +26,21 @@ export function parseMentions(html: string): string[] {
   return Array.from(ids)
 }
 
+export interface NotifyMsg { subject: string; heading: string; message: string; ctaLabel?: string; ctaUrl?: string }
+
 /** Email a single internal user by id. Best-effort. */
-export async function emailUser(supabase: SB, userId: string, subject: string, bodyHtml: string) {
+export async function emailUser(supabase: SB, userId: string, msg: NotifyMsg) {
   try {
     const { data: u } = await supabase.from('users').select('email, full_name').eq('id', userId).maybeSingle()
-    if (u?.email) await sendNotificationEmail({ to: u.email, subject, bodyHtml })
+    if (u?.email) await sendNotificationEmail({ to: u.email, recipientName: u.full_name, ...msg })
   } catch (e) { console.error('[emailUser]', e) }
 }
 
 /** Email a stakeholder by id (external party). Best-effort. */
-export async function emailStakeholder(supabase: SB, stakeholderId: string, subject: string, bodyHtml: string) {
+export async function emailStakeholder(supabase: SB, stakeholderId: string, msg: NotifyMsg) {
   try {
     const { data: s } = await supabase.from('stakeholders').select('email, name').eq('id', stakeholderId).maybeSingle()
-    if (s?.email) await sendNotificationEmail({ to: s.email, subject, bodyHtml })
+    if (s?.email) await sendNotificationEmail({ to: s.email, recipientName: s.name, ...msg })
   } catch (e) { console.error('[emailStakeholder]', e) }
 }
 
