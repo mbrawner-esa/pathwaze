@@ -18,7 +18,7 @@ export default async function RfiDetailPage({ params }: { params: Promise<{ id: 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [{ data: responses }, { data: distribution }, { data: users }, { data: links },
          { data: buildings }, { data: systems }, { data: stakeholders }, { data: drawings }] = await Promise.all([
-    (supabase.from('rfi_responses') as any).select('*, author:users!author_id(id, full_name, avatar_url)').eq('rfi_id', id).order('created_at'),
+    (supabase.from('rfi_responses') as any).select('*, author:users!author_id(id, full_name, avatar_url), files:rfi_response_files(id, file_name, storage_path, content_type)').eq('rfi_id', id).order('created_at'),
     (supabase.from('rfi_distribution') as any).select('*, user:users!user_id(id, full_name), stakeholder:stakeholders!stakeholder_id(id, name)').eq('rfi_id', id),
     supabase.from('users').select('id, full_name').eq('status', 'active').order('full_name'),
     (supabase.from('rfi_links') as any).select('*').eq('rfi_id', id).order('created_at'),

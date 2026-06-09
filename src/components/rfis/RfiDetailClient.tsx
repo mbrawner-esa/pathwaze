@@ -2,7 +2,8 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { ChevronLeft, ChevronDown, Pencil } from 'lucide-react'
+import { ChevronLeft, ChevronDown, Pencil, Paperclip, X } from 'lucide-react'
+import { createClient as createBrowserClient } from '@/lib/supabase/client'
 import { Avatar } from '@/components/ui/Avatar'
 import { RichTextEditor } from '@/components/ui/RichTextEditor'
 import { NotesRender } from '@/components/ui/NotesRender'
@@ -36,6 +37,7 @@ export function RfiDetailClient({ rfi: initial, responses: initialResp, links: i
   const [linkType, setLinkType] = useState('building')
   const [linkEntity, setLinkEntity] = useState('')
   const [draft, setDraft] = useState('')
+  const [pendingFiles, setPendingFiles] = useState<File[]>([])
   const [busy, setBusy] = useState(false)
   const [detailsOpen, setDetailsOpen] = useState(false)
   const [linksOpen, setLinksOpen] = useState(true)
@@ -58,17 +60,35 @@ export function RfiDetailClient({ rfi: initial, responses: initialResp, links: i
   }
 
   async function addResponse(official: boolean, close: boolean) {
-    if (!draft.trim()) return
+    if (!plainText(draft) && pendingFiles.length === 0) return
     setBusy(true)
-    const res = await fetch(`/api/rfis/${rfi.id}/responses`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ body: draft, is_official: official, close }) })
+    // Upload any staged files to storage first.
+    const sb = createBrowserClient()
+    const fileMeta: Any[] = []
+    for (const file of pendingFiles) {
+      const safe = file.name.replace(/[^\w.\-]+/g, '_')
+      const path = `${rfi.id}/${Date.now()}-${safe}`
+      const { error: upErr } = await sb.storage.from('rfi-files').upload(path, file, { upsert: false, contentType: file.type || 'application/octet-stream' })
+      if (!upErr) fileMeta.push({ file_name: file.name, storage_path: path, file_size: file.size, content_type: file.type })
+    }
+    const res = await fetch(`/api/rfis/${rfi.id}/responses`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ body: draft, is_official: official, close, files: fileMeta }) })
     setBusy(false)
     if (res.ok) {
       const created = await res.json()
       setResponses(prev => [...prev, created])
-      setDraft('')
+      setDraft(''); setPendingFiles([])
       if (official) setRfi({ ...rfi, status: close ? 'closed' : rfi.status })
       router.refresh()
     }
+  }
+
+  async function openFile(f: Any) {
+    if (!f.storage_path) return
+    const w = window.open('', '_blank')
+    const sb = createBrowserClient()
+    const { data: signed } = await sb.storage.from('rfi-files').createSignedUrl(f.storage_path, 120)
+    if (signed?.signedUrl && w) w.location.href = signed.signedUrl
+    else w?.close()
   }
 
   const overdue = isOverdue(rfi)
@@ -122,15 +142,39 @@ export function RfiDetailClient({ rfi: initial, responses: initialResp, links: i
                     {r.is_official && <span className="ml-2 text-[9.5px] font-extrabold uppercase text-[#166534] bg-[#F0FDF4] border border-[#bbf7d0] rounded px-1.5 py-0.5">Official</span>}
                   </div>
                   <div className="text-[12.5px] text-[#3E3E3C] leading-relaxed mt-1"><NotesRender source={r.body || ''} /></div>
+                  {(r.files ?? []).length > 0 && (
+                    <div className="flex flex-wrap gap-2 mt-2">
+                      {r.files.map((f: Any) => (
+                        <button key={f.id} onClick={() => openFile(f)} className="inline-flex items-center gap-1.5 text-[11.5px] font-semibold text-[#2C5485] bg-[#EFF4FA] border border-[#cfe0ef] rounded-md px-2 py-1">
+                          <Paperclip size={12} /> {f.file_name}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
             ))}
             {rfi.status !== 'closed' && (
               <div className="px-[18px] py-3.5 border-t border-[#ECEBEA] bg-[#FBFCFE]">
-                <RichTextEditor value={draft} onChange={setDraft} placeholder="Add a response…" minHeight={70} />
-                <div className="flex justify-end gap-2 mt-2">
-                  <button className="btn-secondary" disabled={busy || !plainText(draft)} onClick={() => addResponse(false, false)}>Add Response</button>
-                  <button className="btn-primary" disabled={busy || !plainText(draft)} onClick={() => addResponse(true, true)}>Mark Official &amp; Close</button>
+                <RichTextEditor value={draft} onChange={setDraft} placeholder="Add a response… use @ to mention someone" minHeight={70} mentionUsers={users} />
+                {pendingFiles.length > 0 && (
+                  <div className="flex flex-wrap gap-2 mt-2">
+                    {pendingFiles.map((f, i) => (
+                      <span key={i} className="inline-flex items-center gap-1.5 text-[11.5px] text-[#3E3E3C] bg-[#F3F2F2] rounded-md px-2 py-1">
+                        <Paperclip size={12} /> {f.name}
+                        <button onClick={() => setPendingFiles(prev => prev.filter((_, j) => j !== i))} className="text-[#A8A8A8] hover:text-[#b91c1c]"><X size={11} /></button>
+                      </span>
+                    ))}
+                  </div>
+                )}
+                <div className="flex justify-between items-center gap-2 mt-2">
+                  <label className="btn-secondary cursor-pointer"><Paperclip size={13} /> Attach
+                    <input type="file" multiple className="hidden" onChange={e => { if (e.target.files) setPendingFiles(prev => [...prev, ...Array.from(e.target.files!)]); e.target.value = '' }} />
+                  </label>
+                  <div className="flex gap-2">
+                    <button className="btn-secondary" disabled={busy || (!plainText(draft) && !pendingFiles.length)} onClick={() => addResponse(false, false)}>Add Response</button>
+                    <button className="btn-primary" disabled={busy || (!plainText(draft) && !pendingFiles.length)} onClick={() => addResponse(true, true)}>Mark Official &amp; Close</button>
+                  </div>
                 </div>
               </div>
             )}

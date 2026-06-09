@@ -47,6 +47,7 @@ function notifHref(n: Notification): string | null {
   switch (n.entity_type) {
     case 'project':     return `/projects/${n.entity_id}`
     case 'task':        return `/tasks?id=${n.entity_id}`
+    case 'rfi':         return `/rfis/${n.entity_id}`
     case 'stakeholder': return `/stakeholders?id=${n.entity_id}`
     // permits/meters/buildings/systems live inside a project; metadata may carry project_id
     case 'permit':

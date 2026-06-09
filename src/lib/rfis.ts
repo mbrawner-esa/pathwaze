@@ -1,4 +1,5 @@
 // Shared helpers for the RFI module.
+import { logActivity, emailUser, emailStakeholder, rfiUrl, rfiNo } from './rfi-notify'
 
 export interface NewRfiInput {
   project_id: string
@@ -60,5 +61,15 @@ export async function createRfiFromFinding(supabase: any, userId: string, input:
   }).select('*').single()
 
   if (error) { console.error('[createRfi] insert failed:', error.message); return null }
+
+  // Notify (best-effort): log to the feed; email the ball-in-court if the RFI is open.
+  const tag = `RFI ${rfiNo(data.rfi_number)}`
+  const link = `<p><a href="${rfiUrl(data.id)}">${tag}: ${data.subject}</a></p>`
+  await logActivity(supabase, { entity_type: 'rfi', entity_id: data.id, action: status === 'open' ? 'opened an RFI' : 'drafted an RFI', user_id: userId, metadata: { rfi_id: data.id } })
+  if (status === 'open') {
+    const subj = `${tag} needs your input`
+    if (data.ball_in_court_user_id) await emailUser(supabase, data.ball_in_court_user_id, subj, link)
+    else if (data.ball_in_court_stakeholder_id) await emailStakeholder(supabase, data.ball_in_court_stakeholder_id, subj, link)
+  }
   return data
 }

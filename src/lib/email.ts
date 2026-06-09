@@ -59,6 +59,18 @@ export async function sendTaskCompletedEmail(params: TaskCompletedEmailParams): 
   })
 }
 
+/** Generic notification email (RFIs, mentions, etc.). */
+export async function sendNotificationEmail(params: { to: string; subject: string; bodyHtml: string }): Promise<SendResult> {
+  return send({ to: params.to, subject: params.subject, html: notificationHtml(params.subject, params.bodyHtml) })
+}
+
+function notificationHtml(subject: string, bodyHtml: string): string {
+  return `<div style="font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;max-width:560px;margin:0 auto;color:#181818">
+    <div style="background:#2F3E50;color:#fff;padding:14px 20px;border-radius:8px 8px 0 0;font-weight:700">${subject}</div>
+    <div style="border:1px solid #e2e8f0;border-top:none;border-radius:0 0 8px 8px;padding:18px 20px;font-size:14px;line-height:1.6">${bodyHtml}</div>
+  </div>`
+}
+
 // ──────────────────────────── Resend helper ───────────────────────────
 
 async function send(args: { to: string; subject: string; html: string }): Promise<SendResult> {

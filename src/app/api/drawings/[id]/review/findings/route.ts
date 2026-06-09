@@ -1,4 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
+import { sendDM } from '@/lib/slack'
+import { logActivity, emailUser } from '@/lib/rfi-notify'
 import { NextRequest, NextResponse } from 'next/server'
 
 // POST /api/drawings/[id]/review/findings
@@ -18,7 +20,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: drawing } = await (supabase.from('drawings') as any)
-    .select('id, area_id, collection_id').eq('id', id).maybeSingle()
+    .select('id, area_id, collection_id, project_id, file_name').eq('id', id).maybeSingle()
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: review } = await (supabase.from('drawing_reviews') as any)
     .select('id, status').eq('drawing_id', id).maybeSingle()
@@ -67,6 +69,22 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   if (review.status === 'not_started' && disposition) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await (supabase.from('drawing_reviews') as any).update({ status: 'in_progress' }).eq('id', review.id)
+  }
+
+  // Risk escalation — notify admins same day (Slack DM + email + feed). Best-effort.
+  if (disposition === 'risk') {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: admins } = await (supabase.from('users') as any).select('id').eq('role', 'admin').eq('status', 'active')
+      const text = `⚠ RISK flagged in drawing review: ${drawing.file_name ?? 'a drawing'}${finding_text ? ` — ${finding_text}` : ''}`
+      const html = `<p><b>Risk flagged</b> during a drawing review.</p><p>${drawing.file_name ?? ''}</p>${finding_text ? `<p>${finding_text}</p>` : ''}`
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      for (const adm of (admins ?? []) as any[]) {
+        await sendDM(supabase, adm.id, text)
+        await emailUser(supabase, adm.id, 'Risk flagged in a drawing review', html)
+      }
+      if (drawing.project_id) await logActivity(supabase, { entity_type: 'project', entity_id: drawing.project_id, action: 'flagged a RISK in a drawing review', user_id: user.id, metadata: { project_id: drawing.project_id } })
+    } catch (e) { console.error('[risk escalate]', e) }
   }
 
   return NextResponse.json({ ok: true })

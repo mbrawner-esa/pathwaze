@@ -16,7 +16,7 @@ export function NotesRender({ source, className }: { source: string; className?:
   if (/<(p|ul|ol|li|br|b|strong|i|em|div|span)\b/i.test(trimmed)) {
     return (
       <div
-        className={`text-[13px] text-[#181818] leading-relaxed [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_li]:my-0.5 [&_p]:my-1.5 ${className ?? ''}`}
+        className={`text-[13px] text-[#181818] leading-relaxed [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_li]:my-0.5 [&_p]:my-1.5 [&_a]:text-[#2C5485] [&_a]:underline [&_.mention]:text-[#2C5485] [&_.mention]:font-semibold [&_.mention]:bg-[#EFF4FA] [&_.mention]:rounded [&_.mention]:px-1 ${className ?? ''}`}
         // eslint-disable-next-line react/no-danger
         dangerouslySetInnerHTML={{ __html: trimmed }}
       />

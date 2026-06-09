@@ -1,4 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
+import { sendTaskAssignedEmail } from '@/lib/email'
+import { logActivity } from '@/lib/rfi-notify'
 import { NextRequest, NextResponse } from 'next/server'
 
 // POST /api/drawings/[id]/review/delegate
@@ -65,6 +67,27 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       delegated_task_id: task.id, created_by: user.id,
     })
   }
+
+  // Notify the assignee (best-effort) + log to the feed.
+  if (task.assignee_id && task.assignee_id !== user.id) {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const [{ data: a }, { data: actor }, { data: proj }] = await Promise.all([
+        (supabase.from('users') as any).select('email, full_name, notify_email_task_assigned').eq('id', task.assignee_id).maybeSingle(),
+        (supabase.from('users') as any).select('full_name, email').eq('id', user.id).maybeSingle(),
+        (supabase.from('projects') as any).select('name').eq('id', drawing.project_id).maybeSingle(),
+      ]) as any
+      if (a?.email && a.notify_email_task_assigned !== false) {
+        const origin = process.env.NEXT_PUBLIC_APP_URL || 'https://pathwaze.esa-solar.com'
+        await sendTaskAssignedEmail({
+          to: a.email, recipientName: a.full_name || a.email, taskTitle: task.title, taskDescription: description,
+          projectName: proj?.name ?? null, dueDate: task.due_date, priority: task.priority, type: 'Engineering',
+          assignerName: actor?.full_name || 'A teammate', taskUrl: `${origin}/tasks?id=${task.id}`,
+        })
+      }
+    } catch (e) { console.error('[delegate notify]', e) }
+  }
+  await logActivity(supabase, { entity_type: 'task', entity_id: task.id, action: 'delegated a task from a drawing review', user_id: user.id, metadata: { project_id: drawing.project_id } })
 
   return NextResponse.json({ task: { id: task.id, title: task.title, status: task.status, assignee_id: task.assignee_id } })
 }
