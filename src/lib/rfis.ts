@@ -10,6 +10,8 @@ export interface NewRfiInput {
   ball_in_court_stakeholder_id?: string | null
   rfi_manager_id?: string | null
   received_from?: string | null
+  received_from_user_id?: string | null
+  received_from_stakeholder_id?: string | null
   due_date?: string | null
   drawing_number?: string | null
   spec_section?: string | null
@@ -44,6 +46,8 @@ export async function createRfiFromFinding(supabase: any, userId: string, input:
     ball_in_court_stakeholder_id: input.ball_in_court_stakeholder_id ?? null,
     rfi_manager_id: input.rfi_manager_id ?? userId,
     received_from: input.received_from ?? null,
+    received_from_user_id: input.received_from_user_id ?? null,
+    received_from_stakeholder_id: input.received_from_stakeholder_id ?? null,
     due_date: input.due_date ?? null,
     date_initiated: status === 'open' ? new Date().toISOString().slice(0, 10) : null,
     drawing_number: input.drawing_number ?? null,

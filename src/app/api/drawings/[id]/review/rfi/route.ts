@@ -31,6 +31,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     subject: body.subject.trim(),
     question: body.question ?? null,
     received_from: body.received_from ?? null,
+    received_from_user_id: body.received_from_user_id ?? null,
+    received_from_stakeholder_id: body.received_from_stakeholder_id ?? null,
     ball_in_court_user_id: body.ball_in_court_user_id ?? null,
     ball_in_court_stakeholder_id: body.ball_in_court_stakeholder_id ?? null,
     due_date: body.due_date ?? null,

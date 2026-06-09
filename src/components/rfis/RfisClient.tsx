@@ -1,6 +1,7 @@
 'use client'
 import { useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { ReceivedFromPicker } from './ReceivedFromPicker'
 
 type Any = any // eslint-disable-line @typescript-eslint/no-explicit-any
 
@@ -24,7 +25,7 @@ function isOverdue(r: Any): boolean {
   return r.status === 'open' && !!r.due_date && new Date(r.due_date) < new Date()
 }
 
-export function RfisClient({ rfis: initial, projects, users }: { rfis: Any[]; projects: Any[]; users: Any[] }) {
+export function RfisClient({ rfis: initial, projects, users, stakeholders }: { rfis: Any[]; projects: Any[]; users: Any[]; stakeholders: Any[] }) {
   const router = useRouter()
   const [rfis, setRfis] = useState<Any[]>(initial)
   const [tab, setTab] = useState<typeof TABS[number]>('All')
@@ -106,14 +107,15 @@ export function RfisClient({ rfis: initial, projects, users }: { rfis: Any[]; pr
         </table>
       </div>
 
-      {creating && <CreateRfiModal projects={projects} users={users} onClose={() => setCreating(false)}
+      {creating && <CreateRfiModal projects={projects} users={users} stakeholders={stakeholders} onClose={() => setCreating(false)}
         onCreated={r => { setRfis(prev => [{ ...r, project: projects.find(p => p.id === r.project_id) }, ...prev]); setCreating(false); router.push(`/rfis/${r.id}`) }} />}
     </div>
   )
 }
 
-function CreateRfiModal({ projects, users, onClose, onCreated }: { projects: Any[]; users: Any[]; onClose: () => void; onCreated: (r: Any) => void }) {
-  const [f, setF] = useState<Any>({ project_id: '', subject: '', question: '', received_from: '', ball_in_court_user_id: '', due_date: '', cost_impact: 'tbd', schedule_impact: 'tbd', status: 'open' })
+function CreateRfiModal({ projects, users, stakeholders: initialStakeholders, onClose, onCreated }: { projects: Any[]; users: Any[]; stakeholders: Any[]; onClose: () => void; onCreated: (r: Any) => void }) {
+  const [stakeholders, setStakeholders] = useState<Any[]>(initialStakeholders)
+  const [f, setF] = useState<Any>({ project_id: '', subject: '', question: '', received_from_user_id: '', received_from_stakeholder_id: '', ball_in_court_user_id: '', due_date: '', cost_impact: 'tbd', schedule_impact: 'tbd', status: 'open' })
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState<string | null>(null)
   const set = (k: string, v: Any) => setF((p: Any) => ({ ...p, [k]: v }))
@@ -121,7 +123,7 @@ function CreateRfiModal({ projects, users, onClose, onCreated }: { projects: Any
   async function create() {
     if (!f.project_id || !f.subject.trim()) { setErr('Project and subject are required.'); return }
     setSaving(true); setErr(null)
-    const res = await fetch('/api/rfis', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...f, ball_in_court_user_id: f.ball_in_court_user_id || null }) })
+    const res = await fetch('/api/rfis', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...f, ball_in_court_user_id: f.ball_in_court_user_id || null, received_from_user_id: f.received_from_user_id || null, received_from_stakeholder_id: f.received_from_stakeholder_id || null }) })
     setSaving(false)
     if (res.ok) onCreated(await res.json())
     else { const b = await res.json().catch(() => ({})); setErr(b?.error || 'Failed to create') }
@@ -135,7 +137,10 @@ function CreateRfiModal({ projects, users, onClose, onCreated }: { projects: Any
           <Field label="Project *"><select value={f.project_id} onChange={e => set('project_id', e.target.value)} className="inp"><option value="">Select…</option>{projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></Field>
           <Field label="Subject *"><input value={f.subject} onChange={e => set('subject', e.target.value)} className="inp" /></Field>
           <Field label="Question"><textarea value={f.question} onChange={e => set('question', e.target.value)} className="inp min-h-[70px]" /></Field>
-          <Field label="Received from"><input value={f.received_from} onChange={e => set('received_from', e.target.value)} placeholder="Who raised this RFI" className="inp" /></Field>
+          <Field label="Received from"><ReceivedFromPicker users={users} stakeholders={stakeholders.filter(s => !s.project_id || s.project_id === f.project_id)} projectId={f.project_id || null}
+            userId={f.received_from_user_id} stakeholderId={f.received_from_stakeholder_id}
+            onChange={(u, s) => setF((p: Any) => ({ ...p, received_from_user_id: u ?? '', received_from_stakeholder_id: s ?? '' }))}
+            onStakeholderCreated={s => setStakeholders(prev => [...prev, s])} /></Field>
           <div className="grid grid-cols-2 gap-3">
             <Field label="Ball in Court (internal)"><select value={f.ball_in_court_user_id} onChange={e => set('ball_in_court_user_id', e.target.value)} className="inp"><option value="">—</option>{users.map(u => <option key={u.id} value={u.id}>{u.full_name}</option>)}</select></Field>
             <Field label="Due date"><input type="date" value={f.due_date} onChange={e => set('due_date', e.target.value)} className="inp" /></Field>

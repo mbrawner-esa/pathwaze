@@ -10,7 +10,7 @@ export default async function RfiDetailPage({ params }: { params: Promise<{ id: 
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: rfi } = await (supabase.from('rfis') as any)
-    .select('*, project:projects(id, name, project_number), ball_user:users!ball_in_court_user_id(id, full_name), ball_sh:stakeholders!ball_in_court_stakeholder_id(id, name), manager:users!rfi_manager_id(id, full_name), area:buildings(id, name), drawing:drawings(id, file_name)')
+    .select('*, project:projects(id, name, project_number), ball_user:users!ball_in_court_user_id(id, full_name), ball_sh:stakeholders!ball_in_court_stakeholder_id(id, name), manager:users!rfi_manager_id(id, full_name), area:buildings(id, name), drawing:drawings(id, file_name), received_user:users!received_from_user_id(id, full_name), received_sh:stakeholders!received_from_stakeholder_id(id, name)')
     .eq('id', id).maybeSingle()
   if (!rfi) notFound()
 

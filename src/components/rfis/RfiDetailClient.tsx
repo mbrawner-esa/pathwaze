@@ -6,6 +6,7 @@ import { ChevronLeft, ChevronDown, Pencil } from 'lucide-react'
 import { Avatar } from '@/components/ui/Avatar'
 import { RichTextEditor } from '@/components/ui/RichTextEditor'
 import { NotesRender } from '@/components/ui/NotesRender'
+import { ReceivedFromPicker } from './ReceivedFromPicker'
 
 type Any = any // eslint-disable-line @typescript-eslint/no-explicit-any
 
@@ -150,7 +151,7 @@ export function RfiDetailClient({ rfi: initial, responses: initialResp, links: i
               ['Status', overdue ? 'Open · Overdue' : (rfi.status?.[0]?.toUpperCase() + rfi.status?.slice(1))],
               ['Ball in Court', ballName(rfi)],
               ['RFI Manager', rfi.manager?.full_name ?? '—'],
-              ['Received From', rfi.received_from ?? '—'],
+              ['Received From', rfi.received_user?.full_name || rfi.received_sh?.name || rfi.received_from || '—'],
               ['Date Initiated', rfi.date_initiated ?? '—'],
               ['Due Date', rfi.due_date ?? '—'],
               ['Drawing Number', rfi.drawing_number ?? '—'],
@@ -212,7 +213,7 @@ export function RfiDetailClient({ rfi: initial, responses: initialResp, links: i
       </div>
 
       {editing && (
-        <EditRfiModal rfi={rfi} users={users} onClose={() => setEditing(false)}
+        <EditRfiModal rfi={rfi} users={users} stakeholders={catalog.stakeholder ?? []} onClose={() => setEditing(false)}
           onSave={async body => { await patch(body); setEditing(false) }} />
       )}
     </div>
@@ -220,9 +221,11 @@ export function RfiDetailClient({ rfi: initial, responses: initialResp, links: i
 }
 
 // ── Edit RFI modal ──────────────────────────────────────────────────────
-function EditRfiModal({ rfi, users, onClose, onSave }: { rfi: Any; users: Any[]; onClose: () => void; onSave: (body: Any) => Promise<void> }) {
+function EditRfiModal({ rfi, users, stakeholders: initialStakeholders, onClose, onSave }: { rfi: Any; users: Any[]; stakeholders: Any[]; onClose: () => void; onSave: (body: Any) => Promise<void> }) {
+  const [stakeholders, setStakeholders] = useState<Any[]>(initialStakeholders)
   const [f, setF] = useState<Any>({
-    subject: rfi.subject ?? '', question: rfi.question ?? '', received_from: rfi.received_from ?? '',
+    subject: rfi.subject ?? '', question: rfi.question ?? '',
+    received_from_user_id: rfi.received_from_user_id ?? '', received_from_stakeholder_id: rfi.received_from_stakeholder_id ?? '',
     ball_in_court_user_id: rfi.ball_in_court_user_id ?? '', rfi_manager_id: rfi.rfi_manager_id ?? '',
     due_date: rfi.due_date ?? '', drawing_number: rfi.drawing_number ?? '', spec_section: rfi.spec_section ?? '',
     location: rfi.location ?? '', cost_impact: rfi.cost_impact ?? 'tbd', schedule_impact: rfi.schedule_impact ?? 'tbd',
@@ -237,6 +240,8 @@ function EditRfiModal({ rfi, users, onClose, onSave }: { rfi: Any; users: Any[];
       ...f,
       ball_in_court_user_id: f.ball_in_court_user_id || null,
       rfi_manager_id: f.rfi_manager_id || null,
+      received_from_user_id: f.received_from_user_id || null,
+      received_from_stakeholder_id: f.received_from_stakeholder_id || null,
       due_date: f.due_date || null,
     })
     setSaving(false)
@@ -249,7 +254,10 @@ function EditRfiModal({ rfi, users, onClose, onSave }: { rfi: Any; users: Any[];
         <div className="p-5 flex flex-col gap-3">
           <Lbl t="Subject"><input value={f.subject} onChange={e => set('subject', e.target.value)} className="einp" /></Lbl>
           <Lbl t="Question"><textarea value={f.question} onChange={e => set('question', e.target.value)} className="einp min-h-[70px]" /></Lbl>
-          <Lbl t="Received from"><input value={f.received_from} onChange={e => set('received_from', e.target.value)} className="einp" /></Lbl>
+          <Lbl t="Received from"><ReceivedFromPicker users={users} stakeholders={stakeholders} projectId={rfi.project_id}
+            userId={f.received_from_user_id} stakeholderId={f.received_from_stakeholder_id}
+            onChange={(u, s) => setF((p: Any) => ({ ...p, received_from_user_id: u ?? '', received_from_stakeholder_id: s ?? '' }))}
+            onStakeholderCreated={s => setStakeholders(prev => [...prev, s])} /></Lbl>
           <div className="grid grid-cols-2 gap-3">
             <Lbl t="Ball in Court (internal)"><select value={f.ball_in_court_user_id} onChange={e => set('ball_in_court_user_id', e.target.value)} className="einp"><option value="">—</option>{users.map(u => <option key={u.id} value={u.id}>{u.full_name}</option>)}</select></Lbl>
             <Lbl t="RFI Manager"><select value={f.rfi_manager_id} onChange={e => set('rfi_manager_id', e.target.value)} className="einp"><option value="">—</option>{users.map(u => <option key={u.id} value={u.id}>{u.full_name}</option>)}</select></Lbl>

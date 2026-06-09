@@ -35,7 +35,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
   const patch: Record<string, unknown> = {}
   for (const k of ['subject', 'question', 'status', 'priority', 'ball_in_court_user_id', 'ball_in_court_stakeholder_id',
-                    'rfi_manager_id', 'received_from', 'due_date', 'drawing_number', 'spec_section', 'location',
+                    'rfi_manager_id', 'received_from', 'received_from_user_id', 'received_from_stakeholder_id',
+                    'due_date', 'drawing_number', 'spec_section', 'location',
                     'cost_impact', 'cost_amount', 'schedule_impact', 'schedule_days', 'is_private'] as const) {
     if (k in body) patch[k] = body[k]
   }

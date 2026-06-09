@@ -38,6 +38,7 @@ interface Props {
   collections: Collection[]
   users: SimpleUser[]
   reviewTypes: ReviewType[]
+  stakeholders?: SimpleUser[]
 }
 
 const CATEGORY_PILL: Record<string, { bg: string; text: string }> = {
@@ -68,7 +69,7 @@ function Avatar({ user, size = 22 }: { user?: Owner | null; size?: number }) {
   )
 }
 
-export function DrawingsTab({ projectId, drawings: initial, areas, collections: initialCollections, users, reviewTypes }: Props) {
+export function DrawingsTab({ projectId, drawings: initial, areas, collections: initialCollections, users, reviewTypes, stakeholders = [] }: Props) {
   const [collections, setCollections] = useState<Collection[]>(initialCollections)
   const [activeId, setActiveId] = useState<string | null>(null)
   const [reviewDrawingId, setReviewDrawingId] = useState<string | null>(null)
@@ -146,7 +147,7 @@ export function DrawingsTab({ projectId, drawings: initial, areas, collections: 
 
   // ── Review view (a drawing's checklist) ────────────────────────────
   if (reviewDrawingId) {
-    return <DrawingReviewView drawingId={reviewDrawingId} users={users} onBack={() => { setReviewDrawingId(null); refreshDrawings() }} />
+    return <DrawingReviewView drawingId={reviewDrawingId} users={users} stakeholders={stakeholders} projectId={projectId} onBack={() => { setReviewDrawingId(null); refreshDrawings() }} />
   }
 
   // ── Landing: collections ───────────────────────────────────────────

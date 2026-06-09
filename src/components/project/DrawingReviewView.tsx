@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { createClient as createBrowserClient } from '@/lib/supabase/client'
 import { ChevronLeft, FileText, ExternalLink } from 'lucide-react'
+import { ReceivedFromPicker } from '@/components/rfis/ReceivedFromPicker'
 
 const DISPOSITIONS: { value: string; label: string; bg: string; text: string }[] = [
   { value: 'confirmed',    label: 'Confirmed',    bg: '#F0FDF4', text: '#166534' },
@@ -22,7 +23,7 @@ interface ItemState {
 }
 export interface SimpleUser { id: string; full_name: string }
 
-export function DrawingReviewView({ drawingId, users = [], onBack }: { drawingId: string; users?: SimpleUser[]; onBack: () => void }) {
+export function DrawingReviewView({ drawingId, users = [], stakeholders = [], projectId, onBack }: { drawingId: string; users?: SimpleUser[]; stakeholders?: Any[]; projectId?: string; onBack: () => void }) {
   const [modal, setModal] = useState<{ kind: 'delegate' | 'rfi'; item: Any } | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -248,6 +249,8 @@ export function DrawingReviewView({ drawingId, users = [], onBack }: { drawingId
           itemState={items[modal.item.id]}
           drawingFile={d.file_name}
           users={users}
+          stakeholders={stakeholders}
+          projectId={projectId ?? d.project_id}
           onClose={() => setModal(null)}
           onDone={patch => { setItem(modal.item.id, patch); setModal(null) }}
         />
@@ -257,10 +260,13 @@ export function DrawingReviewView({ drawingId, users = [], onBack }: { drawingId
 }
 
 // ── Delegate / Create-RFI modal ─────────────────────────────────────────
-function ActionModal({ kind, drawingId, item, itemState, drawingFile, users, onClose, onDone }: {
+function ActionModal({ kind, drawingId, item, itemState, drawingFile, users, stakeholders: initialStakeholders = [], projectId, onClose, onDone }: {
   kind: 'delegate' | 'rfi'; drawingId: string; item: Any; itemState: ItemState; drawingFile: string
-  users: SimpleUser[]; onClose: () => void; onDone: (patch: Partial<ItemState>) => void
+  users: SimpleUser[]; stakeholders?: Any[]; projectId?: string; onClose: () => void; onDone: (patch: Partial<ItemState>) => void
 }) {
+  const [stakeholders, setStakeholders] = useState<Any[]>(initialStakeholders)
+  const [rfUser, setRfUser] = useState('')
+  const [rfStakeholder, setRfStakeholder] = useState('')
   const baseDesc = [`From drawing review: ${drawingFile}`, item.prompt,
     itemState?.finding_text ? `Finding: ${itemState.finding_text}` : '',
     itemState?.sheet_ref ? `Sheet/detail: ${itemState.sheet_ref}` : '',
@@ -269,7 +275,6 @@ function ActionModal({ kind, drawingId, item, itemState, drawingFile, users, onC
   const [title, setTitle] = useState(kind === 'delegate' ? `Field verify: ${item.prompt}` : item.prompt)
   const [body, setBody] = useState(baseDesc)
   const [assignee, setAssignee] = useState('')
-  const [receivedFrom, setReceivedFrom] = useState('')
   const [due, setDue] = useState('')
   const [cost, setCost] = useState('tbd')
   const [sched, setSched] = useState('tbd')
@@ -289,7 +294,7 @@ function ActionModal({ kind, drawingId, item, itemState, drawingFile, users, onC
     } else {
       const res = await fetch(`/api/drawings/${drawingId}/review/rfi`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ item_id: item.id, subject: title, question: body, received_from: receivedFrom || null, ball_in_court_user_id: assignee || null, due_date: due || null, cost_impact: cost, schedule_impact: sched, drawing_number: itemState?.sheet_ref || null }),
+        body: JSON.stringify({ item_id: item.id, subject: title, question: body, received_from_user_id: rfUser || null, received_from_stakeholder_id: rfStakeholder || null, ball_in_court_user_id: assignee || null, due_date: due || null, cost_impact: cost, schedule_impact: sched, drawing_number: itemState?.sheet_ref || null }),
       })
       setBusy(false)
       if (res.ok) onDone({ rfi: (await res.json()).rfi })
@@ -309,7 +314,10 @@ function ActionModal({ kind, drawingId, item, itemState, drawingFile, users, onC
             <textarea value={body} onChange={e => setBody(e.target.value)} className="inp min-h-[80px]" /></label>
           {!isDelegate && (
             <label className="flex flex-col gap-1"><span className="lbl">Received from</span>
-              <input value={receivedFrom} onChange={e => setReceivedFrom(e.target.value)} placeholder="Who raised this RFI" className="inp" /></label>
+              <ReceivedFromPicker users={users} stakeholders={stakeholders} projectId={projectId}
+                userId={rfUser} stakeholderId={rfStakeholder}
+                onChange={(u, s) => { setRfUser(u ?? ''); setRfStakeholder(s ?? '') }}
+                onStakeholderCreated={s => setStakeholders(prev => [...prev, s])} /></label>
           )}
           <div className="grid grid-cols-2 gap-3">
             <label className="flex flex-col gap-1"><span className="lbl">{isDelegate ? 'Assignee' : 'Ball in Court (internal)'}</span>
