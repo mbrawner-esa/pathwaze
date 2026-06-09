@@ -30,6 +30,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     drawing_id: drawing.id,
     subject: body.subject.trim(),
     question: body.question ?? null,
+    received_from: body.received_from ?? null,
     ball_in_court_user_id: body.ball_in_court_user_id ?? null,
     ball_in_court_stakeholder_id: body.ball_in_court_stakeholder_id ?? null,
     due_date: body.due_date ?? null,
@@ -39,6 +40,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     status: body.status === 'draft' ? 'draft' : 'open',
   })
   if (!rfi) return NextResponse.json({ error: 'Failed to create RFI' }, { status: 500 })
+
+  // Auto-link the source drawing + area so they appear in the RFI's linkages.
+  const links: Record<string, unknown>[] = []
+  if (drawing.id) links.push({ rfi_id: rfi.id, entity_type: 'drawing', entity_id: drawing.id, created_by: user.id })
+  if (drawing.area_id) links.push({ rfi_id: rfi.id, entity_type: 'building', entity_id: drawing.area_id, created_by: user.id })
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  if (links.length) await (supabase.from('rfi_links') as any).upsert(links, { onConflict: 'rfi_id,entity_type,entity_id' })
 
   // Stamp the finding with the RFI id (ensure a row exists).
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

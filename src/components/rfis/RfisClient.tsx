@@ -10,6 +10,7 @@ const STATUS_PILL: Record<string, { bg: string; text: string; label: string }> =
   closed: { bg: '#F0FDF4', text: '#166534', label: 'Closed' },
 }
 const TABS = ['All', 'Open', 'Overdue', 'Draft', 'Closed'] as const
+const rfiNo = (n: number) => '#' + String(n ?? 0).padStart(3, '0')
 
 function ballName(r: Any): string {
   return r.ball_user?.full_name || r.ball_sh?.name || '—'
@@ -84,7 +85,7 @@ export function RfisClient({ rfis: initial, projects, users }: { rfis: Any[]; pr
               const d = daysOpen(r)
               return (
                 <tr key={r.id} onClick={() => router.push(`/rfis/${r.id}`)} className="hover:bg-[#FBFCFE] cursor-pointer border-b border-[#ECEBEA] last:border-b-0">
-                  <td className="px-3 py-3 font-extrabold text-[#2C5485]">#{r.rfi_number}</td>
+                  <td className="px-3 py-3 font-extrabold text-[#2C5485]">{rfiNo(r.rfi_number)}</td>
                   <td className="px-3 py-3 font-bold text-[#181818] max-w-[320px]">{r.subject}</td>
                   <td className="px-3 py-3 text-[#3E3E3C] whitespace-nowrap">{r.project?.name ?? '—'}</td>
                   <td className="px-3 py-3">
@@ -112,7 +113,7 @@ export function RfisClient({ rfis: initial, projects, users }: { rfis: Any[]; pr
 }
 
 function CreateRfiModal({ projects, users, onClose, onCreated }: { projects: Any[]; users: Any[]; onClose: () => void; onCreated: (r: Any) => void }) {
-  const [f, setF] = useState<Any>({ project_id: '', subject: '', question: '', ball_in_court_user_id: '', due_date: '', cost_impact: 'tbd', schedule_impact: 'tbd', status: 'open' })
+  const [f, setF] = useState<Any>({ project_id: '', subject: '', question: '', received_from: '', ball_in_court_user_id: '', due_date: '', cost_impact: 'tbd', schedule_impact: 'tbd', status: 'open' })
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState<string | null>(null)
   const set = (k: string, v: Any) => setF((p: Any) => ({ ...p, [k]: v }))
@@ -134,6 +135,7 @@ function CreateRfiModal({ projects, users, onClose, onCreated }: { projects: Any
           <Field label="Project *"><select value={f.project_id} onChange={e => set('project_id', e.target.value)} className="inp"><option value="">Select…</option>{projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></Field>
           <Field label="Subject *"><input value={f.subject} onChange={e => set('subject', e.target.value)} className="inp" /></Field>
           <Field label="Question"><textarea value={f.question} onChange={e => set('question', e.target.value)} className="inp min-h-[70px]" /></Field>
+          <Field label="Received from"><input value={f.received_from} onChange={e => set('received_from', e.target.value)} placeholder="Who raised this RFI" className="inp" /></Field>
           <div className="grid grid-cols-2 gap-3">
             <Field label="Ball in Court (internal)"><select value={f.ball_in_court_user_id} onChange={e => set('ball_in_court_user_id', e.target.value)} className="inp"><option value="">—</option>{users.map(u => <option key={u.id} value={u.id}>{u.full_name}</option>)}</select></Field>
             <Field label="Due date"><input type="date" value={f.due_date} onChange={e => set('due_date', e.target.value)} className="inp" /></Field>

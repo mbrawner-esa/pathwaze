@@ -227,7 +227,7 @@ export function DrawingReviewView({ drawingId, users = [], onBack }: { drawingId
                         <button className="text-[11.5px] font-semibold text-[#3E3E3C] border border-[#DDDBDA] rounded-md px-2.5 py-1.5 hover:bg-[#F3F2F2]" onClick={() => setModal({ kind: 'delegate', item: it })}>Delegate ▸</button>
                       )}
                       {v.rfi ? (
-                        <a href={`/rfis/${v.rfi.id}`} className="text-[11px] font-semibold text-[#0f766e] bg-[#f0fdfa] border border-[#99f6e4] rounded-full px-2.5 py-1">→ RFI #{v.rfi.rfi_number} · {v.rfi.status}</a>
+                        <a href={`/rfis/${v.rfi.id}`} className="text-[11px] font-semibold text-[#0f766e] bg-[#f0fdfa] border border-[#99f6e4] rounded-full px-2.5 py-1">→ RFI #{String(v.rfi.rfi_number ?? 0).padStart(3, '0')} · {v.rfi.status}</a>
                       ) : (
                         <button className="text-[11.5px] font-bold text-[#0f766e] border border-[#99f6e4] rounded-md px-2.5 py-1.5 hover:bg-[#f0fdfa]" onClick={() => setModal({ kind: 'rfi', item: it })}>Create RFI ▸</button>
                       )}
@@ -269,6 +269,7 @@ function ActionModal({ kind, drawingId, item, itemState, drawingFile, users, onC
   const [title, setTitle] = useState(kind === 'delegate' ? `Field verify: ${item.prompt}` : item.prompt)
   const [body, setBody] = useState(baseDesc)
   const [assignee, setAssignee] = useState('')
+  const [receivedFrom, setReceivedFrom] = useState('')
   const [due, setDue] = useState('')
   const [cost, setCost] = useState('tbd')
   const [sched, setSched] = useState('tbd')
@@ -288,7 +289,7 @@ function ActionModal({ kind, drawingId, item, itemState, drawingFile, users, onC
     } else {
       const res = await fetch(`/api/drawings/${drawingId}/review/rfi`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ item_id: item.id, subject: title, question: body, ball_in_court_user_id: assignee || null, due_date: due || null, cost_impact: cost, schedule_impact: sched, drawing_number: itemState?.sheet_ref || null }),
+        body: JSON.stringify({ item_id: item.id, subject: title, question: body, received_from: receivedFrom || null, ball_in_court_user_id: assignee || null, due_date: due || null, cost_impact: cost, schedule_impact: sched, drawing_number: itemState?.sheet_ref || null }),
       })
       setBusy(false)
       if (res.ok) onDone({ rfi: (await res.json()).rfi })
@@ -306,6 +307,10 @@ function ActionModal({ kind, drawingId, item, itemState, drawingFile, users, onC
             <input value={title} onChange={e => setTitle(e.target.value)} className="inp" /></label>
           <label className="flex flex-col gap-1"><span className="lbl">{isDelegate ? 'Description' : 'Question'}</span>
             <textarea value={body} onChange={e => setBody(e.target.value)} className="inp min-h-[80px]" /></label>
+          {!isDelegate && (
+            <label className="flex flex-col gap-1"><span className="lbl">Received from</span>
+              <input value={receivedFrom} onChange={e => setReceivedFrom(e.target.value)} placeholder="Who raised this RFI" className="inp" /></label>
+          )}
           <div className="grid grid-cols-2 gap-3">
             <label className="flex flex-col gap-1"><span className="lbl">{isDelegate ? 'Assignee' : 'Ball in Court (internal)'}</span>
               <select value={assignee} onChange={e => setAssignee(e.target.value)} className="inp"><option value="">—</option>{users.map(u => <option key={u.id} value={u.id}>{u.full_name}</option>)}</select></label>

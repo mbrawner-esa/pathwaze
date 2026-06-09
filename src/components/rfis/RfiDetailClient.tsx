@@ -8,13 +8,39 @@ type Any = any // eslint-disable-line @typescript-eslint/no-explicit-any
 
 const ballName = (r: Any) => r.ball_user?.full_name || r.ball_sh?.name || '—'
 const isOverdue = (r: Any) => r.status === 'open' && !!r.due_date && new Date(r.due_date) < new Date()
+const rfiNo = (n: number) => '#' + String(n ?? 0).padStart(3, '0')
 
-export function RfiDetailClient({ rfi: initial, responses: initialResp }: { rfi: Any; responses: Any[]; distribution: Any[]; users: Any[] }) {
+const LINK_TYPES: { key: string; label: string }[] = [
+  { key: 'building', label: 'Area' }, { key: 'system', label: 'System' }, { key: 'meter', label: 'Meter' },
+  { key: 'stakeholder', label: 'Stakeholder' }, { key: 'drawing', label: 'Drawing' },
+]
+function entityLabel(catalog: Any, type: string, idv: string): string {
+  const e = (catalog[type] ?? []).find((x: Any) => x.id === idv)
+  if (!e) return '(unknown)'
+  if (type === 'meter') return e.meter_num || e.account_num || e.account_number || 'Meter'
+  if (type === 'system') return e.label || e.name || 'System'
+  if (type === 'drawing') return e.file_name
+  return e.name || '(unnamed)'
+}
+
+export function RfiDetailClient({ rfi: initial, responses: initialResp, links: initialLinks, catalog }: { rfi: Any; responses: Any[]; distribution: Any[]; users: Any[]; links: Any[]; catalog: Any }) {
   const router = useRouter()
   const [rfi, setRfi] = useState<Any>(initial)
   const [responses, setResponses] = useState<Any[]>(initialResp)
+  const [links, setLinks] = useState<Any[]>(initialLinks)
+  const [linkType, setLinkType] = useState('building')
+  const [linkEntity, setLinkEntity] = useState('')
   const [draft, setDraft] = useState('')
   const [busy, setBusy] = useState(false)
+
+  async function addLink() {
+    if (!linkEntity) return
+    const res = await fetch(`/api/rfis/${rfi.id}/links`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ entity_type: linkType, entity_id: linkEntity }) })
+    if (res.ok) { const row = await res.json(); setLinks(prev => [...prev, row]); setLinkEntity('') }
+  }
+  async function removeLink(linkId: string) {
+    if ((await fetch(`/api/rfis/${rfi.id}/links/${linkId}`, { method: 'DELETE' })).ok) setLinks(prev => prev.filter(l => l.id !== linkId))
+  }
 
   async function patch(body: Any) {
     setBusy(true)
@@ -49,7 +75,7 @@ export function RfiDetailClient({ rfi: initial, responses: initialResp }: { rfi:
         <div className="flex flex-col gap-4">
           <div className="card p-5">
             <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-[13px] font-extrabold text-[#2C5485]">RFI #{rfi.rfi_number}</span>
+              <span className="text-[13px] font-extrabold text-[#2C5485]">RFI {rfiNo(rfi.rfi_number)}</span>
               <span className="text-[10.5px] font-bold px-2.5 py-0.5 rounded-full" style={overdue ? { background: '#FEF2F2', color: '#b91c1c' } : rfi.status === 'closed' ? { background: '#F0FDF4', color: '#166534' } : { background: '#EFF6FF', color: '#1d4ed8' }}>
                 {overdue ? 'Overdue' : rfi.status === 'closed' ? 'Closed' : rfi.status === 'draft' ? 'Draft' : 'Open'}
               </span>
@@ -123,6 +149,30 @@ export function RfiDetailClient({ rfi: initial, responses: initialResp }: { rfi:
                 <div className="text-[12.5px] text-[#181818] font-semibold mt-0.5" style={(k === 'Cost Impact' && v === 'yes') || (k === 'Due Date' && overdue) ? { color: '#b91c1c' } : {}}>{v as string}</div>
               </div>
             ))}
+          </div>
+
+          <div className="card overflow-hidden">
+            <div className="px-4 py-3 border-b border-[#ECEBEA] font-bold text-[12px] text-[#080707]">Linkages</div>
+            <div className="p-4 flex flex-col gap-2">
+              {links.length === 0 && <div className="text-[12px] text-[#A8A8A8]">No linked records yet.</div>}
+              {links.map(l => (
+                <div key={l.id} className="flex items-center gap-2 text-[12.5px]">
+                  <span className="text-[9.5px] font-bold uppercase tracking-wide text-[#706E6B] w-[74px] shrink-0">{LINK_TYPES.find(t => t.key === l.entity_type)?.label ?? l.entity_type}</span>
+                  <span className="flex-1 text-[#181818] font-semibold truncate">{entityLabel(catalog, l.entity_type, l.entity_id)}</span>
+                  <button onClick={() => removeLink(l.id)} className="text-[#A8A8A8] hover:text-[#b91c1c] text-[15px] leading-none">×</button>
+                </div>
+              ))}
+              <div className="flex items-center gap-2 mt-1 pt-2 border-t border-[#ECEBEA]">
+                <select value={linkType} onChange={e => { setLinkType(e.target.value); setLinkEntity('') }} className="border border-[#DDDBDA] rounded-md px-2 py-1.5 text-[12px]">
+                  {LINK_TYPES.map(t => <option key={t.key} value={t.key}>{t.label}</option>)}
+                </select>
+                <select value={linkEntity} onChange={e => setLinkEntity(e.target.value)} className="flex-1 min-w-0 border border-[#DDDBDA] rounded-md px-2 py-1.5 text-[12px]">
+                  <option value="">Select…</option>
+                  {(catalog[linkType] ?? []).map((e: Any) => <option key={e.id} value={e.id}>{entityLabel(catalog, linkType, e.id)}</option>)}
+                </select>
+                <button className="btn-secondary" disabled={!linkEntity} onClick={addLink}>Add</button>
+              </div>
+            </div>
           </div>
 
           {rfi.drawing && (
