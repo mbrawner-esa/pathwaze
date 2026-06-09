@@ -23,6 +23,12 @@ Last updated: 2026-06-09
 | 9 | **@-mention in task/notes/thread editors** | Small | Capability is built (`RichTextEditor` `mentionUsers`). Just pass the active users list into the task-description, project-notes, and thread composers to light it up there too. |
 | 10 | **Action-plan admin editor** | Medium | UI to define/edit a collection's review checklist (action plan) so a newly created drawing-type collection becomes reviewable without a code seed/migration. Today only the seeded **As-Built** plan has items. |
 | 11 | **RFI email-reply (no login)** | Large | Procore's marquee: EOR/AHJ reply to an RFI by email without logging in. Needs the inbound-email webhook (shares infra with #1/#2). v1 RFIs are in-app + outbound email only. |
+| 12 | **Dashboard: your RFIs in "Your Conversations"** | Medium | Surface RFIs you're part of (ball-in-court, on the distribution, or @-mentioned) in the dashboard's "Your Conversations" area, alongside threads. |
+| 13 | **Designate a task as an RFI** | Medium | On the task page, allow a task to be marked/flagged as an RFI so it's clearly differentiated from a standard task. Clarify intent first: a visual flag/type vs. a true link to (or conversion into) an RFI record. |
+| 14 | **RFI responded / official / closed notifications** | Small–Med | Slack + email when an RFI gets a response or is marked official/closed. (Response → ball-in-court + distribution already fires; add the official/closed events + confirm full coverage.) |
+| 15 | **Rename "Delegate to Engineer" → "Delegate to Assignee"** | XS | Drawing-review finding action: button label + modal title in `DrawingReviewView.tsx`. |
+| 16 | **Multi-select discipline per drawing** | Medium | Let a drawing carry multiple disciplines; review scope = Universal + each selected section. Today `drawings.discipline_key` is single — needs an array/join + review-merge + UI multi-select. |
+| 17 | **In-app rename UI (replace `window.prompt()`)** | Medium | Drawing rename (and other rename flows) should use an in-app inline edit / modal, not the browser `prompt()` box. Apply the pattern everywhere `prompt()` is currently used across Pathwaze. |
 
 ### ✅ Shipped 2026-06-09 — Drawings + RFIs (see `CHANGELOG.md`)
 As-Built **Drawings** tab (collections → upload → link area+discipline → review
