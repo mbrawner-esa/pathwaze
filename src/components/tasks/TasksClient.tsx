@@ -1245,6 +1245,7 @@ export function TasksClient({ tasks: initialTasks, projects, users }: { tasks: a
                         onChange={html => setEditForm(f => ({ ...f, description: html }))}
                         placeholder="Add additional context (optional)"
                         minHeight={120}
+                        mentionUsers={users}
                       />
                     </div>
                   </div>
@@ -1732,6 +1733,7 @@ export function TasksClient({ tasks: initialTasks, projects, users }: { tasks: a
                       onChange={html => setForm(f => ({ ...f, description: html }))}
                       placeholder="Add additional context (optional)"
                       minHeight={88}
+                      mentionUsers={users}
                     />
                   </div>
                 </div>

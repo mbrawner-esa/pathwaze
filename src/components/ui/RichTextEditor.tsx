@@ -12,7 +12,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { List, ListOrdered, Bold, Link2 } from 'lucide-react'
 
-interface MentionUser { id: string; full_name: string }
+interface MentionUser { id: string; full_name?: string | null }
 
 export function RichTextEditor({
   value,
@@ -55,7 +55,7 @@ export function RichTextEditor({
   const matches = (() => {
     if (!menu || !mentionUsers) return [] as MentionUser[]
     const q = menu.query.toLowerCase()
-    return mentionUsers.filter(u => u.full_name.toLowerCase().includes(q)).slice(0, 6)
+    return mentionUsers.filter(u => (u.full_name || '').toLowerCase().includes(q)).slice(0, 6)
   })()
 
   function detectMention() {
@@ -88,7 +88,7 @@ export function RichTextEditor({
     span.className = 'mention'
     span.setAttribute('data-uid', u.id)
     span.setAttribute('contenteditable', 'false')
-    span.textContent = '@' + u.full_name
+    span.textContent = '@' + (u.full_name || 'user')
     del.insertNode(span)
     const space = document.createTextNode(' ')
     span.after(space)
@@ -135,7 +135,7 @@ export function RichTextEditor({
             <button key={u.id} type="button"
               onMouseDown={e => { e.preventDefault(); insertMention(u) }}
               className={'w-full text-left px-3 py-1.5 text-[13px] ' + (i === menu.active ? 'bg-[#EFF4FA] text-[#2C5485]' : 'text-[#181818] hover:bg-[#f8fafc]')}>
-              @{u.full_name}
+              @{u.full_name || 'user'}
             </button>
           ))}
         </div>

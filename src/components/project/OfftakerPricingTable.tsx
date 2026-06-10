@@ -745,6 +745,7 @@ export function OfftakerPricingTable({
                     <RichTextEditor
                       value={editForm.notes ?? ''}
                       onChange={html => setEditForm(f => ({ ...f, notes: html }))}
+                      mentionUsers={users}
                     />
                   ) : open.notes ? (
                     <NotesRender source={open.notes} />
