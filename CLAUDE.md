@@ -73,9 +73,18 @@ activity_log, users, invited_emails, investor_access.
 Site assets: buildings, meters, systems, permits, stakeholders, dataroom_docs.
 Tasks: tasks, task_threads, task_files, task_links, stakeholder_tasks.
 Pricing: offtaker_pricing, offtaker_pricing_threads.
+Drawings: drawing_collections (named, owned "drawing types"), action_plans /
+action_plan_sections / action_plan_items (review-checklist templates; the
+As-Built plan is seeded), drawings (linked to a collection + area/building +
+discipline), drawing_reviews (one per drawing), review_findings (disposition,
+finding, sheet_ref, sow_action, delegated_task_id, rfi_id, is_override),
+set_universal_findings (Universal answers shared per area+collection "set").
+RFIs: rfis (per-project numbered), rfi_responses, rfi_distribution, rfi_links
+(polymorphic), rfi_response_files.
 
 See `supabase/migrations/` for the canonical schema — each migration is
-numbered (001…031+) and is idempotent (CREATE/ALTER … IF NOT EXISTS).
+numbered (001…041+) and is idempotent (CREATE/ALTER … IF NOT EXISTS).
+Storage buckets: task-files, project-files, drawings, rfi-files.
 
 ## Roles
 - **admin** — full access, only role that can archive or delete projects
@@ -93,7 +102,13 @@ server route handlers (defense in depth).
 - /projects — project list with filters (archived projects hidden by default)
 - /projects/[id] — project detail (Threads / Site / Utility / Stakeholders /
   Permitting / Technical / Financial tabs; tab is honored via ?tab=)
-- /tasks — task list + kanban; visibility + task-type subscription filters
+  (project detail also has a **Drawings** tab: drawing collections → upload →
+  link area+discipline → per-drawing review against the action plan → findings →
+  Delegate to a task / Create RFI)
+- /tasks — task list + kanban; visibility + task-type subscription filters.
+  `?id=<taskId>` deep-links and opens that task's drawer.
+- /rfis — Procore-style RFI log (master nav); /rfis/[id] — RFI detail
+  (ball-in-court, linkages, responses, official-response-closes)
 - /stakeholders — CRM directory
 - /dataroom — health dashboard
 - /settings — profile + notification prefs + task subscriptions
@@ -101,6 +116,10 @@ server route handlers (defense in depth).
 - /admin/archived — view + restore + delete archived projects (admin only)
 - /investor/[token] — investor read-only portal
 - /email-logo — edge route that rasterizes the lockup PNG for emails (public)
+- /api/cron/rfi-reminders — daily Vercel cron; DMs/emails the ball-in-court on
+  overdue open RFIs. Gated by `CRON_SECRET` (Vercel sends it as a Bearer header);
+  supports `?dry=1`. Uses a **service-role** client with `cache: 'no-store'`
+  (Next.js was caching the PostgREST GET → stale/empty results).
 
 ## Conventions
 - All DB queries via Supabase client
@@ -114,6 +133,24 @@ server route handlers (defense in depth).
 - Slack-style mentions / channel refs / URLs in thread messages render via
   `src/components/ui/MessageText.tsx`. Pass the active users list so `<@USERID>`
   tokens resolve to display names.
+- **Two mention systems coexist** (don't conflate): (a) Slack `<@USERID>` tokens
+  in thread/comment composers, rendered by `MessageText`; (b) `RichTextEditor`
+  `@`-autocomplete (pass `mentionUsers`) which inserts
+  `<span class="mention" data-uid="…">` — used in RFI responses + task/notes
+  editors. Parse the latter with `parseMentions()` to notify.
+- **Notifications**: emails go through the shared branded shell in
+  `src/lib/email.ts` (`sendNotificationEmail` — same shell as invite/task emails;
+  keep all new notification emails on it). Slack DMs + activity-feed +
+  email helpers for RFIs/mentions/risk live in `src/lib/rfi-notify.ts`
+  (`logActivity`, `parseMentions`, `emailUser`, `emailStakeholder`); the
+  canonical activity logger is `src/lib/activity.ts`. The in-app bell reads the
+  global recent `activity_log` feed (not per-user inboxes) — targeted notice is
+  the email/Slack DM.
+- **Drawings/RFIs**: a drawing belongs to a `drawing_collection` (drawing type)
+  and is reviewed against that collection's `action_plan`. Universal questions
+  sync across the area+collection "set" via `set_universal_findings` (per-drawing
+  override = a `review_findings` row with `is_override`). A finding can Delegate
+  (→ Engineering task, `delegated_task_id`) or Create RFI (`rfi_id`).
 
 ## Team
 - Morgan Brawner (admin): MB, #2F3E50
