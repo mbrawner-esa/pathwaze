@@ -105,6 +105,47 @@ export function DrawerSelect({
   )
 }
 
+// ── Multi-select (checkbox list) for many-to-many links ──────────
+// options: [{ value, label }]; selected/onChange work on an array of values.
+export function DrawerMultiSelect({
+  label, options, selected, onChange, required = false, emptyText = 'No options available.',
+}: {
+  label: string
+  options: { value: string; label: string }[]
+  selected: string[]
+  onChange: (v: string[]) => void
+  required?: boolean
+  emptyText?: string
+}) {
+  function toggle(value: string) {
+    onChange(selected.includes(value) ? selected.filter(v => v !== value) : [...selected, value])
+  }
+  return (
+    <div className="mb-3">
+      <label className="block text-[11px] font-semibold text-[#3E3E3C] mb-1.5">
+        {label} {required && <span className="text-[#dc2626]">*</span>}
+      </label>
+      {options.length === 0 ? (
+        <p className="text-[12px] text-[#94a3b8] py-1">{emptyText}</p>
+      ) : (
+        <div className="rounded-md border border-[#e2e8f0] divide-y divide-[#f1f5f9] max-h-44 overflow-y-auto">
+          {options.map(o => (
+            <label key={o.value} className="flex items-center gap-2.5 px-3 py-2 text-[13px] text-[#181818] cursor-pointer hover:bg-[#f8fafc]">
+              <input
+                type="checkbox"
+                checked={selected.includes(o.value)}
+                onChange={() => toggle(o.value)}
+                className="h-3.5 w-3.5 rounded border-[#cbd5e1] text-[#2C5485] focus:ring-[#70A0D0]/30"
+              />
+              <span className="truncate">{o.label}</span>
+            </label>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── Card-style section wrapper for grouping drawer fields ────────
 export function Section({ title, children }: { title: string; children: ReactNode }) {
   return (

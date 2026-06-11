@@ -25,7 +25,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
     supabase.from('users').select('id, full_name, avatar_url, slack_user_id').eq('status', 'active').order('full_name'),
     supabase.from('buildings').select('*').eq('project_id', id).order('created_at'),
     supabase.from('meters').select('*').eq('project_id', id).order('created_at'),
-    supabase.from('systems').select('*').eq('project_id', id).order('created_at'),
+    supabase.from('systems').select('*, system_buildings(building_id)').eq('project_id', id).order('created_at'),
     supabase.from('project_threads').select('*').eq('project_id', id).order('created_at', { ascending: true }),
     supabase.from('project_notes').select('*, user:users(full_name, avatar_url)').eq('project_id', id).order('created_at', { ascending: false }),
     supabase.from('offtaker_pricing').select('*').eq('project_id', id).order('created_at', { ascending: true }),
@@ -39,6 +39,16 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
   ] = results
 
   if (!project) notFound()
+
+  // Flatten the system_buildings join into a building_ids array on each system
+  // (the many-to-many "linked areas"). building_id stays as the primary area.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const systemsWithAreas = ((systems ?? []) as any[]).map(s => ({
+    ...s,
+    building_ids: Array.isArray(s.system_buildings)
+      ? s.system_buildings.map((j: { building_id: string }) => j.building_id)
+      : [],
+  }))
 
   // Build the project activity feed:
   // - activity_log entries where entity_id = this project OR metadata.project_id = this project
@@ -205,7 +215,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
         docs={docs ?? []}
         buildings={buildings ?? []}
         meters={meters ?? []}
-        systems={systems ?? []}
+        systems={systemsWithAreas}
         threads={threads ?? []}
         activity={activity}
         users={users ?? []}

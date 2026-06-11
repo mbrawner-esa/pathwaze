@@ -37,6 +37,7 @@ export interface Meter {
 export interface SystemRow {
   id: string
   building_id: string | null
+  building_ids: string[]
   name: string
   size_kwdc: number
   design_status: string
@@ -173,7 +174,7 @@ export function BuildingsTable({
 
   const selected = typeof open === 'object' ? open : null
   const linkedMeters  = selected ? meters.filter(m => m.building_id === selected.id) : []
-  const linkedSystems = selected ? systems.filter(s => s.building_id === selected.id) : []
+  const linkedSystems = selected ? systems.filter(s => (s.building_ids ?? []).includes(selected.id)) : []
 
   const showStructural = form.category === 'Building' || form.category === 'Garage' || form.category === 'Parking Lot'
   const showStories    = form.category === 'Building' || form.category === 'Garage'

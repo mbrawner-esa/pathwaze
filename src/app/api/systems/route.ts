@@ -43,6 +43,18 @@ export async function POST(request: NextRequest) {
     .single()
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+  // Many-to-many areas: write the system_buildings join rows.
+  const buildingIds: string[] = Array.isArray(body.building_ids)
+    ? body.building_ids.filter(Boolean)
+    : (body.building_id ? [body.building_id] : [])
+  if (buildingIds.length) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { error: joinErr } = await (supabase.from('system_buildings') as any)
+      .insert(buildingIds.map(bid => ({ system_id: data.id, building_id: bid })))
+    if (joinErr) return NextResponse.json({ error: joinErr.message }, { status: 500 })
+  }
+
   await logActivity(supabase, user, { entity_type: 'system', entity_id: data.id, action: 'created', project_id: data.project_id, metadata: { name: data.name } })
   return NextResponse.json({ system: data })
 }

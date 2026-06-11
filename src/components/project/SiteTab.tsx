@@ -156,7 +156,7 @@ export function SiteTab({ project, buildings = [], meters = [], systems = [] }: 
         projectId={p.id}
         buildings={buildings}
         meters={meters.map(m => ({ id: m.id, building_id: m.building_id, meter_num: m.meter_num, account_num: m.account_num }))}
-        systems={systems.map(s => ({ id: s.id, building_id: s.building_id, name: s.name, size_kwdc: s.size_kwdc, design_status: s.design_status }))}
+        systems={systems.map(s => ({ id: s.id, building_id: s.building_id, building_ids: s.building_ids ?? [], name: s.name, size_kwdc: s.size_kwdc, design_status: s.design_status }))}
       />
     </div>
   )

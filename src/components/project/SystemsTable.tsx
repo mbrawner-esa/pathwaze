@@ -2,7 +2,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Plus, Trash2 } from 'lucide-react'
-import { RowDrawer, DrawerInput, DrawerSelect, Section } from './_RowDrawer'
+import { RowDrawer, DrawerInput, DrawerSelect, DrawerMultiSelect, Section } from './_RowDrawer'
 import type { Building } from './BuildingsTable'
 import type { Meter } from './MetersTable'
 
@@ -10,6 +10,7 @@ export interface SystemRow {
   id: string
   project_id: string
   building_id: string | null
+  building_ids: string[]
   meter_id: string | null
   name: string
   design_version: string
@@ -67,7 +68,7 @@ export function SystemsTable({
   const blank = {
     name: '', design_version: 'v1.0', design_status: 'Not Started', system_type: '',
     size_kwdc: '', size_kwac: '', yield_kwh_kwp: '',
-    building_id: '', meter_id: '',
+    building_ids: [] as string[], meter_id: '',
     num_modules: '', module_wattage: '', num_inverters: '', inverter_rating: '',
     design_url: '',
   }
@@ -81,7 +82,7 @@ export function SystemsTable({
       size_kwdc: s.size_kwdc?.toString() ?? '',
       size_kwac: s.size_kwac?.toString() ?? '',
       yield_kwh_kwp: s.yield_kwh_kwp?.toString() ?? '',
-      building_id: s.building_id ?? '', meter_id: s.meter_id ?? '',
+      building_ids: s.building_ids ?? [], meter_id: s.meter_id ?? '',
       num_modules: s.num_modules?.toString() ?? '',
       module_wattage: s.module_wattage?.toString() ?? '',
       num_inverters: s.num_inverters?.toString() ?? '',
@@ -107,7 +108,8 @@ export function SystemsTable({
       size_kwac: Number(form.size_kwac) || 0,
       yield_kwh_kwp: yld || null,
       annual_production_kwh: Math.round(dc * yld),
-      building_id: form.building_id || null,
+      building_ids: form.building_ids,
+      building_id: form.building_ids[0] || null,
       meter_id: form.meter_id || null,
       num_modules: form.num_modules ? Number(form.num_modules) : null,
       module_wattage: form.module_wattage ? Number(form.module_wattage) : null,
@@ -137,8 +139,11 @@ export function SystemsTable({
   }
 
   const selected = typeof open === 'object' ? open : null
-  const buildingName = (id: string | null) => buildings.find(b => b.id === id)?.name ?? '—'
-  const meterName    = (id: string | null) => meters.find(m => m.id === id)?.meter_num ?? '—'
+  const areaNames = (ids: string[]) => {
+    const names = ids.map(id => buildings.find(b => b.id === id)?.name).filter(Boolean)
+    return names.length ? names.join(', ') : '—'
+  }
+  const meterName = (id: string | null) => meters.find(m => m.id === id)?.meter_num ?? '—'
 
   return (
     <div className="card overflow-hidden">
@@ -178,7 +183,7 @@ export function SystemsTable({
                   <td className="px-4 py-3 text-[#3E3E3C]">{s.system_type ?? '—'}</td>
                   <td className="px-4 py-3 text-right text-[#3E3E3C]">{s.size_kwdc?.toLocaleString() ?? '—'}</td>
                   <td className="px-4 py-3 text-right text-[#3E3E3C]">{s.size_kwac?.toLocaleString() ?? '—'}</td>
-                  <td className="px-4 py-3 text-[#3E3E3C]">{buildingName(s.building_id)}</td>
+                  <td className="px-4 py-3 text-[#3E3E3C]">{areaNames(s.building_ids ?? [])}</td>
                   <td className="px-4 py-3 text-[#3E3E3C]">{meterName(s.meter_id)}</td>
                   <td className="px-4 py-3 text-right text-[#3E3E3C]">{s.annual_production_kwh ? `${s.annual_production_kwh.toLocaleString()}` : '—'}</td>
                   <td className="px-4 py-3 text-right text-[#3E3E3C]" title="kWh/kWp">{yld ? `${yld.toLocaleString()}` : '—'}</td>
@@ -222,11 +227,13 @@ export function SystemsTable({
         </Section>
 
         <Section title="Linkage">
-          <DrawerSelect label="Linked Area" value={buildings.find(b => b.id === form.building_id)?.name ?? ''} options={buildings.map(b => b.name)}
-            onChange={v => {
-              const b = buildings.find(b => b.name === v)
-              setForm(f => ({ ...f, building_id: b?.id ?? '' }))
-            }} />
+          <DrawerMultiSelect
+            label="Linked Areas"
+            options={buildings.map(b => ({ value: b.id, label: b.name }))}
+            selected={form.building_ids}
+            onChange={ids => setForm(f => ({ ...f, building_ids: ids }))}
+            emptyText="No areas added yet — add them in the Site tab."
+          />
           <DrawerSelect label="Linked Meter" value={meters.find(m => m.id === form.meter_id)?.meter_num ?? ''} options={meters.map(m => m.meter_num)}
             onChange={v => {
               const m = meters.find(m => m.meter_num === v)
