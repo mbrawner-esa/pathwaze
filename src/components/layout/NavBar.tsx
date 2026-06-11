@@ -7,6 +7,7 @@ import {
   BriefcaseIcon,
   ClipboardDocumentCheckIcon,
   UserGroupIcon,
+  QuestionMarkCircleIcon,
 } from '@heroicons/react/24/solid'
 import { createClient } from '@/lib/supabase/client'
 import { useState, useEffect } from 'react'
@@ -46,6 +47,7 @@ function notifHref(n: Notification): string | null {
   switch (n.entity_type) {
     case 'project':     return `/projects/${n.entity_id}`
     case 'task':        return `/tasks?id=${n.entity_id}`
+    case 'rfi':         return `/rfis/${n.entity_id}`
     case 'stakeholder': return `/stakeholders?id=${n.entity_id}`
     // permits/meters/buildings/systems live inside a project; metadata may carry project_id
     case 'permit':
@@ -64,6 +66,7 @@ const NAV_ITEMS = [
   { label: 'Projects', href: '/projects', Icon: BriefcaseIcon },
   { label: 'Tasks', href: '/tasks', Icon: ClipboardDocumentCheckIcon },
   { label: 'Stakeholders', href: '/stakeholders', Icon: UserGroupIcon },
+  { label: 'RFIs', href: '/rfis', Icon: QuestionMarkCircleIcon },
   // Dataroom hidden until Box integration is built
   // { label: 'Dataroom', href: '/dataroom', Icon: FolderIcon },
 ]

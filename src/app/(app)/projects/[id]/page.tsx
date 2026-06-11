@@ -89,6 +89,53 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
     userRole = me?.role ?? 'team'
   }
 
+  // Drawings tab: drawings (with area + review) + the As-Built action plan's sections (with item counts).
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: drawings } = await supabase
+    .from('drawings')
+    .select('*, area:buildings(id, name, category), review:drawing_reviews(id, status, reviewer_id, due_date)')
+    .eq('project_id', id)
+    .order('uploaded_at', { ascending: false }) as any
+
+  // Drawing collections (with owner) + each collection's action-plan sections (with item counts).
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: collectionsRaw } = await supabase
+    .from('drawing_collections')
+    .select('*, owner:users!owner_id(id, full_name, avatar_url)')
+    .eq('is_active', true)
+    .order('sort_order') as any
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const planIds = Array.from(new Set(((collectionsRaw ?? []) as any[]).map(c => c.action_plan_id).filter(Boolean)))
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const sectionsByPlan: Record<string, any[]> = {}
+  if (planIds.length) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: secs } = await supabase
+      .from('action_plan_sections')
+      .select('action_plan_id, key, label, is_universal, sort_order, items:action_plan_items(count)')
+      .in('action_plan_id', planIds)
+      .order('sort_order') as any
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    for (const s of (secs ?? []) as any[]) {
+      ;(sectionsByPlan[s.action_plan_id] ??= []).push({
+        key: s.key, label: s.label, is_universal: s.is_universal,
+        item_count: Array.isArray(s.items) ? (s.items[0]?.count ?? 0) : 0,
+      })
+    }
+  }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const collections = ((collectionsRaw ?? []) as any[]).map(c => ({
+    ...c, sections: c.action_plan_id ? (sectionsByPlan[c.action_plan_id] ?? []) : [],
+  }))
+
+  // Review types = available action plans (drives the "Select review type" dropdown).
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: reviewTypesRaw } = await supabase
+    .from('action_plans').select('id, name').eq('is_active', true).order('name') as any
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const reviewTypes = ((reviewTypesRaw ?? []) as any[]).map(p => ({ id: p.id, name: p.name }))
+
   return (
     <div>
       {/* Sticky breadcrumb bar — full-width bg, inner content constrained */}
@@ -163,6 +210,9 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
         activity={activity}
         users={users ?? []}
         pricingRows={pricingRows ?? []}
+        drawings={drawings ?? []}
+        collections={collections}
+        reviewTypes={reviewTypes}
       />
     </div>
   )

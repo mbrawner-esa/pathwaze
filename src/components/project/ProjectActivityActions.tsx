@@ -25,8 +25,8 @@ export function ProjectActivityActions({ projectId, projectName, users }: { proj
       </div>
       {active && active !== 'task' && (
         <div className="px-4 py-4 bg-[#fafbfc] border-b border-[#f1f5f9]">
-          {active === 'note' && <NoteForm projectId={projectId} type="note" onClose={() => setActive(null)} />}
-          {active === 'event' && <NoteForm projectId={projectId} type="event" onClose={() => setActive(null)} />}
+          {active === 'note' && <NoteForm projectId={projectId} type="note" users={users} onClose={() => setActive(null)} />}
+          {active === 'event' && <NoteForm projectId={projectId} type="event" users={users} onClose={() => setActive(null)} />}
           {active === 'file' && <FileForm projectId={projectId} onClose={() => setActive(null)} />}
         </div>
       )}
@@ -137,6 +137,7 @@ function NewTaskModal({ projectId, projectName, users, onClose }: { projectId: s
                 onChange={html => setForm(f => ({ ...f, description: html }))}
                 placeholder="Add additional context (optional)"
                 minHeight={88}
+                mentionUsers={users}
               />
             </div>
           </div>
@@ -204,7 +205,7 @@ function SectionHeader({ children }: { children: React.ReactNode }) {
 }
 
 // ── Note + Event form (shared) ───────────────────────────────────────
-function NoteForm({ projectId, type, onClose }: { projectId: string; type: 'note' | 'event'; onClose: () => void }) {
+function NoteForm({ projectId, type, users, onClose }: { projectId: string; type: 'note' | 'event'; users: User[]; onClose: () => void }) {
   const router = useRouter()
   const [title, setTitle] = useState('')
   const [body, setBody] = useState('')
@@ -239,6 +240,7 @@ function NoteForm({ projectId, type, onClose }: { projectId: string; type: 'note
         onChange={setBody}
         placeholder={type === 'event' ? 'Notes about this event' : 'Write a note…'}
         minHeight={96}
+        mentionUsers={users}
       />
       {err && <div className="mt-2 px-3 py-2 bg-[#fef2f2] border border-[#fecaca] rounded text-[12px] text-[#991b1b]">{err}</div>}
       <CloseRow onClose={onClose} busy={busy} onSubmit={save} label={type === 'event' ? 'Add event' : 'Add note'} />

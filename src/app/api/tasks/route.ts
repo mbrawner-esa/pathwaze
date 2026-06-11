@@ -1,6 +1,8 @@
 import { createClient } from '@/lib/supabase/server'
 import { NextRequest, NextResponse } from 'next/server'
 import { sendTaskAssignedEmail } from '@/lib/email'
+import { parseMentions, emailUser } from '@/lib/rfi-notify'
+import { appUrl } from '@/lib/slack'
 
 export async function POST(req: NextRequest) {
   const supabase = await createClient()
@@ -36,6 +38,19 @@ export async function POST(req: NextRequest) {
     notifyTaskAssigned(supabase, data, user.id).catch(e =>
       console.error('[task POST] task-assigned email failed:', e)
     )
+  }
+
+  // @-mentions in the task description → email each mentioned user (best-effort).
+  // Skipped for private tasks (only the creator can see them).
+  if (data.visibility !== 'private' && data.description) {
+    const mentioned = parseMentions(data.description).filter((uid: string) => uid !== user.id)
+    for (const uid of mentioned) {
+      emailUser(supabase, uid, {
+        subject: `You were mentioned on a task`, heading: 'You were mentioned',
+        message: `You were mentioned on the task <b>${data.title}</b>.`,
+        ctaLabel: 'Open task', ctaUrl: appUrl(`/tasks?id=${data.id}`),
+      }).catch(e => console.error('[task POST] mention email failed:', e))
+    }
   }
 
   return NextResponse.json(data)

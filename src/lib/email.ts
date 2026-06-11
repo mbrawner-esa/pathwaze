@@ -59,6 +59,41 @@ export async function sendTaskCompletedEmail(params: TaskCompletedEmailParams): 
   })
 }
 
+interface NotificationEmailParams {
+  to: string
+  subject: string
+  heading: string
+  /** Inner HTML (links allowed; built by us, not user input). */
+  message: string
+  recipientName?: string | null
+  ctaLabel?: string
+  ctaUrl?: string
+}
+
+/** Generic branded notification email (RFIs, mentions, risk, reminders, …). Uses the same shell as invite/task emails. */
+export async function sendNotificationEmail(p: NotificationEmailParams): Promise<SendResult> {
+  return send({ to: p.to, subject: p.subject, html: notificationHtml(p) })
+}
+
+function notificationHtml(p: NotificationEmailParams): string {
+  return shell(`
+    <tr>
+      <td style="padding:32px 32px 8px 32px;">
+        <h1 style="margin:0 0 ${p.recipientName ? '6' : '14'}px 0;font-size:20px;font-weight:700;color:#181818;line-height:1.3;">${escapeHtml(p.heading)}</h1>
+        ${p.recipientName ? `<p style="margin:0 0 18px 0;font-size:13px;color:#706E6B;">Hi ${escapeHtml(firstName(p.recipientName))} —</p>` : ''}
+        <div style="padding:16px 18px;background:#f8fafc;border-left:3px solid #70A0D0;border-radius:6px;margin-bottom:${p.ctaUrl ? '22' : '8'}px;">
+          <div style="font-size:14px;color:#3E3E3C;line-height:1.55;">${p.message}</div>
+        </div>
+        ${p.ctaUrl ? ctaButton(p.ctaLabel || 'Open in Pathwaze', p.ctaUrl) : ''}
+      </td>
+    </tr>
+    <tr>
+      <td style="padding:24px 32px;background:#fafbfc;border-top:1px solid #e2e8f0;">
+        <p style="margin:0;font-size:11.5px;color:#94a3b8;line-height:1.5;">Manage your notifications in <a href="${appUrl()}/settings" style="color:#2C5485;">Settings</a>.</p>
+      </td>
+    </tr>`)
+}
+
 // ──────────────────────────── Resend helper ───────────────────────────
 
 async function send(args: { to: string; subject: string; html: string }): Promise<SendResult> {
