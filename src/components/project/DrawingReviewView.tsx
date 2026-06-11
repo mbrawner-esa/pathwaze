@@ -120,7 +120,8 @@ export function DrawingReviewView({ drawingId, users = [], stakeholders = [], pr
   )
 
   const d = data.drawing
-  const disciplineLabel = (data.sections.find((s: Any) => !s.is_universal)?.label) ?? null
+  // A drawing can carry multiple disciplines — show every non-universal section's label.
+  const disciplineLabels: string[] = (data.sections as Any[]).filter(s => !s.is_universal).map(s => s.label)
 
   return (
     <div>
@@ -128,10 +129,17 @@ export function DrawingReviewView({ drawingId, users = [], stakeholders = [], pr
       <div className="flex items-start justify-between gap-3 mb-3 flex-wrap">
         <div>
           <button onClick={onBack} className="text-[#70A0D0] font-semibold text-[12.5px] flex items-center gap-1 mb-1.5"><ChevronLeft size={14} /> Back to {d.collection?.name ?? 'drawings'}</button>
-          <div className="text-[12px] text-[#706E6B]">{d.area?.name}{d.area ? ' · ' + d.area.category : ''}{disciplineLabel ? ' › ' + disciplineLabel : ''}</div>
+          <div className="text-[12px] text-[#706E6B]">{d.area?.name}{d.area ? ' · ' + d.area.category : ''}{disciplineLabels.length ? ' › ' + disciplineLabels.join(' + ') : ''}</div>
           <div className="text-[18px] font-bold text-[#080707] flex items-center gap-2 mt-0.5">
             <FileText size={18} className="text-[#b91c1c]" /> {d.file_name}
           </div>
+          {disciplineLabels.length > 0 && (
+            <div className="flex items-center gap-1.5 flex-wrap mt-1.5">
+              {disciplineLabels.map(lbl => (
+                <span key={lbl} className="text-[9.5px] font-bold px-[7px] py-0.5 rounded border border-[#DDDBDA] bg-[#eef2f6] text-[#3E3E3C]">{lbl}</span>
+              ))}
+            </div>
+          )}
         </div>
         <button className="btn-secondary" onClick={viewPdf}><ExternalLink size={13} /> View PDF</button>
       </div>

@@ -14,6 +14,14 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   for (const k of ['area_id', 'discipline_key', 'set_label', 'drawing_type', 'file_name'] as const) {
     if (k in body) patch[k] = body[k]
   }
+
+  // discipline_keys is a virtual field (synced into the drawing_disciplines join
+  // table), not a column on drawings. When present, keep drawings.discipline_key
+  // pointed at the primary (first) discipline for back-compat (DEPRECATED).
+  const hasKeys = Array.isArray(body.discipline_keys)
+  const keys: string[] = hasKeys ? (body.discipline_keys as string[]).filter(Boolean) : []
+  if (hasKeys) patch.discipline_key = keys[0] ?? null
+
   if (Object.keys(patch).length === 0) {
     return NextResponse.json({ error: 'no fields to update' }, { status: 400 })
   }
@@ -25,17 +33,35 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     .single()
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
-  // Once a drawing has both an area and a discipline, it's reviewable — create the review.
-  if (data?.area_id && data?.discipline_key) {
+  // Re-sync the many-to-many disciplines (delete-then-insert) when provided.
+  if (hasKeys) {
+    await supabase.from('drawing_disciplines').delete().eq('drawing_id', id)
+    if (keys.length) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { error: joinErr } = await (supabase.from('drawing_disciplines') as any)
+        .insert(keys.map(k => ({ drawing_id: id, discipline_key: k })))
+      if (joinErr) return NextResponse.json({ error: joinErr.message }, { status: 500 })
+    }
+  }
+
+  // Once a drawing has an area and at least one discipline, it's reviewable — create the review.
+  if (data?.area_id && (data?.discipline_key || keys.length)) {
     await ensureReview(supabase, data)
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: fresh } = await (supabase.from('drawings') as any)
-    .select('*, area:buildings(id, name, category), review:drawing_reviews(id, status, reviewer_id, due_date)')
+    .select('*, area:buildings(id, name, category), review:drawing_reviews(id, status, reviewer_id, due_date), drawing_disciplines(discipline_key)')
     .eq('id', id).single()
 
-  return NextResponse.json(fresh ?? data)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const out = fresh ?? data
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const discipline_keys = Array.isArray((out as any)?.drawing_disciplines)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ? (out as any).drawing_disciplines.map((j: { discipline_key: string }) => j.discipline_key)
+    : keys
+  return NextResponse.json({ ...out, discipline_keys })
 }
 
 // DELETE /api/drawings/[id]

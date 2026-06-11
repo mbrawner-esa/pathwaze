@@ -3,6 +3,7 @@ import { useRef, useState } from 'react'
 import { createClient as createBrowserClient } from '@/lib/supabase/client'
 import { Upload, FileText, ChevronRight, Trash2, Plus, Pencil } from 'lucide-react'
 import { DrawingReviewView } from './DrawingReviewView'
+import { DrawerMultiSelect } from './_RowDrawer'
 import { usePrompt } from '@/components/ui/usePrompt'
 
 // ── Types ────────────────────────────────────────────────────────────
@@ -24,6 +25,7 @@ export interface Drawing {
   area_id: string | null
   drawing_type: string
   discipline_key: string | null
+  discipline_keys: string[]
   file_name: string
   set_label: string | null
   uploaded_at: string
@@ -115,10 +117,10 @@ export function DrawingsTab({ projectId, drawings: initial, areas, collections: 
     }
   }
 
-  async function linkDrawing(id: string, area_id: string, discipline_key: string | null) {
+  async function linkDrawing(id: string, area_id: string, discipline_keys: string[]) {
     const res = await fetch(`/api/drawings/${id}`, {
       method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ area_id, discipline_key }),
+      body: JSON.stringify({ area_id, discipline_keys }),
     })
     if (res.ok) { const row = await res.json(); setDrawings(prev => prev.map(d => (d.id === id ? row : d))) }
     else { const b = await res.json().catch(() => ({})); setError(b?.error || 'Failed to link drawing') }
@@ -170,12 +172,14 @@ export function DrawingsTab({ projectId, drawings: initial, areas, collections: 
   const disciplines = active.sections.filter(s => !s.is_universal)
   const hasDisc = disciplines.length > 0
   const universalCount = active.sections.find(s => s.is_universal)?.item_count ?? 0
-  const disciplineLabel = (k: string | null) => (k ? active.sections.find(s => s.key === k)?.label ?? k : null)
-  const scopeCount = (k: string | null) => universalCount + (k ? active.sections.find(s => s.key === k)?.item_count ?? 0 : 0)
+  const disciplineLabel = (k: string) => active.sections.find(s => s.key === k)?.label ?? k
+  // Review scope for a drawing = Universal items + the sum of every selected discipline's items.
+  const scopeCount = (keys: string[]) =>
+    universalCount + keys.reduce((sum, k) => sum + (active.sections.find(s => s.key === k)?.item_count ?? 0), 0)
 
   const inCollection = drawings.filter(d => d.collection_id === active.id)
-  const needsLinking = inCollection.filter(d => !d.area_id || (hasDisc && !d.discipline_key))
-  const linked = inCollection.filter(d => d.area_id && (!hasDisc || d.discipline_key))
+  const needsLinking = inCollection.filter(d => !d.area_id || (hasDisc && (d.discipline_keys?.length ?? 0) === 0))
+  const linked = inCollection.filter(d => d.area_id && (!hasDisc || (d.discipline_keys?.length ?? 0) > 0))
 
   return (
     <div>
@@ -241,9 +245,11 @@ export function DrawingsTab({ projectId, drawings: initial, areas, collections: 
                   <div className="flex-1 min-w-0">
                     <div className="text-[13.5px] font-bold text-[#181818] flex items-center gap-2 flex-wrap">
                       {d.file_name}
-                      {hasDisc && d.discipline_key && <>
-                        <span className="text-[9.5px] font-bold px-[7px] py-0.5 rounded border border-[#DDDBDA] bg-[#eef2f6] text-[#3E3E3C]">{disciplineLabel(d.discipline_key)}</span>
-                        <span className="text-[10.5px] text-[#706E6B] font-semibold">Universal + {disciplineLabel(d.discipline_key)} ({scopeCount(d.discipline_key)})</span>
+                      {hasDisc && (d.discipline_keys?.length ?? 0) > 0 && <>
+                        {d.discipline_keys.map(k => (
+                          <span key={k} className="text-[9.5px] font-bold px-[7px] py-0.5 rounded border border-[#DDDBDA] bg-[#eef2f6] text-[#3E3E3C]">{disciplineLabel(k)}</span>
+                        ))}
+                        <span className="text-[10.5px] text-[#706E6B] font-semibold">Universal + {d.discipline_keys.map(disciplineLabel).join(' + ')} ({scopeCount(d.discipline_keys)})</span>
                       </>}
                     </div>
                     <div className="text-[11.5px] text-[#706E6B] mt-0.5">{d.set_label ? d.set_label + ' · ' : ''}{new Date(d.uploaded_at).toLocaleDateString()}</div>
@@ -356,31 +362,40 @@ function Landing({ collections, drawings, areas, users, reviewTypes, onOpen, onC
 // ── Needs-linking row ──────────────────────────────────────────────────
 function LinkRow({ d, areas, disciplines, hasDisc, onLink, onRemove, onRename }: {
   d: Drawing; areas: Area[]; disciplines: PlanSection[]; hasDisc: boolean
-  onLink: (id: string, area: string, disc: string | null) => void
+  onLink: (id: string, area: string, discs: string[]) => void
   onRemove: (id: string) => void
   onRename: (d: Drawing) => void
 }) {
   const [area, setArea] = useState(d.area_id ?? '')
-  const [disc, setDisc] = useState(d.discipline_key ?? '')
+  const [discs, setDiscs] = useState<string[]>(d.discipline_keys ?? [])
   return (
-    <div className="flex items-center gap-[10px] px-[18px] py-[11px] border-b border-[#ECEBEA] last:border-b-0">
-      <FileText size={18} className="text-[#b91c1c] shrink-0" />
-      <span className="flex-1 min-w-0 text-[13px] font-semibold text-[#181818] truncate">{d.file_name}</span>
-      <button className="text-[#A8A8A8] hover:text-[#70A0D0] p-1" onClick={() => onRename(d)} title="Rename"><Pencil size={13} /></button>
-      <select value={area} onChange={e => setArea(e.target.value)} className="border border-[#DDDBDA] rounded-md px-2 py-1.5 text-[12px]">
-        <option value="">Assign area…</option>
-        {areas.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
-      </select>
-      {hasDisc && (
-        <select value={disc} onChange={e => setDisc(e.target.value)} className="border border-[#DDDBDA] rounded-md px-2 py-1.5 text-[12px]">
-          <option value="">Discipline…</option>
-          {disciplines.map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
+    <div className="px-[18px] py-[11px] border-b border-[#ECEBEA] last:border-b-0">
+      <div className="flex items-center gap-[10px]">
+        <FileText size={18} className="text-[#b91c1c] shrink-0" />
+        <span className="flex-1 min-w-0 text-[13px] font-semibold text-[#181818] truncate">{d.file_name}</span>
+        <button className="text-[#A8A8A8] hover:text-[#70A0D0] p-1" onClick={() => onRename(d)} title="Rename"><Pencil size={13} /></button>
+        <select value={area} onChange={e => setArea(e.target.value)} className="border border-[#DDDBDA] rounded-md px-2 py-1.5 text-[12px]">
+          <option value="">Assign area…</option>
+          {areas.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
         </select>
+        {!hasDisc && (
+          <button className="btn-secondary" disabled={!area} onClick={() => onLink(d.id, area, [])}>Link</button>
+        )}
+        <button className="text-[#A8A8A8] hover:text-[#b91c1c] p-1" onClick={() => onRemove(d.id)} title="Remove"><Trash2 size={14} /></button>
+      </div>
+      {hasDisc && (
+        <div className="mt-2.5 pl-[28px]">
+          <DrawerMultiSelect
+            label="Disciplines"
+            options={disciplines.map(s => ({ value: s.key, label: s.label }))}
+            selected={discs}
+            onChange={setDiscs}
+            required
+            emptyText="No disciplines in this review type."
+          />
+          <button className="btn-secondary" disabled={!area || discs.length === 0} onClick={() => onLink(d.id, area, discs)}>Create review</button>
+        </div>
       )}
-      <button className="btn-secondary" disabled={!area || (hasDisc && !disc)} onClick={() => onLink(d.id, area, hasDisc ? disc : null)}>
-        {hasDisc ? 'Create review' : 'Link'}
-      </button>
-      <button className="text-[#A8A8A8] hover:text-[#b91c1c] p-1" onClick={() => onRemove(d.id)} title="Remove"><Trash2 size={14} /></button>
     </div>
   )
 }

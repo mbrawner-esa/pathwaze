@@ -27,12 +27,24 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
 
   const planId = review.action_plan_id
 
-  // Scope = Universal section + the drawing's discipline section.
+  // A drawing can carry MANY disciplines (drawing_disciplines join). Scope =
+  // Universal section + EVERY selected discipline's section (merged, de-duplicated
+  // by the .in() filter). Fall back to the legacy single discipline_key column if
+  // the join is empty (pre-backfill safety).
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: discRows } = await (supabase.from('drawing_disciplines') as any)
+    .select('discipline_key').eq('drawing_id', id)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let disciplineKeys: string[] = ((discRows ?? []) as any[]).map(r => r.discipline_key).filter(Boolean)
+  if (disciplineKeys.length === 0 && drawing.discipline_key) disciplineKeys = [drawing.discipline_key]
+  const keyList = disciplineKeys.length ? disciplineKeys.join(',') : '___none___'
+
+  // Scope = Universal section + each of the drawing's discipline sections.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: sections } = await (supabase.from('action_plan_sections') as any)
     .select('id, key, label, is_universal, sort_order, items:action_plan_items(id, prompt, hunting_for, reviewer_hint, sort_order)')
     .eq('action_plan_id', planId)
-    .or(`is_universal.eq.true,key.eq.${drawing.discipline_key ?? '___none___'}`)
+    .or(`is_universal.eq.true,key.in.(${keyList})`)
     .order('sort_order')
 
   // Sort items within each section.
@@ -55,7 +67,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     universal = uni ?? []
   }
 
-  return NextResponse.json({ drawing, review, sections: sections ?? [], findings: findings ?? [], universal })
+  return NextResponse.json({ drawing: { ...drawing, discipline_keys: disciplineKeys }, review, sections: sections ?? [], findings: findings ?? [], universal })
 }
 
 // PATCH /api/drawings/[id]/review  → update review status

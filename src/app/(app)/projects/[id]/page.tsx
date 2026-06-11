@@ -101,11 +101,21 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
 
   // Drawings tab: drawings (with area + review) + the As-Built action plan's sections (with item counts).
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: drawings } = await supabase
+  const { data: drawingsRaw } = await supabase
     .from('drawings')
-    .select('*, area:buildings(id, name, category), review:drawing_reviews(id, status, reviewer_id, due_date)')
+    .select('*, area:buildings(id, name, category), review:drawing_reviews(id, status, reviewer_id, due_date), drawing_disciplines(discipline_key)')
     .eq('project_id', id)
     .order('uploaded_at', { ascending: false }) as any
+
+  // Flatten the drawing_disciplines join into a discipline_keys array on each drawing
+  // (the many-to-many disciplines). discipline_key stays as the primary discipline.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const drawings = ((drawingsRaw ?? []) as any[]).map(d => ({
+    ...d,
+    discipline_keys: Array.isArray(d.drawing_disciplines)
+      ? d.drawing_disciplines.map((j: { discipline_key: string }) => j.discipline_key)
+      : [],
+  }))
 
   // Drawing collections (with owner) + each collection's action-plan sections (with item counts).
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
