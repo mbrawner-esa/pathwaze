@@ -1,6 +1,7 @@
 'use client'
 // A "Received from" picker: choose an internal user or a stakeholder, or add a
 // new stakeholder inline. Emits (userId, stakeholderId) — only one is set.
+import { usePrompt } from '@/components/ui/usePrompt'
 type Any = any // eslint-disable-line @typescript-eslint/no-explicit-any
 
 export function ReceivedFromPicker({ users, stakeholders, projectId, userId, stakeholderId, onChange, onStakeholderCreated }: {
@@ -10,9 +11,10 @@ export function ReceivedFromPicker({ users, stakeholders, projectId, userId, sta
   onStakeholderCreated?: (s: Any) => void
 }) {
   const value = userId ? `u:${userId}` : stakeholderId ? `s:${stakeholderId}` : ''
+  const { prompt, dialog } = usePrompt()
 
   async function addStakeholder() {
-    const name = window.prompt('New stakeholder name')?.trim()
+    const name = (await prompt({ title: 'Add stakeholder', label: 'Stakeholder name', required: true, confirmLabel: 'Add' }))?.trim()
     if (!name) return
     const res = await fetch('/api/stakeholders', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -24,6 +26,7 @@ export function ReceivedFromPicker({ users, stakeholders, projectId, userId, sta
 
   return (
     <div className="flex items-center gap-2">
+      {dialog}
       <select value={value}
         onChange={e => {
           const v = e.target.value

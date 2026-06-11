@@ -46,3 +46,32 @@ export async function emailStakeholder(supabase: SB, stakeholderId: string, msg:
 
 export function rfiUrl(rfiId: string) { return appUrl(`/rfis/${rfiId}`) }
 export const rfiNo = (n: number) => '#' + String(n ?? 0).padStart(3, '0')
+
+/**
+ * Email everyone attached to an RFI — ball-in-court (user + stakeholder) and the
+ * full distribution list — deduped, skipping the actor. Best-effort. Used for
+ * status-change events (e.g. closed) and as the shared fan-out for responses.
+ */
+export async function notifyRfiParties(supabase: SB, rfiId: string, actorId: string | null, msg: NotifyMsg) {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: rfi } = await (supabase.from('rfis') as any)
+      .select('ball_in_court_user_id, ball_in_court_stakeholder_id').eq('id', rfiId).maybeSingle()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: dist } = await (supabase.from('rfi_distribution') as any)
+      .select('user_id, stakeholder_id').eq('rfi_id', rfiId)
+    const notifiedUsers = new Set<string>(actorId ? [actorId] : [])
+    const notifiedStakeholders = new Set<string>()
+    if (rfi?.ball_in_court_user_id && !notifiedUsers.has(rfi.ball_in_court_user_id)) {
+      notifiedUsers.add(rfi.ball_in_court_user_id); await emailUser(supabase, rfi.ball_in_court_user_id, msg)
+    }
+    if (rfi?.ball_in_court_stakeholder_id && !notifiedStakeholders.has(rfi.ball_in_court_stakeholder_id)) {
+      notifiedStakeholders.add(rfi.ball_in_court_stakeholder_id); await emailStakeholder(supabase, rfi.ball_in_court_stakeholder_id, msg)
+    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    for (const d of (dist ?? []) as any[]) {
+      if (d.user_id && !notifiedUsers.has(d.user_id)) { notifiedUsers.add(d.user_id); await emailUser(supabase, d.user_id, msg) }
+      else if (d.stakeholder_id && !notifiedStakeholders.has(d.stakeholder_id)) { notifiedStakeholders.add(d.stakeholder_id); await emailStakeholder(supabase, d.stakeholder_id, msg) }
+    }
+  } catch (e) { console.error('[notifyRfiParties]', e) }
+}

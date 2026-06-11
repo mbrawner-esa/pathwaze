@@ -11,6 +11,7 @@
  */
 import { useEffect, useRef, useState } from 'react'
 import { List, ListOrdered, Bold, Link2 } from 'lucide-react'
+import { usePrompt } from './usePrompt'
 
 interface MentionUser { id: string; full_name?: string | null }
 
@@ -29,6 +30,7 @@ export function RichTextEditor({
 }) {
   const ref = useRef<HTMLDivElement>(null)
   const [menu, setMenu] = useState<{ top: number; left: number; query: string; active: number } | null>(null)
+  const { prompt, dialog } = usePrompt()
 
   useEffect(() => {
     if (ref.current && ref.current.innerHTML !== (value || '')) {
@@ -43,11 +45,22 @@ export function RichTextEditor({
     if (ref.current) onChange(ref.current.innerHTML)
   }
 
-  function addLink() {
-    ref.current?.focus()
-    const url = window.prompt('Link URL')
+  async function addLink() {
+    // Capture the editor selection BEFORE the dialog steals focus — the
+    // toolbar button uses onMouseDown+preventDefault so the selection is
+    // still live here. We restore it after the user enters the URL so
+    // createLink applies to the originally-selected text.
+    const sel = window.getSelection()
+    const savedRange = sel && sel.rangeCount && ref.current?.contains(sel.anchorNode)
+      ? sel.getRangeAt(0).cloneRange() : null
+    const url = (await prompt({ title: 'Add link', label: 'Link URL', placeholder: 'https://…', required: true, confirmLabel: 'Add link' }))?.trim()
     if (!url) return
     const href = /^https?:\/\//i.test(url) ? url : `https://${url}`
+    ref.current?.focus()
+    if (savedRange) {
+      const s = window.getSelection()
+      s?.removeAllRanges(); s?.addRange(savedRange)
+    }
     document.execCommand('createLink', false, href)
     if (ref.current) onChange(ref.current.innerHTML)
   }
@@ -109,6 +122,7 @@ export function RichTextEditor({
 
   return (
     <div className="border border-[#cbd5e1] rounded focus-within:border-[#70A0D0] focus-within:ring-2 focus-within:ring-[#70A0D0]/20 bg-white relative">
+      {dialog}
       <div className="flex items-center gap-0.5 px-2 py-1 border-b border-[#e2e8f0] bg-[#fafbfc]">
         <ToolbarBtn onClick={() => exec('bold')} title="Bold (Ctrl+B)"><Bold size={13} /></ToolbarBtn>
         <ToolbarBtn onClick={() => exec('insertUnorderedList')} title="Bulleted list"><List size={13} /></ToolbarBtn>

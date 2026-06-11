@@ -6,6 +6,23 @@
 
 ---
 
+## 2026-06-11
+
+- **RFI status notifications** — closing or (re)opening an RFI now emails the
+  ball-in-court + distribution list; official responses are distinguished from
+  ordinary ones ("Official response posted", and "…& RFI closed" when an
+  official response closes it).
+- **Dashboard — Your RFIs** — the "Your conversations" card now also lists RFIs
+  you're involved in (ball-in-court, RFI manager, received-from, or on the
+  distribution), with an overdue flag.
+- **In-app prompts** — replaced the browser `window.prompt()` box everywhere
+  (drawing rename, add-stakeholder, task change-request notes, rich-text link)
+  with a branded in-app dialog (`usePrompt`).
+- **"Delegate to Assignee"** — drawing-review delegate modal renamed from
+  "Delegate to Engineer."
+- **Dev** — `EMAIL_NOTIFY_SELF=true` lets you receive your own task emails for
+  solo testing (mirrors `SLACK_DM_SELF`).
+
 ## 2026-06-09
 
 - **As-Built Drawings** — new **Drawings** tab on every project. Drawings are

@@ -1,6 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { NextRequest, NextResponse } from 'next/server'
-import { sendTaskAssignedEmail } from '@/lib/email'
+import { sendTaskAssignedEmail, shouldEmailNotify } from '@/lib/email'
 import { parseMentions, emailUser } from '@/lib/rfi-notify'
 import { appUrl } from '@/lib/slack'
 
@@ -34,7 +34,7 @@ export async function POST(req: NextRequest) {
   // Private tasks don't notify anyone (they're personal reminders — even if
   // an assignee is set, that user can't view the task because they're not
   // the creator).
-  if (data.visibility !== 'private' && data.assignee_id && data.assignee_id !== user.id) {
+  if (data.visibility !== 'private' && shouldEmailNotify(data.assignee_id, user.id)) {
     notifyTaskAssigned(supabase, data, user.id).catch(e =>
       console.error('[task POST] task-assigned email failed:', e)
     )

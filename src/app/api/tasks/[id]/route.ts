@@ -1,7 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { NextRequest, NextResponse } from 'next/server'
 import { sendDM, replyInThread, taskAssignedBlocks, taskStatusChangedBlocks } from '@/lib/slack'
-import { sendTaskAssignedEmail, sendTaskCompletedEmail } from '@/lib/email'
+import { sendTaskAssignedEmail, sendTaskCompletedEmail, shouldEmailNotify } from '@/lib/email'
 
 const TRACKED_FIELDS = ['status', 'priority', 'assignee_id', 'approver_id', 'approval_status', 'due_date', 'title']
 
@@ -166,7 +166,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     }
 
     // (a) Re-assigned → email the new assignee
-    if (wasReassigned && newAssigneeId && newAssigneeId !== user.id) {
+    if (wasReassigned && shouldEmailNotify(newAssigneeId, user.id)) {
       const { data: a } = await supabase
         .from('users')
         .select('email, full_name, notify_email_task_assigned')
@@ -189,7 +189,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     }
 
     // (b) Status → Complete → email the task creator (if not the actor)
-    if (completedNow && data.created_by && data.created_by !== user.id) {
+    if (completedNow && shouldEmailNotify(data.created_by, user.id)) {
       const { data: c } = await supabase
         .from('users')
         .select('email, full_name, notify_email_task_complete')

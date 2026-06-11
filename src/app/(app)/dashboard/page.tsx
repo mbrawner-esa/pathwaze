@@ -168,6 +168,26 @@ export default async function DashboardPage() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const threadProjectMap = new Map<string, any>((threadProjects ?? []).map(p => [p.id, p]))
 
+  // ── RFIs the current user is involved in (#12) ──
+  // Involvement = ball-in-court, RFI manager, received-from, or on the
+  // distribution list. Drafts excluded. Most-recently-updated first.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: myDistRows } = await supabase.from('rfi_distribution').select('rfi_id').eq('user_id', user.id) as { data: { rfi_id: string }[] | null }
+  const myDistRfiIds = Array.from(new Set((myDistRows ?? []).map(r => r.rfi_id)))
+  const rfiOrParts = [
+    `ball_in_court_user_id.eq.${user.id}`,
+    `rfi_manager_id.eq.${user.id}`,
+    `received_from_user_id.eq.${user.id}`,
+  ]
+  if (myDistRfiIds.length) rfiOrParts.push(`id.in.(${myDistRfiIds.join(',')})`)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: myRfis } = await (supabase.from('rfis') as any)
+    .select('id, rfi_number, subject, status, due_date, updated_at, project:projects(id, name)')
+    .neq('status', 'draft')
+    .or(rfiOrParts.join(','))
+    .order('updated_at', { ascending: false })
+    .limit(6) as { data: any[] | null }
+
   // Active projects: aggregate activity_log by project_id (via task/stakeholder linkage)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const recent = (recentActivity ?? []) as any[]
@@ -333,11 +353,33 @@ export default async function DashboardPage() {
           <section className="bg-white rounded-xl border border-[#e2e8f0] overflow-hidden flex flex-col min-h-[420px]">
             <div className="px-6 py-4 border-b border-[#f1f5f9]">
               <h2 className="text-[15px] font-semibold text-[#181818]">Your conversations</h2>
-              <p className="text-[12px] text-[#706E6B] mt-0.5">Threads you&apos;ve posted in recently</p>
+              <p className="text-[12px] text-[#706E6B] mt-0.5">Threads and RFIs you&apos;re part of</p>
             </div>
             <div className="px-2 py-1 flex-1 overflow-y-auto">
-              {myRecentThreads.length === 0 ? (
-                <EmptyState text="No recent messages. Drop a thought in a task thread to start." />
+              {/* RFIs you're involved in (#12) */}
+              {(myRfis ?? []).length > 0 && (
+                <div className="mb-1">
+                  <p className="px-4 pt-2 pb-1 text-[10.5px] font-bold uppercase tracking-wider text-[#94a3b8]">RFIs you&apos;re involved in</p>
+                  {(myRfis ?? []).map((r: any) => {
+                    const overdue = r.due_date && r.status !== 'closed' && new Date(r.due_date) < new Date()
+                    return (
+                      <Link key={r.id} href={`/rfis/${r.id}`} className="flex items-start gap-3 px-4 py-2.5 rounded-lg hover:bg-[#fafbfc] transition-colors">
+                        <span className="mt-0.5 text-[10px] font-bold text-[#2C5485] bg-[#EFF4FA] rounded px-1.5 py-0.5 flex-shrink-0">#{String(r.rfi_number ?? 0).padStart(3, '0')}</span>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-[13.5px] font-medium text-[#181818] truncate">{r.subject}</p>
+                          <p className="text-[10.5px] text-[#706E6B] mt-0.5">
+                            {r.project?.name ?? 'No project'} · <span className="capitalize">{r.status}</span>
+                            {overdue && <span className="text-[#b91c1c] font-semibold"> · Overdue</span>}
+                          </p>
+                        </div>
+                      </Link>
+                    )
+                  })}
+                  {myRecentThreads.length > 0 && <div className="border-t border-[#f1f5f9] mx-4 my-1.5" />}
+                </div>
+              )}
+              {myRecentThreads.length === 0 && (myRfis ?? []).length === 0 ? (
+                <EmptyState text="No recent messages or RFIs. Drop a thought in a task thread to start." />
               ) : (
                 myRecentThreads.map(t => {
                   let title = ''

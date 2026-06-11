@@ -4,6 +4,7 @@ import { Search, List, LayoutGrid, X, Plus, Send, MessageSquare, CheckCircle, Ac
 import { MessageText } from '@/components/ui/MessageText'
 import { RichTextEditor } from '@/components/ui/RichTextEditor'
 import { NotesRender } from '@/components/ui/NotesRender'
+import { usePrompt } from '@/components/ui/usePrompt'
 import Link from 'next/link'
 import { formatDate } from '@/lib/utils'
 import { Avatar } from '@/components/ui/Avatar'
@@ -115,6 +116,7 @@ function describeActivity(a: any): string {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function TasksClient({ tasks: initialTasks, projects, users }: { tasks: any[]; projects: any[]; users: any[] }) {
   const router = useRouter()
+  const { prompt, dialog: promptDialog } = usePrompt()
   const [view, setView] = useState<'list' | 'kanban'>('list')
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('All')
@@ -652,7 +654,7 @@ export function TasksClient({ tasks: initialTasks, projects, users }: { tasks: a
   }
 
   async function handleRequestChanges(taskId: string) {
-    const notes = prompt('Enter change request notes:')
+    const notes = await prompt({ title: 'Request changes', label: 'Change request notes', multiline: true, required: true, confirmLabel: 'Submit' })
     if (!notes) return
     await fetch(`/api/tasks/${taskId}`, {
       method: 'PATCH',
@@ -681,6 +683,7 @@ export function TasksClient({ tasks: initialTasks, projects, users }: { tasks: a
 
   return (
     <div>
+      {promptDialog}
       {/* Sticky header bar */}
       <div className="bg-white border-b border-[#e2e8f0] px-7 py-4 flex items-center gap-2.5 flex-wrap sticky top-[52px] z-30">
         <div className="mr-1">

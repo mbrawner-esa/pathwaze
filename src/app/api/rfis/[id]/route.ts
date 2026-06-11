@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { NextRequest, NextResponse } from 'next/server'
+import { notifyRfiParties, logActivity, rfiUrl, rfiNo } from '@/lib/rfi-notify'
 
 // GET /api/rfis/[id] → full detail (with responses + distribution + source finding)
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -40,11 +41,15 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
                     'cost_impact', 'cost_amount', 'schedule_impact', 'schedule_days', 'is_private'] as const) {
     if (k in body) patch[k] = body[k]
   }
+  // Read the current row so we can detect a real status transition (and not
+  // double-notify when status is unchanged or already closed).
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: cur } = await (supabase.from('rfis') as any)
+    .select('status, date_initiated, rfi_number, subject').eq('id', id).maybeSingle()
+
   if (body.status === 'closed') patch.closed_at = new Date().toISOString()
   if (body.status === 'open' && body.date_initiated === undefined) {
     // Opening a draft stamps the initiated date if not already set.
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: cur } = await (supabase.from('rfis') as any).select('date_initiated').eq('id', id).maybeSingle()
     if (cur && !cur.date_initiated) patch.date_initiated = new Date().toISOString().slice(0, 10)
   }
   if (Object.keys(patch).length === 0) return NextResponse.json({ error: 'nothing to update' }, { status: 400 })
@@ -52,5 +57,26 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data, error } = await (supabase.from('rfis') as any).update(patch).eq('id', id).select('*').single()
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+  // ── Notifications on status transitions (best-effort, fire-and-forget) ──
+  try {
+    const becameClosed = body.status === 'closed' && cur?.status !== 'closed'
+    const becameOpen   = body.status === 'open'   && cur?.status !== 'open'
+    if (becameClosed || becameOpen) {
+      const tag = `RFI ${rfiNo(data.rfi_number)}`
+      const verb = becameClosed ? 'closed' : 'opened'
+      const msg = {
+        subject: `${tag} ${verb}`,
+        heading: `${tag} ${verb}`,
+        message: `<b>${data.subject}</b> was ${verb}.`,
+        ctaLabel: 'View RFI', ctaUrl: rfiUrl(id),
+      }
+      notifyRfiParties(supabase, id, user.id, msg).catch(e => console.error('[rfi PATCH] notify failed:', e))
+      logActivity(supabase, { entity_type: 'rfi', entity_id: id, action: `${verb} an RFI`, user_id: user.id, metadata: { rfi_id: id } }).catch(() => {})
+    }
+  } catch (e) {
+    console.warn('[rfi PATCH] status-notify failed:', e)
+  }
+
   return NextResponse.json(data)
 }

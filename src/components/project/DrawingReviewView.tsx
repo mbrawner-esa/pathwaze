@@ -306,7 +306,7 @@ function ActionModal({ kind, drawingId, item, itemState, drawingFile, users, sta
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={onClose}>
       <div className="bg-white rounded-xl w-[540px] max-w-[94vw] overflow-hidden shadow-2xl" onClick={e => e.stopPropagation()}>
-        <div className="px-5 py-3.5 border-b border-[#ECEBEA] font-bold text-[15px] text-[#080707]">{isDelegate ? 'Delegate to Engineer' : 'Create RFI'}</div>
+        <div className="px-5 py-3.5 border-b border-[#ECEBEA] font-bold text-[15px] text-[#080707]">{isDelegate ? 'Delegate to Assignee' : 'Create RFI'}</div>
         <div className="p-5 flex flex-col gap-3">
           <label className="flex flex-col gap-1"><span className="lbl">{isDelegate ? 'Title' : 'Subject'}</span>
             <input value={title} onChange={e => setTitle(e.target.value)} className="inp" /></label>

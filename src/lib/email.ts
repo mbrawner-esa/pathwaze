@@ -1,6 +1,16 @@
 // Resend wrapper. Lazily imports the SDK so we don't crash when RESEND_API_KEY
 // isn't set — caller can decide whether to surface that to the user.
 
+// Dev/test override: set EMAIL_NOTIFY_SELF=true to let the app email YOU for
+// actions you took (assigning a task to yourself, completing your own task).
+// Normally those self-notifications are suppressed. Mirrors SLACK_DM_SELF.
+// Returns true when the recipient should be notified given the actor.
+export function shouldEmailNotify(recipientId: string | null | undefined, actorId: string): boolean {
+  if (!recipientId) return false
+  if (process.env.EMAIL_NOTIFY_SELF === 'true') return true
+  return recipientId !== actorId
+}
+
 interface InviteEmailParams {
   to: string
   inviterName: string

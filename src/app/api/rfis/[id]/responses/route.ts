@@ -60,10 +60,21 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       await emailUser(supabase, uid, { subject: `You were mentioned on ${tag}`, heading: `You were mentioned on ${tag}`, message: `You were mentioned in a response on <b>${rfi.subject}</b>.`, ctaLabel: 'Open RFI', ctaUrl: url })
     }
 
-    // Response → notify ball-in-court + distribution
+    // Response → notify ball-in-court + distribution. Wording reflects whether
+    // this is an official response and/or closed the RFI (the official+close
+    // path updates status directly here, bypassing the PATCH-route close
+    // notification — so the closed notice has to come from here).
+    const official = !!body.is_official
+    const closed = official && !!body.close
+    const label = closed ? 'Official response posted & RFI closed'
+                : official ? 'Official response posted'
+                : 'New response'
+    const detail = closed ? `An official response was posted and ${tag} was closed`
+                 : official ? `An official response was posted`
+                 : `A new response was posted`
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: dist } = await (supabase.from('rfi_distribution') as any).select('user_id, stakeholder_id, contact_email').eq('rfi_id', id)
-    const msg = { subject: `New response on ${tag}`, heading: `New response on ${tag}`, message: `A new response was posted on <b>${rfi.subject}</b>.`, ctaLabel: 'View RFI', ctaUrl: url }
+    const msg = { subject: `${label} — ${tag}`, heading: `${label} on ${tag}`, message: `${detail} on <b>${rfi.subject}</b>.`, ctaLabel: 'View RFI', ctaUrl: url }
     if (rfi.ball_in_court_user_id && !notified.has(rfi.ball_in_court_user_id)) { notified.add(rfi.ball_in_court_user_id); await emailUser(supabase, rfi.ball_in_court_user_id, msg) }
     if (rfi.ball_in_court_stakeholder_id) await emailStakeholder(supabase, rfi.ball_in_court_stakeholder_id, msg)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -71,7 +82,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       if (d.user_id && !notified.has(d.user_id)) { notified.add(d.user_id); await emailUser(supabase, d.user_id, msg) }
       else if (d.stakeholder_id) await emailStakeholder(supabase, d.stakeholder_id, msg)
     }
-    await logActivity(supabase, { entity_type: 'rfi', entity_id: id, action: 'responded to an RFI', user_id: user.id, metadata: { rfi_id: id } })
+    await logActivity(supabase, { entity_type: 'rfi', entity_id: id, action: closed ? 'closed an RFI with an official response' : official ? 'posted an official response' : 'responded to an RFI', user_id: user.id, metadata: { rfi_id: id } })
   }
 
   return NextResponse.json({ ...resp, files })

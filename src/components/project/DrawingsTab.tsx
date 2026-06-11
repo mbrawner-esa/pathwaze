@@ -3,6 +3,7 @@ import { useRef, useState } from 'react'
 import { createClient as createBrowserClient } from '@/lib/supabase/client'
 import { Upload, FileText, ChevronRight, Trash2, Plus, Pencil } from 'lucide-react'
 import { DrawingReviewView } from './DrawingReviewView'
+import { usePrompt } from '@/components/ui/usePrompt'
 
 // ── Types ────────────────────────────────────────────────────────────
 export interface PlanSection { key: string; label: string; is_universal: boolean; item_count: number }
@@ -76,6 +77,7 @@ export function DrawingsTab({ projectId, drawings: initial, areas, collections: 
   const [drawings, setDrawings] = useState<Drawing[]>(initial)
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const { prompt, dialog: promptDialog } = usePrompt()
   const fileInput = useRef<HTMLInputElement>(null)
 
   const active = collections.find(c => c.id === activeId) ?? null
@@ -128,7 +130,7 @@ export function DrawingsTab({ projectId, drawings: initial, areas, collections: 
   }
 
   async function renameDrawing(d: Drawing) {
-    const name = prompt('Rename drawing', d.file_name)?.trim()
+    const name = (await prompt({ title: 'Rename drawing', label: 'Drawing name', initial: d.file_name, required: true }))?.trim()
     if (!name || name === d.file_name) return
     const res = await fetch(`/api/drawings/${d.id}`, {
       method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ file_name: name }),
@@ -177,6 +179,7 @@ export function DrawingsTab({ projectId, drawings: initial, areas, collections: 
 
   return (
     <div>
+      {promptDialog}
       <div className="flex items-center justify-between mb-4 gap-3 flex-wrap">
         <div className="text-[13px] text-[#706E6B] flex items-center gap-2">
           <button onClick={() => setActiveId(null)} className="text-[#70A0D0] font-semibold hover:underline">Drawings</button>
