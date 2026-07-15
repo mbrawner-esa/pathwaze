@@ -22,13 +22,13 @@ Raw intake from the team. Graduate each into Active or Roadmap as prioritized.
 
 | Ref | Request | Status |
 |-----|---------|--------|
-| T1 | Projects tab — save filter presets | roadmap |
-| T2 | Tasks tab — save filter presets | roadmap |
+| T1 | Projects tab — save filter presets | ✅ Done 2026-07-15 — migration **046** (`saved_filters`, per-user, ⚠️ run SQL). Shared `FilterPresets` component + `/api/saved-filters` (GET/POST/DELETE); Projects filter bar can save/apply/delete named presets (search, stage, state, PM, group-by). |
+| T2 | Tasks tab — save filter presets | ✅ Done 2026-07-15 — same `FilterPresets` component wired into the Tasks filter bar (search, status, type, project, assignee, show-completed, group, sort). Uses migration **046**. |
 | T3 | Increase file-size limit on the Drawings upload tool | ✅ Done 2026-07-15 — migration **044** raises the `drawings` bucket `file_size_limit` to 200 MB (⚠️ run SQL). |
 | T4 | Project page — Project Contact as name-only clickable link → Stakeholders tab | ✅ Done 2026-07-15 — `ProjectSummaryCard` links to `?tab=stakeholders`; `ProjectDetailClient` now reverse-syncs the tab from the URL. |
-| T5 | RFIs page — sort by + filter by "assigned to" (ball-in-court) | roadmap (medium) |
-| T6 | RFIs — allow file attachments on the RFI itself (not just responses) | roadmap (medium) |
-| T7 | Review module — free-form comments section beyond the default action-plan questions | roadmap (medium) |
+| T5 | RFIs page — sort by + filter by "assigned to" (ball-in-court) | ✅ Done 2026-07-15 — added "assigned to" (ball-in-court) filter + sort (most recent / due date / days open / RFI #) to the RFIs list. No SQL. |
+| T6 | RFIs — allow file attachments on the RFI itself (not just responses) | ✅ Done 2026-07-15 — migration **047** (`rfi_attachments`, reuses `rfi-files` bucket; ⚠️ run SQL). Attachments card on the RFI detail with upload/open/remove; `/api/rfis/[id]/files` (POST) + `/files/[fileId]` (DELETE). |
+| T7 | Review module — free-form comments section beyond the default action-plan questions | ✅ Done 2026-07-15 — migration **048** (`review_comments`; ⚠️ run SQL). Comments section on the drawing review with add + author-only delete; `/api/drawings/[id]/review/comments` (POST) + `/comments/[commentId]` (DELETE); GET route returns comments. |
 | T8 | Tasks — allow reassignment | ✅ Done 2026-07-15 — inline reassign dropdown in the task drawer read view (fires existing reassignment notifications). |
 | T9 | Automation: route team feature requests from ClaudeCode → `#Pathwaze_bugs` Slack for triage | roadmap (meta) |
 | T10 | Home dashboard — show open RFIs assigned to the user in Due-this-week / Completed / Conversations | roadmap (medium) |
@@ -37,7 +37,7 @@ Raw intake from the team. Graduate each into Active or Roadmap as prioritized.
 ### Issues (bugs) — 2026-07-15
 | Ref | Issue | Status |
 |-----|-------|--------|
-| B1 | Slack messages don't auto-link to Pathwaze; user must type `/pathwaze project <name>` | Open (roadmap) — auto-link path = channel linked to a project (events route); needs verify/fix. Slash command is the manual fallback. |
+| B1 | Slack messages don't auto-link to Pathwaze; user must type `/pathwaze project <name>` | Diagnosed 2026-07-15 — **not a code bug**. The events route already auto-links a channel's messages to a project when that channel is linked (`projects.slack_channel_id === event.channel`). The gap is Slack app config: (1) Events API subscribed to `message.channels` + `message.groups`, (2) events Request URL pointed at `/api/slack/events` & verified, (3) the bot invited to the channel, (4) the channel linked to a project (`/pathwaze project <name>` once, or set `slack_channel_id`). Delivered as a config checklist; no code change. |
 | B2 | `/pathwaze` slash command fails with `operation_timeout` | ✅ Done 2026-07-15 — collapsed the ~8 sequential project-match queries into one in-memory match over all (~19) projects, well under Slack's 3s limit. |
 
 ---

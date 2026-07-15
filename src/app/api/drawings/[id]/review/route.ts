@@ -67,7 +67,12 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     universal = uni ?? []
   }
 
-  return NextResponse.json({ drawing: { ...drawing, discipline_keys: disciplineKeys }, review, sections: sections ?? [], findings: findings ?? [], universal })
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: comments } = await (supabase.from('review_comments') as any)
+    .select('*, author:users!author_id(id, full_name, avatar_url)')
+    .eq('drawing_review_id', review.id).order('created_at')
+
+  return NextResponse.json({ drawing: { ...drawing, discipline_keys: disciplineKeys }, review, sections: sections ?? [], findings: findings ?? [], universal, comments: comments ?? [] })
 }
 
 // PATCH /api/drawings/[id]/review  → update review status

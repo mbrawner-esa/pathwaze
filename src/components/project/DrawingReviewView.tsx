@@ -30,6 +30,16 @@ export function DrawingReviewView({ drawingId, users = [], stakeholders = [], pr
   const [data, setData] = useState<Any>(null)
   const [items, setItems] = useState<Record<string, ItemState>>({})
   const [status, setStatus] = useState<string>('not_started')
+  const [comments, setComments] = useState<Any[]>([])
+  const [commentDraft, setCommentDraft] = useState('')
+  const [postingComment, setPostingComment] = useState(false)
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null)
+
+  useEffect(() => {
+    let live = true
+    createBrowserClient().auth.getUser().then(({ data }) => { if (live) setCurrentUserId(data.user?.id ?? null) })
+    return () => { live = false }
+  }, [])
 
   useEffect(() => {
     let live = true
@@ -60,7 +70,7 @@ export function DrawingReviewView({ drawingId, users = [], stakeholders = [], pr
           rfi: findingByItem[it.id]?.rfi ?? null,
         }
       }
-      setData(d); setItems(map); setStatus(d.review.status); setLoading(false)
+      setData(d); setItems(map); setStatus(d.review.status); setComments(d.comments ?? []); setLoading(false)
     })()
     return () => { live = false }
   }, [drawingId])
@@ -95,6 +105,21 @@ export function DrawingReviewView({ drawingId, users = [], stakeholders = [], pr
     await fetch(`/api/drawings/${drawingId}/review`, {
       method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: s }),
     })
+  }
+
+  async function addComment() {
+    const text = commentDraft.trim()
+    if (!text) return
+    setPostingComment(true)
+    const res = await fetch(`/api/drawings/${drawingId}/review/comments`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ body: text }),
+    })
+    setPostingComment(false)
+    if (res.ok) { const created = await res.json(); setComments(prev => [...prev, created]); setCommentDraft('') }
+  }
+  async function deleteComment(commentId: string) {
+    setComments(prev => prev.filter(c => c.id !== commentId))   // optimistic
+    await fetch(`/api/drawings/${drawingId}/review/comments/${commentId}`, { method: 'DELETE' })
   }
 
   async function viewPdf() {
@@ -248,6 +273,37 @@ export function DrawingReviewView({ drawingId, users = [], stakeholders = [], pr
           })}
         </div>
       ))}
+
+      {/* free-form comments */}
+      <div className="card mb-3 overflow-hidden">
+        <div className="px-[18px] py-3 border-b border-[#ECEBEA] bg-[#FBFCFE] flex items-center gap-2">
+          <span className="font-bold text-[#080707] text-[14px]">Comments</span>
+          <span className="text-[11px] text-[#706E6B] bg-[#F3F2F2] rounded-full px-2 py-0.5">{comments.length}</span>
+          <span className="text-[11px] text-[#706E6B]">— additional notes beyond the questions above</span>
+        </div>
+        {comments.length === 0
+          ? <div className="px-[18px] py-3 text-[12.5px] text-[#A8A8A8]">No comments yet.</div>
+          : comments.map((c: Any) => (
+              <div key={c.id} className="px-[18px] py-3 border-b border-[#ECEBEA] last:border-b-0 flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="text-[12px]"><b className="text-[#181818]">{c.author?.full_name ?? 'Someone'}</b>
+                    <span className="text-[#A8A8A8] ml-2">{new Date(c.created_at).toLocaleString()}</span></div>
+                  <div className="text-[12.5px] text-[#3E3E3C] leading-relaxed mt-1 whitespace-pre-wrap">{c.body}</div>
+                </div>
+                {currentUserId && c.author_id === currentUserId && (
+                  <button onClick={() => deleteComment(c.id)} className="text-[11px] font-semibold text-[#A8A8A8] hover:text-[#b91c1c] shrink-0">Delete</button>
+                )}
+              </div>
+            ))
+        }
+        <div className="px-[18px] py-3 border-t border-[#ECEBEA] bg-[#FBFCFE]">
+          <textarea value={commentDraft} onChange={e => setCommentDraft(e.target.value)}
+            placeholder="Add a comment…" className="w-full border border-[#DDDBDA] rounded-md px-2.5 py-2 text-[12.5px] min-h-[52px]" />
+          <div className="flex justify-end mt-2">
+            <button className="btn-primary" disabled={postingComment || !commentDraft.trim()} onClick={addComment}>{postingComment ? 'Posting…' : 'Add comment'}</button>
+          </div>
+        </div>
+      </div>
 
       {modal && (
         <ActionModal

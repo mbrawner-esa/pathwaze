@@ -30,18 +30,35 @@ export function RfisClient({ rfis: initial, projects, users, stakeholders }: { r
   const [rfis, setRfis] = useState<Any[]>(initial)
   const [tab, setTab] = useState<typeof TABS[number]>('All')
   const [projectFilter, setProjectFilter] = useState('')
+  const [assignedFilter, setAssignedFilter] = useState('')   // ball-in-court user id
+  const [sortBy, setSortBy] = useState<'recent' | 'due' | 'days' | 'number'>('recent')
   const [search, setSearch] = useState('')
   const [creating, setCreating] = useState(false)
 
-  const filtered = useMemo(() => rfis.filter(r => {
-    if (tab === 'Open' && r.status !== 'open') return false
-    if (tab === 'Draft' && r.status !== 'draft') return false
-    if (tab === 'Closed' && r.status !== 'closed') return false
-    if (tab === 'Overdue' && !isOverdue(r)) return false
-    if (projectFilter && r.project_id !== projectFilter) return false
-    if (search && !`${r.subject} ${r.rfi_number}`.toLowerCase().includes(search.toLowerCase())) return false
-    return true
-  }), [rfis, tab, projectFilter, search])
+  const filtered = useMemo(() => {
+    const rows = rfis.filter(r => {
+      if (tab === 'Open' && r.status !== 'open') return false
+      if (tab === 'Draft' && r.status !== 'draft') return false
+      if (tab === 'Closed' && r.status !== 'closed') return false
+      if (tab === 'Overdue' && !isOverdue(r)) return false
+      if (projectFilter && r.project_id !== projectFilter) return false
+      if (assignedFilter && r.ball_in_court_user_id !== assignedFilter) return false
+      if (search && !`${r.subject} ${r.rfi_number}`.toLowerCase().includes(search.toLowerCase())) return false
+      return true
+    })
+    const cmp: Record<typeof sortBy, (a: Any, b: Any) => number> = {
+      recent: (a, b) => String(b.date_initiated ?? b.created_at ?? '').localeCompare(String(a.date_initiated ?? a.created_at ?? '')),
+      number: (a, b) => (b.rfi_number ?? 0) - (a.rfi_number ?? 0),
+      days:   (a, b) => (daysOpen(b) ?? -1) - (daysOpen(a) ?? -1),
+      due:    (a, b) => {
+        if (!a.due_date && !b.due_date) return 0
+        if (!a.due_date) return 1        // nulls last
+        if (!b.due_date) return -1
+        return String(a.due_date).localeCompare(String(b.due_date))
+      },
+    }
+    return rows.sort(cmp[sortBy])
+  }, [rfis, tab, projectFilter, assignedFilter, search, sortBy])
 
   return (
     <div className="max-w-[1760px] mx-auto px-8 py-6">
@@ -63,6 +80,16 @@ export function RfisClient({ rfis: initial, projects, users, stakeholders }: { r
         <select value={projectFilter} onChange={e => setProjectFilter(e.target.value)} className="border border-[#DDDBDA] rounded-md px-2.5 py-1.5 text-[12.5px]">
           <option value="">All projects</option>
           {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+        </select>
+        <select value={assignedFilter} onChange={e => setAssignedFilter(e.target.value)} className="border border-[#DDDBDA] rounded-md px-2.5 py-1.5 text-[12.5px]" title="Filter by ball-in-court">
+          <option value="">All assignees</option>
+          {users.map(u => <option key={u.id} value={u.id}>{u.full_name}</option>)}
+        </select>
+        <select value={sortBy} onChange={e => setSortBy(e.target.value as typeof sortBy)} className="border border-[#DDDBDA] rounded-md px-2.5 py-1.5 text-[12.5px]" title="Sort by">
+          <option value="recent">Sort: Most recent</option>
+          <option value="due">Sort: Due date</option>
+          <option value="days">Sort: Days open</option>
+          <option value="number">Sort: RFI #</option>
         </select>
         <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search RFIs…" className="flex-1 min-w-[160px] border border-[#DDDBDA] rounded-md px-2.5 py-1.5 text-[12.5px]" />
       </div>

@@ -6,6 +6,7 @@ import { StageBadge } from '@/components/ui/StageBadge'
 import { DealHealthBadge } from '@/components/ui/DealHealthBadge'
 import { Avatar } from '@/components/ui/Avatar'
 import { formatDate } from '@/lib/utils'
+import { FilterPresets } from '@/components/ui/FilterPresets'
 
 interface Project {
   id: string
@@ -83,6 +84,15 @@ export function ProjectsClient({ projects, users = [] }: ProjectsClientProps) {
   const [assigneeFilter, setAssigneeFilter] = useState('All')
   const [groupBy, setGroupBy] = useState('none')
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
+
+  const currentFilters = { search, stageFilter, stateFilter, assigneeFilter, groupBy }
+  function applyFilters(f: Record<string, unknown>) {
+    setSearch(typeof f.search === 'string' ? f.search : '')
+    setStageFilter(typeof f.stageFilter === 'string' ? f.stageFilter : 'All')
+    setStateFilter(typeof f.stateFilter === 'string' ? f.stateFilter : 'All')
+    setAssigneeFilter(typeof f.assigneeFilter === 'string' ? f.assigneeFilter : 'All')
+    setGroupBy(typeof f.groupBy === 'string' ? f.groupBy : 'none')
+  }
   const [showNewModal, setShowNewModal] = useState(false)
   const [saving, setSaving] = useState(false)
   const [createError, setCreateError] = useState<string | null>(null)
@@ -339,6 +349,8 @@ export function ProjectsClient({ projects, users = [] }: ProjectsClientProps) {
                 {GROUP_OPTIONS.map(g => <option key={g.value} value={g.value}>{g.label}</option>)}
               </select>
             </div>
+            <div className="w-px h-5 bg-[#e2e8f0] mx-1" />
+            <FilterPresets scope="projects" current={currentFilters} onApply={applyFilters} />
             <div className="ml-auto flex items-center gap-3">
               <span className="text-[12.5px] text-[#706E6B]">{filtered.length} of {projects.length}</span>
               <div className="relative" ref={columnPickerRef}>

@@ -11,6 +11,7 @@ import { formatDate } from '@/lib/utils'
 import { Avatar } from '@/components/ui/Avatar'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient as createBrowserClient } from '@/lib/supabase/client'
+import { FilterPresets } from '@/components/ui/FilterPresets'
 
 // Map a task_links entity_type to the project-page tab that hosts it,
 // so a link click lands on the right tab.
@@ -130,6 +131,18 @@ export function TasksClient({ tasks: initialTasks, projects, users }: { tasks: a
   const [groupBy, setGroupBy] = useState<'none' | 'status' | 'assignee' | 'priority' | 'type' | 'project'>('none')
   const [sortBy, setSortBy] = useState<'default' | 'due_date' | 'priority'>('default')
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({})
+
+  const currentFilters = { search, statusFilter, typeFilter, projectFilter, assigneeFilter, showCompleted, groupBy, sortBy }
+  function applyFilters(f: Record<string, unknown>) {
+    setSearch(typeof f.search === 'string' ? f.search : '')
+    setStatusFilter(typeof f.statusFilter === 'string' ? f.statusFilter : 'All')
+    setTypeFilter(typeof f.typeFilter === 'string' ? f.typeFilter : 'All')
+    setProjectFilter(typeof f.projectFilter === 'string' ? f.projectFilter : 'All')
+    setAssigneeFilter(typeof f.assigneeFilter === 'string' ? f.assigneeFilter : 'All')
+    setShowCompleted(!!f.showCompleted)
+    if (typeof f.groupBy === 'string') setGroupBy(f.groupBy as typeof groupBy)
+    if (typeof f.sortBy === 'string') setSortBy(f.sortBy as typeof sortBy)
+  }
   const [selectedTask, setSelectedTask] = useState<string | null>(null)
   // Deep-link: /tasks?id=<taskId> opens that task's drawer (from notifications,
   // RFI/finding chips, etc.).
@@ -836,6 +849,8 @@ export function TasksClient({ tasks: initialTasks, projects, users }: { tasks: a
             </div>
           </>
         )}
+        <div className="w-px h-5 bg-[#e2e8f0] mx-0.5" />
+        <FilterPresets scope="tasks" current={currentFilters} onApply={applyFilters} />
         <button onClick={() => setShowNewModal(true)}
           className="ml-auto flex items-center gap-1.5 px-3.5 py-1.5 bg-[#70A0D0] text-white rounded-lg text-[13px] font-semibold hover:bg-[#2C5485] transition-colors">
           <Plus size={14} /> New Task

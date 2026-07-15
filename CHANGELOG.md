@@ -8,6 +8,17 @@
 
 ## 2026-07-15
 
+- **Saved filter presets** — Projects and Tasks lists can now save the current
+  filters as a named preset and re-apply it in one click (presets are per-user
+  and sync across devices). (Migration 046 — run required.)
+- **RFI sort & assignee filter** — the RFIs list can filter by who the ball is
+  in court with, and sort by most recent, due date, days open, or RFI number.
+- **RFI attachments** — files can now be attached directly to an RFI (not just
+  to a response), with upload/open/remove on the RFI detail. (Migration 047 —
+  run required.)
+- **Drawing review comments** — the review module now has a free-form comments
+  section for notes beyond the structured action-plan questions (author-only
+  delete). (Migration 048 — run required.)
 - **Subtasks** — tasks can now have subtasks (one level deep). The task drawer
   has a Subtasks section with a progress bar, inline add, and click-through to
   each subtask (subtasks are full tasks with their own assignee/status/due).

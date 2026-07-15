@@ -29,11 +29,13 @@ function entityLabel(catalog: Any, type: string, idv: string): string {
   return e.name || '(unnamed)'
 }
 
-export function RfiDetailClient({ rfi: initial, responses: initialResp, links: initialLinks, catalog, users }: { rfi: Any; responses: Any[]; distribution: Any[]; users: Any[]; links: Any[]; catalog: Any }) {
+export function RfiDetailClient({ rfi: initial, responses: initialResp, links: initialLinks, catalog, users, attachments: initialAttachments = [] }: { rfi: Any; responses: Any[]; distribution: Any[]; users: Any[]; links: Any[]; catalog: Any; attachments?: Any[] }) {
   const router = useRouter()
   const [rfi, setRfi] = useState<Any>(initial)
   const [responses, setResponses] = useState<Any[]>(initialResp)
   const [links, setLinks] = useState<Any[]>(initialLinks)
+  const [attachments, setAttachments] = useState<Any[]>(initialAttachments)
+  const [uploadingAtt, setUploadingAtt] = useState(false)
   const [linkType, setLinkType] = useState('building')
   const [linkEntity, setLinkEntity] = useState('')
   const [draft, setDraft] = useState('')
@@ -91,6 +93,29 @@ export function RfiDetailClient({ rfi: initial, responses: initialResp, links: i
     else w?.close()
   }
 
+  // RFI-level attachments (distinct from response attachments).
+  async function uploadAttachments(fileList: File[]) {
+    if (!fileList.length) return
+    setUploadingAtt(true)
+    const sb = createBrowserClient()
+    const fileMeta: Any[] = []
+    for (const file of fileList) {
+      const safe = file.name.replace(/[^\w.\-]+/g, '_')
+      const path = `${rfi.id}/att-${Date.now()}-${safe}`
+      const { error: upErr } = await sb.storage.from('rfi-files').upload(path, file, { upsert: false, contentType: file.type || 'application/octet-stream' })
+      if (!upErr) fileMeta.push({ file_name: file.name, storage_path: path, file_size: file.size, content_type: file.type })
+    }
+    if (fileMeta.length) {
+      const res = await fetch(`/api/rfis/${rfi.id}/files`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ files: fileMeta }) })
+      if (res.ok) { const rows = await res.json(); setAttachments(prev => [...prev, ...rows]) }
+    }
+    setUploadingAtt(false)
+  }
+  async function removeAttachment(fileId: string) {
+    setAttachments(prev => prev.filter(f => f.id !== fileId))   // optimistic
+    await fetch(`/api/rfis/${rfi.id}/files/${fileId}`, { method: 'DELETE' })
+  }
+
   const overdue = isOverdue(rfi)
   const official = responses.find(r => r.is_official)
 
@@ -128,6 +153,27 @@ export function RfiDetailClient({ rfi: initial, responses: initialResp, links: i
                 Reference: {rfi.drawing?.file_name ?? ''}{rfi.drawing_number ? ` · ${rfi.drawing_number}` : ''}
               </div>
             )}
+          </div>
+
+          <div className="card overflow-hidden">
+            <div className="px-[18px] py-3 border-b border-[#ECEBEA] flex items-center justify-between">
+              <span className="font-bold text-[13px] text-[#080707]">Attachments <span className="text-[#706E6B] font-medium text-[11px]">{attachments.length}</span></span>
+              <label className="btn-secondary cursor-pointer text-[12px]"><Paperclip size={13} /> {uploadingAtt ? 'Uploading…' : 'Attach'}
+                <input type="file" multiple className="hidden" disabled={uploadingAtt}
+                  onChange={e => { if (e.target.files) uploadAttachments(Array.from(e.target.files)); e.target.value = '' }} />
+              </label>
+            </div>
+            {attachments.length === 0
+              ? <div className="px-[18px] py-3 text-[12px] text-[#A8A8A8]">No files attached to this RFI.</div>
+              : <div className="px-[18px] py-3 flex flex-wrap gap-2">
+                  {attachments.map((f: Any) => (
+                    <span key={f.id} className="inline-flex items-center gap-1.5 text-[11.5px] font-semibold text-[#2C5485] bg-[#EFF4FA] border border-[#cfe0ef] rounded-md pl-2 pr-1 py-1">
+                      <button onClick={() => openFile(f)} className="inline-flex items-center gap-1.5"><Paperclip size={12} /> {f.file_name}</button>
+                      <button onClick={() => removeAttachment(f.id)} className="p-0.5 text-[#A8A8A8] hover:text-[#b91c1c]" title="Remove"><X size={11} /></button>
+                    </span>
+                  ))}
+                </div>
+            }
           </div>
 
           <div className="card overflow-hidden">
