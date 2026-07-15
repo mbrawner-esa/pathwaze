@@ -1,5 +1,8 @@
 import { createClient } from '@/lib/supabase/server'
 import { NextRequest, NextResponse } from 'next/server'
+import { appUrl } from '@/lib/slack'
+import { logActivity } from '@/lib/activity'
+import { parseTokenMentions, emailUser } from '@/lib/rfi-notify'
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string; rowId: string }> }) {
   const supabase = await createClient()
@@ -22,7 +25,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const { rowId } = await params
+  const { id: projectId, rowId } = await params
   const body = await req.json()
   if (!body.message || typeof body.message !== 'string') {
     return NextResponse.json({ error: 'message required' }, { status: 400 })
@@ -42,5 +45,20 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     })
     .select().single()
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+  // ── @-mentions in the message → notify each mentioned user (feed + email) ──
+  try {
+    const mentioned = parseTokenMentions(body.message).filter((uid: string) => uid !== user.id)
+    if (mentioned.length) {
+      const pricingUrl = appUrl(`/projects/${projectId}?tab=financial`)
+      for (const uid of mentioned) {
+        await logActivity(supabase, user, { entity_type: 'project', entity_id: projectId, action: 'mentioned you in a pricing thread', project_id: projectId, metadata: { mentioned_user_id: uid, row_id: rowId } })
+        await emailUser(supabase, uid, { subject: 'You were mentioned in an offtaker pricing thread', heading: 'You were mentioned', message: 'You were mentioned in an offtaker pricing discussion.', ctaLabel: 'Open pricing', ctaUrl: pricingUrl })
+      }
+    }
+  } catch (e) {
+    console.warn('[mentions] offtaker pricing thread notify failed:', e)
+  }
+
   return NextResponse.json(data)
 }

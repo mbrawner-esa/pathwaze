@@ -2,6 +2,7 @@
 import { useState, useMemo, useEffect, useCallback } from 'react'
 import { Search, List, LayoutGrid, X, Plus, Send, MessageSquare, CheckCircle, Activity, Slack, Pencil, Paperclip, ExternalLink, Trash2, Upload, Download, ChevronDown, Copy, Link2, Lock } from 'lucide-react'
 import { MessageText } from '@/components/ui/MessageText'
+import { MentionInput } from '@/components/ui/MentionInput'
 import { RichTextEditor } from '@/components/ui/RichTextEditor'
 import { NotesRender } from '@/components/ui/NotesRender'
 import { usePrompt } from '@/components/ui/usePrompt'
@@ -123,6 +124,8 @@ export function TasksClient({ tasks: initialTasks, projects, users }: { tasks: a
   const [typeFilter, setTypeFilter] = useState('All')
   const [projectFilter, setProjectFilter] = useState('All')
   const [assigneeFilter, setAssigneeFilter] = useState('All')
+  // Completed tasks are hidden by default (both list + kanban); toggle to reveal.
+  const [showCompleted, setShowCompleted] = useState(false)
   // List view: group + sort
   const [groupBy, setGroupBy] = useState<'none' | 'status' | 'assignee' | 'priority' | 'type' | 'project'>('none')
   const [sortBy, setSortBy] = useState<'default' | 'due_date' | 'priority'>('default')
@@ -220,8 +223,10 @@ export function TasksClient({ tasks: initialTasks, projects, users }: { tasks: a
     const matchType = typeFilter === 'All' || t.type === typeFilter
     const matchProject = projectFilter === 'All' || t.project_id === projectFilter
     const matchAssignee = assigneeFilter === 'All' || t.assignee?.full_name === assigneeFilter
-    return matchSearch && matchStatus && matchType && matchProject && matchAssignee
-  }), [initialTasks, search, statusFilter, typeFilter, projectFilter, assigneeFilter])
+    // Hide completed by default unless toggled on, or the user explicitly filters to Complete.
+    const matchCompleted = showCompleted || statusFilter === 'Complete' || t.status !== 'Complete'
+    return matchSearch && matchStatus && matchType && matchProject && matchAssignee && matchCompleted
+  }), [initialTasks, search, statusFilter, typeFilter, projectFilter, assigneeFilter, showCompleted])
 
   const PRIORITY_RANK: Record<string, number> = { High: 3, Medium: 2, Low: 1 }
 
@@ -734,6 +739,15 @@ export function TasksClient({ tasks: initialTasks, projects, users }: { tasks: a
         <select value={assigneeFilter} onChange={e => setAssigneeFilter(e.target.value)} className="px-3 py-1.5 border border-[#e2e8f0] rounded-lg text-[13px] bg-white">
           {assigneeNames.map(a => <option key={a} value={a}>{a === 'All' ? 'All Assignees' : a.split(' ')[0]}</option>)}
         </select>
+        <label className="flex items-center gap-1.5 text-[13px] text-[#3E3E3C] cursor-pointer select-none whitespace-nowrap">
+          <input
+            type="checkbox"
+            checked={showCompleted}
+            onChange={e => setShowCompleted(e.target.checked)}
+            className="accent-[#70A0D0]"
+          />
+          Show completed
+        </label>
         {view === 'list' && (
           <>
             <div className="w-px h-5 bg-[#e2e8f0] mx-0.5" />
@@ -1631,9 +1645,8 @@ export function TasksClient({ tasks: initialTasks, projects, users }: { tasks: a
                     </div>
                   )}
                   <div className="flex gap-2">
-                    <input type="text" value={newComment} onChange={e => setNewComment(e.target.value)}
-                      onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendComment() } }}
-                      placeholder="Add a message..." className="flex-1 px-3 py-2 border border-[#cbd5e1] rounded text-[13px] focus:outline-none focus:border-[#70A0D0] focus:ring-2 focus:ring-[#70A0D0]/20" />
+                    <MentionInput value={newComment} onChange={setNewComment} onSubmit={sendComment} users={users}
+                      placeholder="Add a message…  (type @ to mention)" className="px-3 py-2 border border-[#cbd5e1] rounded text-[13px] focus:outline-none focus:border-[#70A0D0] focus:ring-2 focus:ring-[#70A0D0]/20" />
                     <button onClick={sendComment} className="p-2 bg-[#70A0D0] text-white rounded hover:bg-[#2C5485] transition-colors">
                       <Send size={14} />
                     </button>

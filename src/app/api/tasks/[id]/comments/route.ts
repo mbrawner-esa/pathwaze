@@ -1,6 +1,8 @@
 import { createClient } from '@/lib/supabase/server'
 import { NextRequest, NextResponse } from 'next/server'
-import { replyInThread } from '@/lib/slack'
+import { replyInThread, appUrl } from '@/lib/slack'
+import { logActivity } from '@/lib/activity'
+import { parseTokenMentions, emailUser } from '@/lib/rfi-notify'
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const supabase = await createClient()
@@ -61,6 +63,28 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     }
   } catch (e) {
     console.warn('[slack] task comment notify failed:', e)
+  }
+
+  // ── @-mentions in the comment → notify each mentioned user (feed + email) ──
+  // Skip self-mentions and private tasks (their threads shouldn't fan out).
+  try {
+    const mentioned = parseTokenMentions(message).filter(uid => uid !== user.id)
+    if (mentioned.length) {
+      const { data: t } = await supabase
+        .from('tasks')
+        .select('title, visibility, project_id')
+        .eq('id', id)
+        .single() as { data: { title?: string | null; visibility?: string | null; project_id?: string | null } | null }
+      if (t?.visibility !== 'private') {
+        const taskUrl = appUrl(`/tasks?id=${id}`)
+        for (const uid of mentioned) {
+          await logActivity(supabase, user, { entity_type: 'task', entity_id: id, action: 'mentioned you in a comment', project_id: t?.project_id ?? null, metadata: { mentioned_user_id: uid } })
+          await emailUser(supabase, uid, { subject: 'You were mentioned in a task comment', heading: 'You were mentioned', message: `You were mentioned in a comment on task${t?.title ? ` <b>${t.title}</b>` : ''}.`, ctaLabel: 'Open task', ctaUrl: taskUrl })
+        }
+      }
+    }
+  } catch (e) {
+    console.warn('[mentions] task comment notify failed:', e)
   }
 
   return NextResponse.json(data)

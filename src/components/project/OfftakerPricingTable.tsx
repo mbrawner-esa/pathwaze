@@ -32,6 +32,7 @@ import { Plus, Trash2, X, Send, MessageSquare, Pencil, Info, Circle, CheckCircle
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { Avatar } from '@/components/ui/Avatar'
 import { MessageText, type MentionUser } from '@/components/ui/MessageText'
+import { MentionInput } from '@/components/ui/MentionInput'
 import { RichTextEditor } from '@/components/ui/RichTextEditor'
 import { NotesRender } from '@/components/ui/NotesRender'
 
@@ -786,13 +787,13 @@ export function OfftakerPricingTable({
                     </div>
                   )}
                   <div className="flex gap-2">
-                    <input
-                      type="text"
+                    <MentionInput
                       value={newMessage}
-                      onChange={e => setNewMessage(e.target.value)}
-                      onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendThread() } }}
-                      placeholder="Add a message…"
-                      className="flex-1 px-3 py-2 border border-[#cbd5e1] rounded text-[13px] focus:outline-none focus:border-[#70A0D0] focus:ring-2 focus:ring-[#70A0D0]/20"
+                      onChange={setNewMessage}
+                      onSubmit={sendThread}
+                      users={users}
+                      placeholder="Add a message…  (type @ to mention)"
+                      className="px-3 py-2 border border-[#cbd5e1] rounded text-[13px] focus:outline-none focus:border-[#70A0D0] focus:ring-2 focus:ring-[#70A0D0]/20"
                     />
                     <button onClick={sendThread} className="p-2 bg-[#70A0D0] text-white rounded hover:bg-[#2C5485] transition-colors">
                       <Send size={14} />

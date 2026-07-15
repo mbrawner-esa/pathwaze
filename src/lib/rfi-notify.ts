@@ -26,6 +26,20 @@ export function parseMentions(html: string): string[] {
   return Array.from(ids)
 }
 
+/**
+ * Extract mentioned user ids from a plain-text message body — the Slack-style
+ * `<@USER_UUID>` tokens inserted by MentionInput. The hex/hyphen pattern only
+ * matches Pathwaze user UUIDs, so Slack-synced `<@U7RHKP63V>` tokens (which we
+ * can't email anyway) are intentionally skipped.
+ */
+export function parseTokenMentions(text: string): string[] {
+  const ids = new Set<string>()
+  const re = /<@([0-9a-fA-F-]{8,})>/g
+  let m: RegExpExecArray | null
+  while ((m = re.exec(text || ''))) ids.add(m[1])
+  return Array.from(ids)
+}
+
 export interface NotifyMsg { subject: string; heading: string; message: string; ctaLabel?: string; ctaUrl?: string }
 
 /** Email a single internal user by id. Best-effort. */
