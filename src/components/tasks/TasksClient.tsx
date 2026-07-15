@@ -167,6 +167,9 @@ export function TasksClient({ tasks: initialTasks, projects, users }: { tasks: a
   const [savingFile, setSavingFile] = useState(false)
   const [uploadProgress, setUploadProgress] = useState<string | null>(null)
   const [fileError, setFileError] = useState<string | null>(null)
+  // Subtasks
+  const [newSubtask, setNewSubtask] = useState('')
+  const [savingSubtask, setSavingSubtask] = useState(false)
 
   // Task links (polymorphic refs to project entities)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -217,7 +220,25 @@ export function TasksClient({ tasks: initialTasks, projects, users }: { tasks: a
   const openCount = initialTasks.filter(t => t.status !== 'Complete').length
   const completeCount = initialTasks.filter(t => t.status === 'Complete').length
 
+  // Children map (parent task id → its subtasks), for the drawer + progress chips.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const subtasksByParent = useMemo(() => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const m = new Map<string, any[]>()
+    for (const t of initialTasks) {
+      if (t.parent_task_id) {
+        const arr = m.get(t.parent_task_id) ?? []
+        arr.push(t)
+        m.set(t.parent_task_id, arr)
+      }
+    }
+    return m
+  }, [initialTasks])
+
   const filtered = useMemo(() => initialTasks.filter(t => {
+    // Subtasks never appear in the top-level list/kanban — they live under their
+    // parent (progress chip on the row + Subtasks section in the drawer).
+    if (t.parent_task_id) return false
     const matchSearch = !search || t.title.toLowerCase().includes(search.toLowerCase())
     const matchStatus = statusFilter === 'All' || t.status === statusFilter
     const matchType = typeFilter === 'All' || t.type === typeFilter
@@ -648,6 +669,18 @@ export function TasksClient({ tasks: initialTasks, projects, users }: { tasks: a
     if (selectedTask === taskId) loadActivity(taskId)
   }
 
+  // Quick reassign from the drawer read view — no full edit needed. PATCHing
+  // assignee_id fires the existing reassignment notifications (email + Slack).
+  async function reassignTask(taskId: string, assigneeId: string) {
+    await fetch(`/api/tasks/${taskId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ assignee_id: assigneeId || null }),
+    })
+    router.refresh()
+    if (selectedTask === taskId) loadActivity(taskId)
+  }
+
   async function handleApprove(taskId: string) {
     await fetch(`/api/tasks/${taskId}`, {
       method: 'PATCH',
@@ -656,6 +689,29 @@ export function TasksClient({ tasks: initialTasks, projects, users }: { tasks: a
     })
     router.refresh()
     if (selectedTask === taskId) loadActivity(taskId)
+  }
+
+  // Create a subtask under the open task (inherits its project). Subtasks are
+  // full tasks (own assignee/status/due), just nested one level.
+  async function addSubtask() {
+    if (!selected || !newSubtask.trim()) return
+    setSavingSubtask(true)
+    try {
+      const res = await fetch('/api/tasks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: newSubtask.trim(),
+          project_id: selected.project_id,
+          parent_task_id: selected.id,
+          type: selected.type,
+          visibility: selected.visibility ?? 'public',
+        }),
+      })
+      if (res.ok) { setNewSubtask(''); router.refresh() }
+    } finally {
+      setSavingSubtask(false)
+    }
   }
 
   async function handleRequestChanges(taskId: string) {
@@ -822,6 +878,16 @@ export function TasksClient({ tasks: initialTasks, projects, users }: { tasks: a
                               {task.requires_approval && (
                                 <span className="text-[10px] bg-[#FDF4FF] text-[#7e22ce] px-1.5 py-0.5 rounded">Approval</span>
                               )}
+                              {(() => {
+                                const kids = subtasksByParent.get(task.id) ?? []
+                                if (!kids.length) return null
+                                const done = kids.filter((k: any) => k.status === 'Complete').length
+                                return (
+                                  <span className="inline-flex items-center gap-1 text-[10px] bg-[#EFF4FA] text-[#2C5485] px-1.5 py-0.5 rounded" title="Subtasks complete">
+                                    <CheckCircle size={9} /> {done}/{kids.length}
+                                  </span>
+                                )
+                              })()}
                             </div>
                             {task.project && (
                               <Link
@@ -985,7 +1051,17 @@ export function TasksClient({ tasks: initialTasks, projects, users }: { tasks: a
                                   {task.project.name}
                                 </Link>
                               ) : <span className="text-xs text-[#706E6B] truncate">{task.project?.name}</span>}
-                              <div className="flex items-center gap-1 flex-shrink-0">
+                              <div className="flex items-center gap-1.5 flex-shrink-0">
+                                {(() => {
+                                  const kids = subtasksByParent.get(task.id) ?? []
+                                  if (!kids.length) return null
+                                  const done = kids.filter((k: any) => k.status === 'Complete').length
+                                  return (
+                                    <span className="inline-flex items-center gap-0.5 text-[10px] text-[#2C5485]" title="Subtasks complete">
+                                      <CheckCircle size={9} /> {done}/{kids.length}
+                                    </span>
+                                  )
+                                })()}
                                 {task.assignee?.full_name && <Avatar name={task.assignee.full_name} imageUrl={task.assignee.avatar_url} size="sm" />}
                               </div>
                             </div>
@@ -1278,13 +1354,25 @@ export function TasksClient({ tasks: initialTasks, projects, users }: { tasks: a
                   <div className="bg-white rounded-lg border border-[#e2e8f0] overflow-hidden mb-5">
                     <div className="grid grid-cols-2 divide-x divide-[#f1f5f9]">
                       <div className="px-4 py-3">
-                        <p className="label mb-1">Assignee</p>
+                        <div className="flex items-center justify-between gap-2 mb-1">
+                          <p className="label">Assignee</p>
+                        </div>
                         {selected.assignee?.full_name ? (
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2 mb-1.5">
                             <Avatar name={selected.assignee.full_name} imageUrl={selected.assignee.avatar_url} size="sm" />
                             <span className="text-sm text-[#181818] font-medium">{selected.assignee.full_name}</span>
                           </div>
-                        ) : <span className="text-sm text-[#706E6B]">Unassigned</span>}
+                        ) : <span className="text-sm text-[#706E6B] block mb-1.5">Unassigned</span>}
+                        {/* Quick reassign — no edit mode needed. */}
+                        <select
+                          value={selected.assignee_id ?? ''}
+                          onChange={e => reassignTask(selected.id, e.target.value)}
+                          className="w-full px-2 py-1 text-[12px] text-[#3E3E3C] border border-[#e2e8f0] rounded bg-white focus:outline-none focus:border-[#70A0D0]"
+                          title="Reassign this task"
+                        >
+                          <option value="">Unassigned</option>
+                          {users.map((u: { id: string; full_name: string }) => <option key={u.id} value={u.id}>{u.full_name}</option>)}
+                        </select>
                       </div>
                       <div className="px-4 py-3">
                         <p className="label mb-1">Approver</p>
@@ -1348,6 +1436,71 @@ export function TasksClient({ tasks: initialTasks, projects, users }: { tasks: a
                   )}
                 </div>
               )}
+
+              {/* Subtasks — only for top-level tasks (2-level nesting limit). */}
+              {!selected.parent_task_id && (() => {
+                const kids = subtasksByParent.get(selected.id) ?? []
+                const done = kids.filter((k: any) => k.status === 'Complete').length
+                return (
+                  <div className="mb-5 bg-white border border-[#e2e8f0] rounded-lg overflow-hidden">
+                    <div className="px-4 py-3 border-b border-[#f1f5f9] flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <CheckCircle size={14} className="text-[#3E3E3C]" />
+                        <span className="text-[13px] font-semibold text-[#181818]">Subtasks</span>
+                        {kids.length > 0 && <span className="text-[11px] text-[#706E6B]">{done}/{kids.length} done</span>}
+                      </div>
+                    </div>
+                    <div className="px-4 py-3">
+                      {kids.length > 0 && (
+                        <>
+                          <div className="h-1.5 rounded-full bg-[#f1f5f9] overflow-hidden mb-3">
+                            <div className="h-full bg-[#70A0D0] rounded-full" style={{ width: `${Math.round((done / kids.length) * 100)}%` }} />
+                          </div>
+                          <ul className="divide-y divide-[#f1f5f9] mb-3">
+                            {kids.map((k: any) => {
+                              const sc = STATUS_COLORS[k.status] ?? { bg: '#F8FAFC', text: '#475569' }
+                              return (
+                                <li key={k.id}>
+                                  <button onClick={() => setSelectedTask(k.id)} className="w-full flex items-center gap-2.5 py-2 text-left hover:bg-[#fafbfc] rounded px-1">
+                                    <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: PRIORITY_COLORS[k.priority] ?? '#94a3b8' }} />
+                                    <span className={`flex-1 min-w-0 truncate text-[13px] ${k.status === 'Complete' ? 'text-[#94a3b8] line-through' : 'text-[#181818]'}`}>{k.title}</span>
+                                    {k.assignee?.full_name && <Avatar name={k.assignee.full_name} imageUrl={k.assignee.avatar_url} size="sm" />}
+                                    <span className="text-[10px] font-medium px-1.5 py-0.5 rounded flex-shrink-0" style={{ backgroundColor: sc.bg, color: sc.text }}>{k.status}</span>
+                                  </button>
+                                </li>
+                              )
+                            })}
+                          </ul>
+                        </>
+                      )}
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          value={newSubtask}
+                          onChange={e => setNewSubtask(e.target.value)}
+                          onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); addSubtask() } }}
+                          placeholder="Add a subtask…"
+                          className="flex-1 px-3 py-2 border border-[#cbd5e1] rounded text-[13px] focus:outline-none focus:border-[#70A0D0] focus:ring-2 focus:ring-[#70A0D0]/20"
+                        />
+                        <button onClick={addSubtask} disabled={savingSubtask || !newSubtask.trim()} className="px-3 py-2 bg-[#70A0D0] text-white rounded text-[13px] font-semibold hover:bg-[#2C5485] disabled:opacity-50 transition-colors">
+                          {savingSubtask ? 'Adding…' : 'Add'}
+                        </button>
+                      </div>
+                      <p className="text-[10.5px] text-[#94a3b8] mt-1.5">New subtasks inherit this task&apos;s project. Open one to set its assignee, due date, or status.</p>
+                    </div>
+                  </div>
+                )
+              })()}
+
+              {/* Subtask breadcrumb — link back to the parent task. */}
+              {selected.parent_task_id && (() => {
+                const parent = initialTasks.find(t => t.id === selected.parent_task_id)
+                return parent ? (
+                  <button onClick={() => setSelectedTask(parent.id)} className="mb-5 inline-flex items-center gap-1.5 text-[12.5px] text-[#2C5485] hover:underline">
+                    <ChevronDown size={13} className="rotate-90" /> Subtask of “{parent.title}”
+                  </button>
+                ) : null
+              })()}
 
               {/* Related — links to buildings, meters, systems, permits, etc */}
               {selected.project_id && (

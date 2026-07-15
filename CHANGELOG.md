@@ -6,6 +6,22 @@
 
 ---
 
+## 2026-07-15
+
+- **Subtasks** — tasks can now have subtasks (one level deep). The task drawer
+  has a Subtasks section with a progress bar, inline add, and click-through to
+  each subtask (subtasks are full tasks with their own assignee/status/due).
+  The task list + kanban show a `done/total` chip on parents; subtasks are
+  hidden from the top-level views. (Migration 045 — run required.)
+- **Task quick-reassign** — reassign a task straight from the drawer without
+  entering edit mode (fires the usual assignment notifications).
+- **Project Contact link** — the main contact on a project now shows just the
+  name and links straight to the Stakeholders tab.
+- **Bigger drawing uploads** — the Drawings tool now accepts files up to 200 MB
+  (migration 044 — run required).
+- **Slack fix** — `/pathwaze <project>` no longer times out (the lookup was
+  doing too many sequential queries).
+
 ## 2026-06-11
 
 - **RFI status notifications** — closing or (re)opening an RFI now emails the

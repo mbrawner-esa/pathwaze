@@ -1,5 +1,6 @@
 'use client'
 import { useState } from 'react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { Pencil, X, Check } from 'lucide-react'
 import { StageBadge } from '@/components/ui/StageBadge'
@@ -184,11 +185,11 @@ export function ProjectSummaryCard({
             />
           ) : (() => {
             const contact = stakeholders.find(s => s.id === project.primary_stakeholder_id)
+            // Show just the name, as a link to the Stakeholders tab of this project.
             return contact ? (
-              <span className="inline-flex items-center gap-1.5">
-                <span className="font-medium">{contact.name}</span>
-                {contact.title && <span className="text-[#706E6B]">· {contact.title}</span>}
-              </span>
+              <Link href={`/projects/${project.id}?tab=stakeholders`} className="font-medium text-[#2C5485] hover:underline">
+                {contact.name}
+              </Link>
             ) : <span className="text-[#706E6B]">—</span>
           })()}
         </Field>

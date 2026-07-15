@@ -54,6 +54,15 @@ export function ProjectDetailClient({ project, financials, milestones, stakehold
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab])
 
+  // Reverse sync: when the ?tab= param changes (e.g. an in-page link like the
+  // Project Contact → Stakeholders link updates the URL), switch tabs to match.
+  // Both effects guard on equality, so they settle without ping-ponging.
+  useEffect(() => {
+    const next = tabFromUrl && VALID_TAB_IDS.has(tabFromUrl) ? tabFromUrl : 'threads'
+    if (next !== activeTab) setActiveTab(next)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tabFromUrl])
+
   return (
     <div>
       {/* Tab Bar + Content in a single bordered card so they read as one surface */}

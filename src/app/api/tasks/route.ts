@@ -24,6 +24,7 @@ export async function POST(req: NextRequest) {
     requires_approval: body.requires_approval || false,
     due_date: body.due_date || null,
     visibility,
+    parent_task_id: body.parent_task_id || null,
     created_by: user.id,
   }).select().single()
 

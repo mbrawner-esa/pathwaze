@@ -101,33 +101,26 @@ export async function POST(req: NextRequest) {
     let project: ProjectCardArgs | null = null
     let comment = ''
 
+    // The portfolio is small (~19 projects), so fetch all in ONE query and match
+    // in memory. The old code fired up to 8 sequential queries (2 per prefix
+    // length × 4), which pushed the handler past Slack's 3s slash-command
+    // timeout on cold starts (the reported "operation_timeout"). One round-trip
+    // fixes that while preserving the exact match semantics below.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: allProjects } = await supabase
+      .from('projects')
+      .select('id, name, project_number, stage, city, state, system_kwdc') as any
+    const projects = (allProjects ?? []) as ProjectCardArgs[]
+
     for (let i = Math.min(tokens.length, 4); i > 0 && !project; i--) {
-      const candidate = tokens.slice(0, i).join(' ')
-      // 1) exact project_number
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data: byNumber } = await supabase
-        .from('projects')
-        .select('id, name, project_number, stage, city, state, system_kwdc')
-        .eq('project_number', candidate)
-        .limit(1)
-        .maybeSingle() as any
-      if (byNumber) {
-        project = byNumber
+      const cand = tokens.slice(0, i).join(' ').toLowerCase()
+      // 1) exact project_number, then 2) partial name match — longest prefix first.
+      const match =
+        projects.find(p => (p.project_number ?? '').toLowerCase() === cand) ||
+        projects.find(p => (p.name ?? '').toLowerCase().includes(cand))
+      if (match) {
+        project = match
         comment = tokens.slice(i).join(' ').trim()
-        break
-      }
-      // 2) partial name match
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data: byName } = await supabase
-        .from('projects')
-        .select('id, name, project_number, stage, city, state, system_kwdc')
-        .ilike('name', `%${candidate}%`)
-        .limit(1)
-        .maybeSingle() as any
-      if (byName) {
-        project = byName
-        comment = tokens.slice(i).join(' ').trim()
-        break
       }
     }
 

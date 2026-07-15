@@ -16,6 +16,32 @@ Last updated: 2026-07-15
 
 ---
 
+## 📥 Team requests — 2026-07-15 (triage inbox)
+
+Raw intake from the team. Graduate each into Active or Roadmap as prioritized.
+
+| Ref | Request | Status |
+|-----|---------|--------|
+| T1 | Projects tab — save filter presets | roadmap |
+| T2 | Tasks tab — save filter presets | roadmap |
+| T3 | Increase file-size limit on the Drawings upload tool | ✅ Done 2026-07-15 — migration **044** raises the `drawings` bucket `file_size_limit` to 200 MB (⚠️ run SQL). |
+| T4 | Project page — Project Contact as name-only clickable link → Stakeholders tab | ✅ Done 2026-07-15 — `ProjectSummaryCard` links to `?tab=stakeholders`; `ProjectDetailClient` now reverse-syncs the tab from the URL. |
+| T5 | RFIs page — sort by + filter by "assigned to" (ball-in-court) | roadmap (medium) |
+| T6 | RFIs — allow file attachments on the RFI itself (not just responses) | roadmap (medium) |
+| T7 | Review module — free-form comments section beyond the default action-plan questions | roadmap (medium) |
+| T8 | Tasks — allow reassignment | ✅ Done 2026-07-15 — inline reassign dropdown in the task drawer read view (fires existing reassignment notifications). |
+| T9 | Automation: route team feature requests from ClaudeCode → `#Pathwaze_bugs` Slack for triage | roadmap (meta) |
+| T10 | Home dashboard — show open RFIs assigned to the user in Due-this-week / Completed / Conversations | roadmap (medium) |
+| T11 | **Subtasks** | ✅ Done 2026-07-15 — migration **045** (`parent_task_id` + 2-level trigger; ⚠️ run SQL). Full mini-tasks; drawer Subtasks section (progress bar, inline add, click-through), progress chip on list + kanban; parent shows `done/total` but isn't blocked; subtasks hidden from top-level list/kanban. Schedule coupling intentionally omitted. |
+
+### Issues (bugs) — 2026-07-15
+| Ref | Issue | Status |
+|-----|-------|--------|
+| B1 | Slack messages don't auto-link to Pathwaze; user must type `/pathwaze project <name>` | Open (roadmap) — auto-link path = channel linked to a project (events route); needs verify/fix. Slash command is the manual fallback. |
+| B2 | `/pathwaze` slash command fails with `operation_timeout` | ✅ Done 2026-07-15 — collapsed the ~8 sequential project-match queries into one in-memory match over all (~19) projects, well under Slack's 3s limit. |
+
+---
+
 ## 🗺️ Roadmap (later — not scheduled)
 
 | # | Item | Effort | Notes |
