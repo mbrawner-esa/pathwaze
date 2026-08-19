@@ -1,5 +1,45 @@
 # Pathwaze — Project Context
 
+> **Doc map:** [README.md](README.md) = human overview + local setup ·
+> **this file** = how to work in the codebase · [ROADMAP.md](ROADMAP.md) =
+> what's next · [CHANGELOG.md](CHANGELOG.md) = what shipped. Older docs
+> (`HANDOFF.md`, `BACKLOG.md`, `DRAWINGS_AND_RFI_PLAN.md`) are archived under
+> `docs/archive/` — historical only, superseded by the four above.
+
+## ⚠️ Working directory & repo — READ FIRST
+There are **two clones** of this repo on this machine. Use the right one:
+
+| | Canonical (use this) | Stale (do not use) |
+|---|---|---|
+| Path | `C:\Users\Morgan Brawner\Documents\Pathwaze Local` | `C:\Users\Morgan Brawner\Box\Morgan Brawner\Pathwaze` |
+| State | Current `main`, working `node_modules`, builds locally | Months behind, old Box-Drive copy |
+
+A session may **open in the stale Box path by default** — always `cd` to the
+`Documents\Pathwaze Local` clone before reading or editing. Both point at the
+same GitHub remote (`mbrawner-esa/pathwaze`); committing from the stale clone
+would push outdated code. If you're unsure which clone you're in, run
+`git log --oneline -1` and compare against the latest commit.
+
+- **Live app:** https://pathwaze.esa-solar.com (Vercel, auto-deploys on push to `main`)
+- **GitHub:** https://github.com/mbrawner-esa/pathwaze
+
+## Build, verify & ship
+- `node_modules` **is** installed in the `Documents\Pathwaze Local` clone — build
+  and lint locally there. (The old "never install locally" rule was a Box-Drive
+  limitation on the stale clone; it does not apply to the canonical one.)
+- **Before any commit**, run both and fix all output:
+  - `npx next lint`
+  - `npx tsc --noEmit`
+- **Deploys do not touch the database.** Any change with a new
+  `supabase/migrations/NNN_*.sql` file must be **run manually on Supabase** by
+  the user. Always call out new migration numbers explicitly in the summary.
+- Migrations are numbered sequentially, idempotent (`IF NOT EXISTS` /
+  `DROP POLICY IF EXISTS`). Next free number as of 2026-08-19: **049**
+  (latest applied: 048).
+- **Never set `EMAIL_NOTIFY_SELF=true` in Production** — dev/preview only.
+- Secrets live in `.env.local` (gitignored) + Vercel project settings. Never
+  paste real credentials into chat or commit them.
+
 ## What this is
 Pathwaze is a Next.js 14 project management and CRM for ESA Solar managing 19 AdventHealth BTM solar projects across Florida and Illinois.
 
@@ -82,8 +122,12 @@ set_universal_findings (Universal answers shared per area+collection "set").
 RFIs: rfis (per-project numbered), rfi_responses, rfi_distribution, rfi_links
 (polymorphic), rfi_response_files.
 
+Recent additions: `saved_filters` (per-user filter presets, migration 046),
+`rfi_attachments` (files on the RFI itself, 047), `review_comments` (free-form
+drawing-review comments, 048).
+
 See `supabase/migrations/` for the canonical schema — each migration is
-numbered (001…041+) and is idempotent (CREATE/ALTER … IF NOT EXISTS).
+numbered (001…048) and is idempotent (CREATE/ALTER … IF NOT EXISTS).
 Storage buckets: task-files, project-files, drawings, rfi-files.
 
 ## Roles
