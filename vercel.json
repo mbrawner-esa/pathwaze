@@ -1,5 +1,6 @@
 {
   "crons": [
-    { "path": "/api/cron/rfi-reminders", "schedule": "0 13 * * *" }
+    { "path": "/api/cron/rfi-reminders", "schedule": "0 13 * * *" },
+    { "path": "/api/cron/email-sync", "schedule": "*/15 * * * *" }
   ]
 }

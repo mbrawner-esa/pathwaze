@@ -1,8 +1,9 @@
 'use client'
 import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { Avatar } from '@/components/ui/Avatar'
+import { Mail } from 'lucide-react'
 
 export interface SettingsUser {
   id: string
@@ -24,14 +25,34 @@ export interface SettingsUser {
   subscribed_task_types: string[] | null
 }
 
+export interface OutlookStatus {
+  connected: boolean
+  accountEmail: string | null
+  lastSyncedAt: string | null
+  lastError: string | null
+}
+
 const ALL_TASK_TYPES = [
   'Design', 'Engineering', 'Permitting', 'Interconnection',
   'Financial', 'Legal', 'Construction', 'Operations', 'Administrative',
 ] as const
 
-export function SettingsClient({ user }: { user: SettingsUser }) {
+export function SettingsClient({ user, outlook }: { user: SettingsUser; outlook: OutlookStatus }) {
   const router = useRouter()
   const supabase = createClient()
+
+  const [disconnecting, setDisconnecting] = useState(false)
+  async function disconnectOutlook() {
+    setDisconnecting(true); setErr(null)
+    const res = await fetch('/api/auth/outlook/disconnect', { method: 'POST' })
+    if (!res.ok) {
+      const b = await res.json().catch(() => ({}))
+      setErr(b?.error || 'Disconnect failed')
+      setDisconnecting(false)
+      return
+    }
+    router.refresh()
+  }
 
   const [prefs, setPrefs] = useState({
     notify_slack_task_assigned: user.notify_slack_task_assigned ?? true,
@@ -79,6 +100,12 @@ export function SettingsClient({ user }: { user: SettingsUser }) {
   const lastSync = user.profile_synced_at
     ? new Date(user.profile_synced_at).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
     : 'Not yet synced'
+
+  const searchParams = useSearchParams()
+  const outlookParam = searchParams.get('outlook')
+  const outlookLastSync = outlook.lastSyncedAt
+    ? new Date(outlook.lastSyncedAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
+    : 'Not synced yet'
 
   return (
     <div className="px-8 py-7 max-w-3xl">
@@ -154,6 +181,63 @@ export function SettingsClient({ user }: { user: SettingsUser }) {
           In-app notifications (the bell icon) are always on.
           Channel posts for project events depend on each project&apos;s linked Slack channel.
         </p>
+      </Section>
+
+      {/* Email (Outlook) connection */}
+      <Section title="Email (Outlook)" subtitle="Connect your Outlook mailbox to mirror emails with project stakeholders into that project's Threads tab.">
+        {outlookParam === 'connected' && (
+          <div className="mb-4 px-3 py-2 bg-[#E8F5EA] border border-[#bbf7d0] rounded text-[12.5px] text-[#166534]">
+            Outlook connected. Stakeholder emails will start appearing in project Threads on the next sync.
+          </div>
+        )}
+        {outlookParam === 'error' && (
+          <div className="mb-4 px-3 py-2 bg-[#fef2f2] border border-[#fecaca] rounded text-[12.5px] text-[#991b1b]">
+            Couldn&apos;t connect Outlook. Please try again.
+          </div>
+        )}
+        <div className="flex items-start justify-between gap-4">
+          <div className="flex items-start gap-3 min-w-0">
+            <div className="w-9 h-9 rounded-full bg-[#EFF6FF] flex items-center justify-center flex-shrink-0">
+              <Mail size={16} className="text-[#1d4ed8]" />
+            </div>
+            <div className="min-w-0">
+              {outlook.connected ? (
+                <>
+                  <p className="text-[13px] font-medium text-[#181818]">
+                    Connected{outlook.accountEmail ? <> · <span className="font-semibold">{outlook.accountEmail}</span></> : ''}
+                  </p>
+                  <p className="text-[12px] text-[#706E6B] mt-0.5">Last synced: {outlookLastSync}</p>
+                  {outlook.lastError && (
+                    <p className="text-[11.5px] text-[#b91c1c] mt-1">Last sync issue: {outlook.lastError}</p>
+                  )}
+                </>
+              ) : (
+                <>
+                  <p className="text-[13px] font-medium text-[#181818]">Not connected</p>
+                  <p className="text-[12px] text-[#706E6B] mt-0.5 leading-snug">
+                    Only emails to or from people listed as stakeholders on a project are mirrored. Everything else stays private.
+                  </p>
+                </>
+              )}
+            </div>
+          </div>
+          {outlook.connected ? (
+            <button
+              onClick={disconnectOutlook}
+              disabled={disconnecting}
+              className={`px-3 py-1.5 text-[12.5px] font-semibold border border-[#e2e8f0] rounded hover:bg-[#fafbfc] text-[#3E3E3C] flex-shrink-0 ${disconnecting ? 'opacity-60' : ''}`}
+            >
+              {disconnecting ? 'Disconnecting…' : 'Disconnect'}
+            </button>
+          ) : (
+            <a
+              href="/api/auth/outlook/connect"
+              className="px-3 py-1.5 text-[12.5px] font-semibold rounded bg-[#70A0D0] text-white hover:bg-[#5d8fc0] flex-shrink-0 no-underline"
+            >
+              Connect Outlook
+            </a>
+          )}
+        </div>
       </Section>
 
       {/* Task subscriptions */}
