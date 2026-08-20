@@ -13,6 +13,9 @@ export interface Meter {
   account_num: string | null
   utility: string | null
   rate_schedule: string | null
+  data_type: string | null
+  billing_start_year: string | null
+  billing_start_month: string | null
   annual_usage_kwh: number | null
   peak_demand_kw: number | null
   blended_rate: number | null
@@ -25,6 +28,15 @@ export interface Meter {
   ix_feasibility: string | null
   ix_cost_estimate: number | null
 }
+
+const DATA_TYPES = ['Annual Bills', 'Interval Data (30 Min)', 'Interval Data (60 Min)']
+const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
+const BILLING_YEARS = (() => {
+  const end = new Date().getFullYear() + 1
+  const years: string[] = []
+  for (let y = 2024; y <= end; y++) years.push(String(y))
+  return years
+})()
 
 const STATUSES = ['Active', 'Inactive', 'TBD']
 const IX_STATUSES = ['Not Started', 'Submitted', 'In Review', 'Approved', 'Denied']
@@ -58,6 +70,7 @@ export function MetersTable({
 
   const blank = {
     meter_num: '', account_num: '', building_id: '', utility: '', rate_schedule: '',
+    data_type: '', billing_start_year: '', billing_start_month: '',
     annual_usage_kwh: '', peak_demand_kw: '', blended_rate: '', annual_spend: '',
     status: 'Active', included: true,
     ix_app_num: '', ix_status: '', ix_voltage: '', ix_feasibility: '', ix_cost_estimate: '',
@@ -69,6 +82,9 @@ export function MetersTable({
     setForm({
       meter_num: m.meter_num, account_num: m.account_num ?? '', building_id: m.building_id ?? '',
       utility: m.utility ?? '', rate_schedule: m.rate_schedule ?? '',
+      data_type: m.data_type ?? '',
+      billing_start_year: m.billing_start_year ?? '',
+      billing_start_month: m.billing_start_month ?? '',
       annual_usage_kwh: m.annual_usage_kwh?.toString() ?? '',
       peak_demand_kw: m.peak_demand_kw?.toString() ?? '',
       blended_rate: m.blended_rate?.toString() ?? '',
@@ -97,6 +113,9 @@ export function MetersTable({
       building_id: form.building_id || null,
       utility: form.utility || null,
       rate_schedule: form.rate_schedule || null,
+      data_type: form.data_type || null,
+      billing_start_year: form.billing_start_year || null,
+      billing_start_month: form.billing_start_month || null,
       annual_usage_kwh: usage,
       peak_demand_kw: form.peak_demand_kw ? Number(form.peak_demand_kw) : null,
       blended_rate: blended,
@@ -214,6 +233,11 @@ export function MetersTable({
         </Section>
 
         <Section title="Usage & Rate">
+          <div className="grid grid-cols-2 gap-3">
+            <DrawerSelect label="Data Type" value={form.data_type} options={DATA_TYPES} onChange={v => setForm(f => ({ ...f, data_type: v }))} />
+            <DrawerSelect label="Billing Start Year" value={form.billing_start_year} options={BILLING_YEARS} onChange={v => setForm(f => ({ ...f, billing_start_year: v }))} />
+            <DrawerSelect label="Billing Start Month" value={form.billing_start_month} options={MONTHS} onChange={v => setForm(f => ({ ...f, billing_start_month: v }))} />
+          </div>
           <div className="grid grid-cols-2 gap-3">
             <DrawerInput type="number" label="Annual Usage (kWh)" value={form.annual_usage_kwh} onChange={v => setForm(f => ({ ...f, annual_usage_kwh: v }))} />
             <DrawerInput type="number" label="Annual Spend ($)" value={form.annual_spend} onChange={v => setForm(f => ({ ...f, annual_spend: v }))} />
