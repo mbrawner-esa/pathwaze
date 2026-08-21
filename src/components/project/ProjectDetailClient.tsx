@@ -30,6 +30,19 @@ const TABS = [
 
 const VALID_TAB_IDS = new Set(TABS.map(t => t.id))
 
+// Which activity_log entity types belong to each tab's feed. The per-tab
+// Activity feed shows only edits to the entities that live on that tab
+// (e.g. Utility → meters), instead of the whole project's activity.
+const TAB_ACTIVITY_ENTITIES: Record<string, string[]> = {
+  site: ['building', 'system', 'meter'],
+  utility: ['meter', 'building'],
+  stakeholders: ['stakeholder'],
+  permitting: ['permit'],
+  technical: ['building', 'system', 'meter'],
+  financial: ['offtaker_pricing'],
+  drawings: ['rfi'],
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function ProjectDetailClient({ project, financials, milestones, stakeholders, permits, docs, buildings, meters, systems, threads = [], notes = [], activity = [], users = [], pricingRows = [], drawings = [], collections = [], reviewTypes = [] }: any) {
   const router = useRouter()
@@ -107,11 +120,19 @@ export function ProjectDetailClient({ project, financials, milestones, stakehold
         </div>
       </div>
 
-      {/* Activity feed — bottom of every project page, except when Threads tab is active */}
+      {/* Activity feed — bottom of every project page, except when Threads tab is active.
+          Scoped to the entities that live on the active tab. */}
       {activeTab !== 'threads' && (
         <div className="px-8 pt-6 pb-10 mx-auto w-full" style={{ maxWidth: 1760 }}>
           <ProjectActivityActions projectId={project.id} projectName={project.name} users={users} />
-          <ProjectActivityFeed entries={activity as ActivityEntry[]} users={users} />
+          <ProjectActivityFeed
+            entries={(activity as ActivityEntry[]).filter(e =>
+              e.kind === 'system' &&
+              !!e.entity_type &&
+              (TAB_ACTIVITY_ENTITIES[activeTab] ?? []).includes(e.entity_type)
+            )}
+            users={users}
+          />
         </div>
       )}
     </div>

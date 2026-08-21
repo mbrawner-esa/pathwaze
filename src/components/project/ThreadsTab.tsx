@@ -52,6 +52,7 @@ type SortKey = 'date_desc' | 'date_asc' | 'user' | 'type'
 type FilterKind = 'all' | 'slack' | 'email' | 'notes'
 
 const EMAIL_PREVIEW_CHARS = 220
+const SLACK_COLLAPSE_CHARS = 320
 
 function tsToDate(s: string): string {
   return new Date(s).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
@@ -240,6 +241,7 @@ function FeedRow({ item, users, expanded, onToggle }: { item: FeedItem; users: M
   const isSlack = item.kind === 'slack'
   const fallbackName = isEmail ? 'Email' : isSlack ? 'Slack user' : 'Someone'
   const longEmail = isEmail && (item.message?.length ?? 0) > EMAIL_PREVIEW_CHARS
+  const longSlack = isSlack && (item.message?.length ?? 0) > SLACK_COLLAPSE_CHARS
 
   return (
     <div className="flex gap-3">
@@ -271,11 +273,25 @@ function FeedRow({ item, users, expanded, onToggle }: { item: FeedItem; users: M
           </>
         )}
 
-        {/* Slack */}
+        {/* Slack — collapsed to a height-clamped preview when long */}
         {isSlack && (
-          <div className="text-[13px] text-[#181818] mt-0.5">
-            <MessageText text={item.message ?? ''} users={users} block />
-          </div>
+          <>
+            <div className={`relative text-[13px] text-[#181818] mt-0.5 ${longSlack && !expanded ? 'max-h-24 overflow-hidden' : ''}`}>
+              <MessageText text={item.message ?? ''} users={users} block />
+              {longSlack && !expanded && (
+                <div className="pointer-events-none absolute inset-x-0 bottom-0 h-10 bg-gradient-to-t from-white to-transparent" />
+              )}
+            </div>
+            {longSlack && (
+              <button
+                onClick={onToggle}
+                className="mt-1 inline-flex items-center gap-1 text-[11.5px] font-semibold text-[#1d4ed8] hover:underline"
+              >
+                {expanded ? 'Show less' : 'Read more'}
+                <ChevronDown size={12} className={`transition-transform ${expanded ? 'rotate-180' : ''}`} />
+              </button>
+            )}
+          </>
         )}
 
         {/* Note / Event / File */}
