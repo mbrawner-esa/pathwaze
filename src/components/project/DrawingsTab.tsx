@@ -5,18 +5,23 @@ import { Upload, FileText, ChevronRight, Trash2, Plus, Pencil } from 'lucide-rea
 import { DrawingReviewView } from './DrawingReviewView'
 import { DrawerMultiSelect } from './_RowDrawer'
 import { usePrompt } from '@/components/ui/usePrompt'
+import { openSitePlan } from './_sitePlans'
 
 // ── Types ────────────────────────────────────────────────────────────
 export interface PlanSection { key: string; label: string; is_universal: boolean; item_count: number }
 export interface Owner { id: string; full_name: string; avatar_url?: string | null }
 export interface Collection {
   id: string
+  key?: string | null
   name: string
   owner_id: string | null
   owner?: Owner | null
   action_plan_id: string | null
+  /** 'area_discipline' = the review flow · 'system' = site plans (link to systems, no review) */
+  link_target?: string
   sections: PlanSection[]
 }
+export interface SystemOption { id: string; name: string }
 export interface Area { id: string; name: string; category: string }
 export interface Drawing {
   id: string
@@ -26,8 +31,10 @@ export interface Drawing {
   drawing_type: string
   discipline_key: string | null
   discipline_keys: string[]
+  system_ids: string[]
   file_name: string
   set_label: string | null
+  storage_path: string | null
   uploaded_at: string
   review?: { id: string; status: string } | { id: string; status: string }[] | null
 }
@@ -42,6 +49,7 @@ interface Props {
   users: SimpleUser[]
   reviewTypes: ReviewType[]
   stakeholders?: SimpleUser[]
+  systems?: SystemOption[]
 }
 
 const CATEGORY_PILL: Record<string, { bg: string; text: string }> = {
@@ -72,7 +80,10 @@ function Avatar({ user, size = 22 }: { user?: Owner | null; size?: number }) {
   )
 }
 
-export function DrawingsTab({ projectId, drawings: initial, areas, collections: initialCollections, users, reviewTypes, stakeholders = [] }: Props) {
+/** Site-plan style collections link drawings to systems instead of area + discipline. */
+const isSystemLinked = (c: Collection | null) => c?.link_target === 'system'
+
+export function DrawingsTab({ projectId, drawings: initial, areas, collections: initialCollections, users, reviewTypes, stakeholders = [], systems = [] }: Props) {
   const [collections, setCollections] = useState<Collection[]>(initialCollections)
   const [activeId, setActiveId] = useState<string | null>(null)
   const [reviewDrawingId, setReviewDrawingId] = useState<string | null>(null)
@@ -102,6 +113,9 @@ export function DrawingsTab({ projectId, drawings: initial, areas, collections: 
           body: JSON.stringify({
             project_id: projectId, collection_id: active.id, file_name: file.name,
             storage_path: path, file_size: file.size, content_type: file.type,
+            // 'site_plan' keeps ensureReview's legacy drawing_type fallback from
+            // resolving the As-Built action plan for a plan that is not reviewed.
+            ...(isSystemLinked(active) ? { drawing_type: 'site_plan' } : {}),
           }),
         })
         if (res.ok) { const row = await res.json(); setDrawings(prev => [row, ...prev]) }
@@ -124,6 +138,25 @@ export function DrawingsTab({ projectId, drawings: initial, areas, collections: 
     })
     if (res.ok) { const row = await res.json(); setDrawings(prev => prev.map(d => (d.id === id ? row : d))) }
     else { const b = await res.json().catch(() => ({})); setError(b?.error || 'Failed to link drawing') }
+  }
+
+  async function linkSystems(id: string, system_ids: string[]) {
+    const res = await fetch(`/api/drawings/${id}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ system_ids }),
+    })
+    if (res.ok) { const row = await res.json(); setDrawings(prev => prev.map(d => (d.id === id ? row : d))) }
+    else { const b = await res.json().catch(() => ({})); setError(b?.error || 'Failed to link systems') }
+  }
+
+  async function setRevLabel(d: Drawing) {
+    const label = (await prompt({ title: 'Revision label', label: 'Label', initial: d.set_label ?? '', placeholder: 'e.g. Rev 3 — 2026-08-21' }))?.trim()
+    if (label === undefined || label === (d.set_label ?? '')) return
+    const res = await fetch(`/api/drawings/${d.id}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ set_label: label || null }),
+    })
+    if (res.ok) { const row = await res.json(); setDrawings(prev => prev.map(x => (x.id === d.id ? row : x))) }
   }
 
   async function removeDrawing(id: string) {
@@ -199,11 +232,22 @@ export function DrawingsTab({ projectId, drawings: initial, areas, collections: 
       </div>
 
       {error && <div className="mb-3 px-3 py-2 bg-[#fef2f2] border border-[#fecaca] rounded text-[12px] text-[#991b1b]">{error}</div>}
-      {!active.action_plan_id && (
+      {!active.action_plan_id && !isSystemLinked(active) && (
         <div className="mb-3 px-3 py-2 bg-[#FFFBEB] border border-[#FCD9A0] rounded text-[12px] text-[#92400e]">
           This collection has no review checklist (action plan) yet. Drawings can be uploaded and organized; the review will activate once a checklist is attached.
         </div>
       )}
+
+      {isSystemLinked(active) ? (
+        <SitePlanList
+          plans={inCollection}
+          systems={systems}
+          onLink={linkSystems}
+          onRemove={removeDrawing}
+          onRename={renameDrawing}
+          onLabel={setRevLabel}
+        />
+      ) : <>
 
       {needsLinking.length > 0 && (
         <div className="card mb-[18px] overflow-hidden">
@@ -267,6 +311,129 @@ export function DrawingsTab({ projectId, drawings: initial, areas, collections: 
           </div>
         )
       })}
+      </>}
+    </div>
+  )
+}
+
+// ── Site plans (collections whose link_target is 'system') ─────────────
+// A flat list of plan PDFs, each linked to one or more systems. No areas, no
+// disciplines, no review — a site plan is a record, not a review target.
+function SitePlanList({ plans, systems, onLink, onRemove, onRename, onLabel }: {
+  plans: Drawing[]
+  systems: SystemOption[]
+  onLink: (id: string, systemIds: string[]) => void
+  onRemove: (id: string) => void
+  onRename: (d: Drawing) => void
+  onLabel: (d: Drawing) => void
+}) {
+  if (systems.length === 0) {
+    return (
+      <div className="card p-6 text-center text-[12.5px] text-[#A8A8A8]">
+        No systems yet. Add them under the <b>Technical</b> tab first, then upload site plans here.
+      </div>
+    )
+  }
+  if (plans.length === 0) {
+    return (
+      <div className="card p-6 text-center text-[12.5px] text-[#A8A8A8]">
+        No site plans uploaded yet. Use <b>Upload drawings</b> above, then link each plan to the systems it covers.
+      </div>
+    )
+  }
+
+  // Newest first — the most recent plan linked to a system is that system's current one.
+  const ordered = [...plans].sort((a, b) => b.uploaded_at.localeCompare(a.uploaded_at))
+  const currentIds = new Set<string>()
+  const isCurrentFor = (d: Drawing) => {
+    // Walking newest-first, a plan is "current" for any system not already claimed.
+    const claims = (d.system_ids ?? []).filter(sid => !currentIds.has(sid))
+    claims.forEach(sid => currentIds.add(sid))
+    return claims
+  }
+  const rows = ordered.map(d => ({ d, current: isCurrentFor(d) }))
+
+  return (
+    <div className="card overflow-hidden">
+      <div className="px-[18px] py-3 border-b border-[#ECEBEA] bg-[#FBFCFE]">
+        <h4 className="text-[13px] font-bold text-[#080707]">{plans.length} site plan{plans.length === 1 ? '' : 's'}</h4>
+        <p className="text-[11.5px] text-[#706E6B] mt-0.5">
+          Link each plan to the systems it covers. The newest plan linked to a system is that system&apos;s current
+          plan, and linking one advances that system&apos;s design revision.
+        </p>
+      </div>
+      {rows.map(({ d, current }) => (
+        <SitePlanRow key={d.id} d={d} systems={systems} currentFor={current}
+          onLink={onLink} onRemove={onRemove} onRename={onRename} onLabel={onLabel} />
+      ))}
+    </div>
+  )
+}
+
+function SitePlanRow({ d, systems, currentFor, onLink, onRemove, onRename, onLabel }: {
+  d: Drawing
+  systems: SystemOption[]
+  currentFor: string[]
+  onLink: (id: string, systemIds: string[]) => void
+  onRemove: (id: string) => void
+  onRename: (d: Drawing) => void
+  onLabel: (d: Drawing) => void
+}) {
+  const linked = d.system_ids ?? []
+  const [editing, setEditing] = useState(linked.length === 0)
+  const [sel, setSel] = useState<string[]>(linked)
+  const [saving, setSaving] = useState(false)
+  const sysName = (id: string) => systems.find(x => x.id === id)?.name ?? id
+  const dirty = [...sel].sort().join(',') !== [...linked].sort().join(',')
+
+  async function save() {
+    setSaving(true)
+    await onLink(d.id, sel)
+    setSaving(false)
+    setEditing(false)
+  }
+
+  return (
+    <div data-entity-id={d.id} className="px-[18px] py-3 border-b border-[#ECEBEA] last:border-b-0 hover:bg-[#FBFCFE]">
+      <div className="flex items-center gap-3">
+        <FileText size={20} className="text-[#b91c1c] shrink-0" />
+        <div className="flex-1 min-w-0">
+          <div className="text-[13.5px] font-bold text-[#181818] flex items-center gap-2 flex-wrap">
+            {d.file_name}
+            {d.set_label && <span className="text-[9.5px] font-bold px-[7px] py-0.5 rounded border border-[#DDDBDA] bg-[#eef2f6] text-[#3E3E3C]">{d.set_label}</span>}
+            {currentFor.length > 0 && <span className="text-[9.5px] font-extrabold uppercase px-[7px] py-0.5 rounded bg-[#F0FDF4] border border-[#bbf7d0] text-[#166534]">Current</span>}
+          </div>
+          <div className="text-[11.5px] text-[#706E6B] mt-0.5">
+            {new Date(d.uploaded_at).toLocaleDateString()}
+            {linked.length > 0
+              ? ` · ${linked.map(sysName).join(', ')}`
+              : ' · not linked to a system yet'}
+          </div>
+        </div>
+        {d.storage_path && (
+          <button className="btn-secondary" onClick={() => openSitePlan(d.storage_path)}>Open ↗</button>
+        )}
+        <button className="btn-secondary" onClick={() => setEditing(e => !e)}>
+          {editing ? 'Close' : linked.length ? 'Edit systems' : 'Link systems'}
+        </button>
+        <button className="text-[#A8A8A8] hover:text-[#70A0D0] p-1" onClick={() => onLabel(d)} title="Revision label">Rev</button>
+        <button className="text-[#A8A8A8] hover:text-[#70A0D0] p-1" onClick={() => onRename(d)} title="Rename"><Pencil size={14} /></button>
+        <button className="text-[#A8A8A8] hover:text-[#b91c1c] p-1" onClick={() => onRemove(d.id)} title="Remove"><Trash2 size={14} /></button>
+      </div>
+      {editing && (
+        <div className="mt-2.5 pl-[32px]">
+          <DrawerMultiSelect
+            label="Systems covered"
+            options={systems.map(x => ({ value: x.id, label: x.name }))}
+            selected={sel}
+            onChange={setSel}
+            emptyText="No systems on this project yet."
+          />
+          <button className="btn-secondary" disabled={!dirty || saving} onClick={save}>
+            {saving ? 'Saving…' : 'Save systems'}
+          </button>
+        </div>
+      )}
     </div>
   )
 }
@@ -316,7 +483,9 @@ function Landing({ collections, drawings, areas, users, reviewTypes, onOpen, onC
                 </span>
               </div>
               <div className="border-t border-[#ECEBEA] pt-[11px] text-[12px] text-[#3E3E3C]">
-                {inC.length} drawing{inC.length === 1 ? '' : 's'} · {reviewed} reviewed · {areas.length} area{areas.length === 1 ? '' : 's'}
+                {isSystemLinked(c)
+                  ? <>{inC.length} plan{inC.length === 1 ? '' : 's'} · {new Set(inC.flatMap(d => d.system_ids ?? [])).size} system{new Set(inC.flatMap(d => d.system_ids ?? [])).size === 1 ? '' : 's'} covered</>
+                  : <>{inC.length} drawing{inC.length === 1 ? '' : 's'} · {reviewed} reviewed · {areas.length} area{areas.length === 1 ? '' : 's'}</>}
               </div>
               <div className="text-[11.5px] text-[#706E6B]">Owner: {c.owner?.full_name ?? 'Unassigned'}</div>
               <div className="text-[12px] font-bold text-[#70A0D0]">Open →</div>

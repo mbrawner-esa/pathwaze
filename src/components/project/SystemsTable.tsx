@@ -1,10 +1,11 @@
 'use client'
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Plus, Trash2 } from 'lucide-react'
+import { Plus, Trash2, FileText } from 'lucide-react'
 import { RowDrawer, DrawerInput, DrawerSelect, DrawerMultiSelect, Section } from './_RowDrawer'
 import type { Building } from './BuildingsTable'
 import type { Meter } from './MetersTable'
+import { currentSitePlan, openSitePlan, type SitePlan } from './_sitePlans'
 
 export interface SystemRow {
   id: string
@@ -13,7 +14,9 @@ export interface SystemRow {
   building_ids: string[]
   meter_id: string | null
   name: string
-  design_version: string
+  design_rev: number
+  design_rev_at: string | null
+  design_rev_by: string | null
   design_status: string
   system_type: string | null
   size_kwdc: number
@@ -26,6 +29,7 @@ export interface SystemRow {
   inverter_rating: number | null
   design_url: string | null
   // legacy fields kept in DB but not surfaced in UI
+  design_version?: string
   performance_ratio?: number
   modules?: string | null
   inverters?: string | null
@@ -53,12 +57,14 @@ const STATUS_PILL: Record<string, { bg: string; text: string }> = {
 }
 
 export function SystemsTable({
-  projectId, systems, buildings, meters,
+  projectId, systems, buildings, meters, sitePlans = [], users = [],
 }: {
   projectId: string
   systems: SystemRow[]
   buildings: Building[]
   meters: Meter[]
+  sitePlans?: SitePlan[]
+  users?: { id: string; full_name: string }[]
 }) {
   const router = useRouter()
   const [open, setOpen] = useState<SystemRow | 'new' | null>(null)
@@ -66,7 +72,7 @@ export function SystemsTable({
   const [err, setErr] = useState<string | null>(null)
 
   const blank = {
-    name: '', design_version: 'v1.0', design_status: 'Not Started', system_type: '',
+    name: '', design_status: 'Not Started', system_type: '',
     size_kwdc: '', size_kwac: '', yield_kwh_kwp: '',
     building_ids: [] as string[], meter_id: '',
     num_modules: '', module_wattage: '', num_inverters: '', inverter_rating: '',
@@ -77,7 +83,7 @@ export function SystemsTable({
   function startNew() { setForm(blank); setErr(null); setOpen('new') }
   function startEdit(s: SystemRow) {
     setForm({
-      name: s.name, design_version: s.design_version, design_status: s.design_status,
+      name: s.name, design_status: s.design_status,
       system_type: s.system_type ?? '',
       size_kwdc: s.size_kwdc?.toString() ?? '',
       size_kwac: s.size_kwac?.toString() ?? '',
@@ -101,7 +107,6 @@ export function SystemsTable({
     const yld = Number(form.yield_kwh_kwp) || 0
     const payload: Record<string, unknown> = {
       name: form.name,
-      design_version: form.design_version || 'v1.0',
       design_status: form.design_status,
       system_type: form.system_type || null,
       size_kwdc: dc,
@@ -144,6 +149,16 @@ export function SystemsTable({
     return names.length ? names.join(', ') : '—'
   }
   const meterName = (id: string | null) => meters.find(m => m.id === id)?.meter_num ?? '—'
+  const userName = (id: string | null) => users.find(u => u.id === id)?.full_name ?? null
+  const revDate = (iso: string | null) =>
+    iso ? new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : null
+  // Tooltip explains that the revision is automatic — the field is not editable.
+  const revTitle = (s: SystemRow) => {
+    const who = userName(s.design_rev_by)
+    const when = s.design_rev_at ? new Date(s.design_rev_at).toLocaleString() : null
+    if (!when) return 'No design changes recorded yet'
+    return `Design last changed ${when}${who ? ` by ${who}` : ''}`
+  }
 
   return (
     <div className="card overflow-hidden">
@@ -159,7 +174,7 @@ export function SystemsTable({
           <thead>
             <tr className="border-b border-[#f1f5f9] bg-[#fafafa]">
               <th className="text-left px-4 py-3 label">System Name</th>
-              <th className="text-left px-4 py-3 label">Version</th>
+              <th className="text-left px-4 py-3 label">Revision</th>
               <th className="text-left px-4 py-3 label">Design Status</th>
               <th className="text-left px-4 py-3 label">System Type</th>
               <th className="text-right px-4 py-3 label">Size kWdc</th>
@@ -168,6 +183,7 @@ export function SystemsTable({
               <th className="text-left px-4 py-3 label">Meter</th>
               <th className="text-right px-4 py-3 label">Annual Prod.</th>
               <th className="text-right px-4 py-3 label">Yield</th>
+              <th className="text-left px-4 py-3 label">Site Plan</th>
               <th className="text-left px-4 py-3 label">Design</th>
             </tr>
           </thead>
@@ -178,7 +194,10 @@ export function SystemsTable({
               return (
                 <tr key={s.id} data-entity-id={s.id} onClick={() => startEdit(s)} className="border-b border-[#f1f5f9] hover:bg-[#f8fafc] cursor-pointer">
                   <td className="px-4 py-3 font-medium text-[#181818]">{s.name}</td>
-                  <td className="px-4 py-3 text-[#3E3E3C]">{s.design_version}</td>
+                  <td className="px-4 py-3 text-[#3E3E3C]" title={revTitle(s)}>
+                    <span className="font-medium text-[#181818]">Rev {s.design_rev ?? 1}</span>
+                    {revDate(s.design_rev_at) && <span className="text-[11.5px] text-[#706E6B]"> · {revDate(s.design_rev_at)}</span>}
+                  </td>
                   <td className="px-4 py-3"><span className="px-2 py-0.5 rounded text-xs font-medium" style={{ background: sp.bg, color: sp.text }}>{s.design_status}</span></td>
                   <td className="px-4 py-3 text-[#3E3E3C]">{s.system_type ?? '—'}</td>
                   <td className="px-4 py-3 text-right text-[#3E3E3C]">{s.size_kwdc?.toLocaleString() ?? '—'}</td>
@@ -187,6 +206,20 @@ export function SystemsTable({
                   <td className="px-4 py-3 text-[#3E3E3C]">{meterName(s.meter_id)}</td>
                   <td className="px-4 py-3 text-right text-[#3E3E3C]">{s.annual_production_kwh ? `${s.annual_production_kwh.toLocaleString()}` : '—'}</td>
                   <td className="px-4 py-3 text-right text-[#3E3E3C]" title="kWh/kWp">{yld ? `${yld.toLocaleString()}` : '—'}</td>
+                  <td className="px-4 py-3 text-[#3E3E3C]" onClick={e => e.stopPropagation()}>
+                    {(() => {
+                      const plan = currentSitePlan(sitePlans, s.id)
+                      if (!plan) return <span className="text-[#94a3b8]">—</span>
+                      return (
+                        <button onClick={() => openSitePlan(plan.storage_path)}
+                          className="text-[12px] text-[#2C5485] hover:underline inline-flex items-center gap-1 max-w-[160px]"
+                          title={`${plan.file_name}${plan.set_label ? ` · ${plan.set_label}` : ''}`}>
+                          <FileText size={12} className="shrink-0" />
+                          <span className="truncate">{plan.set_label || plan.file_name}</span>
+                        </button>
+                      )
+                    })()}
+                  </td>
                   <td className="px-4 py-3 text-[#3E3E3C]" onClick={e => e.stopPropagation()}>
                     {s.design_url
                       ? <a href={s.design_url} target="_blank" rel="noopener noreferrer" className="text-[12px] text-[#2C5485] hover:underline">Open ↗</a>
@@ -203,7 +236,7 @@ export function SystemsTable({
         open={open !== null}
         onClose={() => setOpen(null)}
         title={open === 'new' ? 'Add System' : selected?.name || ''}
-        subtitle={open === 'new' ? 'New design' : `${selected?.design_version} · ${selected?.design_status}`}
+        subtitle={open === 'new' ? 'New design' : `Rev ${selected?.design_rev ?? 1} · ${selected?.design_status}`}
         width={600}
         footer={
           <div className="flex items-center justify-between">
@@ -219,10 +252,7 @@ export function SystemsTable({
       >
         <Section title="Identification">
           <DrawerInput label="System Name" value={form.name} onChange={v => setForm(f => ({ ...f, name: v }))} placeholder="e.g. Building A Rooftop" required />
-          <div className="grid grid-cols-2 gap-3">
-            <DrawerInput label="Version" value={form.design_version} onChange={v => setForm(f => ({ ...f, design_version: v }))} placeholder="v1.0" />
-            <DrawerSelect label="Design Status" value={form.design_status} options={STATUSES} onChange={v => setForm(f => ({ ...f, design_status: v }))} />
-          </div>
+          <DrawerSelect label="Design Status" value={form.design_status} options={STATUSES} onChange={v => setForm(f => ({ ...f, design_status: v }))} />
           <DrawerSelect label="System Type" value={form.system_type} options={SYSTEM_TYPES} onChange={v => setForm(f => ({ ...f, system_type: v }))} />
         </Section>
 
@@ -259,6 +289,38 @@ export function SystemsTable({
             )
           })()}
         </Section>
+
+        {selected && (
+          <Section title="Revision">
+            <div className="mb-3 px-3 py-2 bg-[#f8fafc] rounded border border-[#e2e8f0]">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-semibold uppercase tracking-wider text-[#3E3E3C]">Design Revision</span>
+                <span className="text-[13px] font-semibold text-[#181818]">Rev {selected.design_rev ?? 1}</span>
+              </div>
+              <p className="text-[11px] text-[#706E6B] mt-1">
+                {selected.design_rev_at
+                  ? <>Last changed {new Date(selected.design_rev_at).toLocaleString()}{userName(selected.design_rev_by) ? ` by ${userName(selected.design_rev_by)}` : ''}.</>
+                  : 'No design changes recorded yet.'}
+                {' '}Advances automatically when sizing, equipment, the design link, linked areas, or the site plan change.
+              </p>
+            </div>
+            {(() => {
+              const plan = currentSitePlan(sitePlans, selected.id)
+              return (
+                <div className="mb-3">
+                  <div className="text-[11px] font-semibold uppercase tracking-wider text-[#3E3E3C] mb-1">Current Site Plan</div>
+                  {plan ? (
+                    <button onClick={() => openSitePlan(plan.storage_path)} className="text-[12.5px] text-[#2C5485] hover:underline inline-flex items-center gap-1.5">
+                      <FileText size={13} /> {plan.set_label ? `${plan.set_label} — ${plan.file_name}` : plan.file_name} ↗
+                    </button>
+                  ) : (
+                    <p className="text-[11.5px] text-[#A8A8A8]">None linked. Upload one in the <b>Drawings</b> tab under Site Plans.</p>
+                  )}
+                </div>
+              )
+            })()}
+          </Section>
+        )}
 
         <Section title="Design Resources">
           <DrawerInput label="Design Link" value={form.design_url} onChange={v => setForm(f => ({ ...f, design_url: v }))} placeholder="https://helioscope.com/… or PVSyst report URL" />

@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { ensureReview } from '@/lib/drawings'
+import { bumpSystemRevs } from '@/lib/system-revisions'
 import { NextRequest, NextResponse } from 'next/server'
 
 // GET /api/drawings?project_id=...  → list drawings (with area + review) for a project
@@ -13,7 +14,7 @@ export async function GET(req: NextRequest) {
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data, error } = await (supabase.from('drawings') as any)
-    .select('*, area:buildings(id, name, category), review:drawing_reviews(id, status, reviewer_id, due_date), drawing_disciplines(discipline_key)')
+    .select('*, area:buildings(id, name, category), review:drawing_reviews(id, status, reviewer_id, due_date), drawing_disciplines(discipline_key), drawing_systems(system_id)')
     .eq('project_id', projectId)
     .order('uploaded_at', { ascending: false })
 
@@ -25,6 +26,9 @@ export async function GET(req: NextRequest) {
     ...d,
     discipline_keys: Array.isArray(d.drawing_disciplines)
       ? d.drawing_disciplines.map((j: { discipline_key: string }) => j.discipline_key)
+      : [],
+    system_ids: Array.isArray(d.drawing_systems)
+      ? d.drawing_systems.map((j: { system_id: string }) => j.system_id)
       : [],
   }))
   return NextResponse.json(flattened)
@@ -38,7 +42,7 @@ export async function POST(req: NextRequest) {
 
   const body = await req.json()
   const { project_id, file_name, storage_path, file_url, file_size, content_type, set_label,
-          drawing_type, area_id, discipline_key, discipline_keys, collection_id } = body
+          drawing_type, area_id, discipline_key, discipline_keys, collection_id, system_ids } = body
   if (!project_id || !file_name) {
     return NextResponse.json({ error: 'project_id and file_name required' }, { status: 400 })
   }
@@ -79,8 +83,20 @@ export async function POST(req: NextRequest) {
     if (joinErr) return NextResponse.json({ error: joinErr.message }, { status: 500 })
   }
 
+  // Site-plan style collections link to systems instead of area+discipline
+  // (drawing_collections.link_target = 'system'). A newly uploaded plan linked to
+  // a system counts as that system's design moving, so bump its revision.
+  const sysIds: string[] = Array.isArray(system_ids) ? system_ids.filter(Boolean) : []
+  if (data?.id && sysIds.length) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { error: sysErr } = await (supabase.from('drawing_systems') as any)
+      .insert(sysIds.map(sid => ({ drawing_id: data.id, system_id: sid })))
+    if (sysErr) return NextResponse.json({ error: sysErr.message }, { status: 500 })
+    await bumpSystemRevs(supabase, user, sysIds, ['Site plan'])
+  }
+
   // If it was created already linked (area + ≥1 discipline), ensure a review exists.
   if (data?.area_id && keys.length) await ensureReview(supabase, data)
 
-  return NextResponse.json({ ...data, discipline_keys: keys })
+  return NextResponse.json({ ...data, discipline_keys: keys, system_ids: sysIds })
 }

@@ -44,7 +44,7 @@ const TAB_ACTIVITY_ENTITIES: Record<string, string[]> = {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function ProjectDetailClient({ project, financials, milestones, stakeholders, permits, docs, buildings, meters, systems, threads = [], notes = [], activity = [], users = [], pricingRows = [], drawings = [], collections = [], reviewTypes = [] }: any) {
+export function ProjectDetailClient({ project, financials, milestones, stakeholders, permits, docs, buildings, meters, systems, threads = [], notes = [], activity = [], users = [], pricingRows = [], drawings = [], collections = [], reviewTypes = [], sitePlans = [] }: any) {
   const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
@@ -123,11 +123,11 @@ export function ProjectDetailClient({ project, financials, milestones, stakehold
         {activeTab === 'utility' && <UtilityTab project={project} buildings={buildings} meters={meters} />}
         {activeTab === 'stakeholders' && <StakeholdersTab stakeholders={stakeholders} projectId={project.id} />}
         {activeTab === 'permitting' && <PermittingTab project={project} permits={permits} />}
-        {activeTab === 'technical' && <TechnicalTab project={{ ...project, _financials: financials }} buildings={buildings} meters={meters} systems={systems} />}
+        {activeTab === 'technical' && <TechnicalTab project={{ ...project, _financials: financials }} buildings={buildings} meters={meters} systems={systems} sitePlans={sitePlans} users={users} />}
         {activeTab === 'financial' && <FinancialTab financials={financials} projectId={project.id} systemKwdc={project.system_kwdc} pricingRows={pricingRows} systems={systems} meters={meters} users={users} />}
         {activeTab === 'schedule' && <ScheduleTab milestones={milestones} />}
         {activeTab === 'dataroom' && <DataRoomTab docs={docs} projectId={project.id} />}
-        {activeTab === 'drawings' && <DrawingsTab projectId={project.id} drawings={drawings} areas={buildings} collections={collections} users={users} reviewTypes={reviewTypes} stakeholders={stakeholders} />}
+        {activeTab === 'drawings' && <DrawingsTab projectId={project.id} drawings={drawings} areas={buildings} collections={collections} users={users} reviewTypes={reviewTypes} stakeholders={stakeholders} systems={systems} />}
         {activeTab === 'threads' && (
           <>
             <ProjectActivityActions projectId={project.id} projectName={project.name} users={users} />

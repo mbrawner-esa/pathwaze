@@ -103,7 +103,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: drawingsRaw } = await supabase
     .from('drawings')
-    .select('*, area:buildings(id, name, category), review:drawing_reviews(id, status, reviewer_id, due_date), drawing_disciplines(discipline_key)')
+    .select('*, area:buildings(id, name, category), review:drawing_reviews(id, status, reviewer_id, due_date), drawing_disciplines(discipline_key), drawing_systems(system_id), uploader:users!uploaded_by(id, full_name)')
     .eq('project_id', id)
     .order('uploaded_at', { ascending: false }) as any
 
@@ -114,6 +114,9 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
     ...d,
     discipline_keys: Array.isArray(d.drawing_disciplines)
       ? d.drawing_disciplines.map((j: { discipline_key: string }) => j.discipline_key)
+      : [],
+    system_ids: Array.isArray(d.drawing_systems)
+      ? d.drawing_systems.map((j: { system_id: string }) => j.system_id)
       : [],
   }))
 
@@ -148,6 +151,26 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
   const collections = ((collectionsRaw ?? []) as any[]).map(c => ({
     ...c, sections: c.action_plan_id ? (sectionsByPlan[c.action_plan_id] ?? []) : [],
   }))
+
+  // Site plans = drawings belonging to a collection whose link_target is 'system'
+  // (the seeded 'Site Plans' collection). Derived here so the Technical tab can
+  // render them read-only without knowing about collections.
+  const sitePlanCollectionIds = new Set(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ((collectionsRaw ?? []) as any[]).filter(c => c.link_target === 'system').map(c => c.id),
+  )
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const sitePlans = (drawings as any[])
+    .filter(d => d.collection_id && sitePlanCollectionIds.has(d.collection_id))
+    .map(d => ({
+      id: d.id,
+      file_name: d.file_name,
+      set_label: d.set_label ?? null,
+      storage_path: d.storage_path ?? null,
+      uploaded_at: d.uploaded_at,
+      uploaded_by_name: d.uploader?.full_name ?? null,
+      system_ids: d.system_ids ?? [],
+    }))
 
   // Review types = available action plans (drives the "Select review type" dropdown).
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -234,6 +257,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
         drawings={drawings ?? []}
         collections={collections}
         reviewTypes={reviewTypes}
+        sitePlans={sitePlans}
       />
     </div>
   )

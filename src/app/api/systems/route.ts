@@ -20,6 +20,11 @@ export async function POST(request: NextRequest) {
       meter_id: body.meter_id || null,
       name: body.name,
       design_version: body.design_version || 'v1.0',
+      // Revision starts at 1 on create; from here on the API owns it (see
+      // src/lib/system-revisions.ts) — it is never typed by a user.
+      design_rev: 1,
+      design_rev_at: new Date().toISOString(),
+      design_rev_by: user.id,
       design_status: body.design_status || 'Not Started',
       system_type: body.system_type || null,
       size_kwdc: body.size_kwdc ?? 0,

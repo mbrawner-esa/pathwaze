@@ -5,12 +5,16 @@ import { EditToolbar, ErrorBanner, FieldGrid, Field, FieldInput } from './_editF
 import { SystemsTable, type SystemRow } from './SystemsTable'
 import type { Building } from './BuildingsTable'
 import type { Meter } from './MetersTable'
+import { SitePlanCard } from './SitePlanCard'
+import type { SitePlan } from './_sitePlans'
 
-export function TechnicalTab({ project, buildings = [], meters = [], systems = [] }: {
+export function TechnicalTab({ project, buildings = [], meters = [], systems = [], sitePlans = [], users = [] }: {
   project: Record<string, unknown>
   buildings?: Building[]
   meters?: Meter[]
   systems?: SystemRow[]
+  sitePlans?: SitePlan[]
+  users?: { id: string; full_name: string }[]
 }) {
   const hasSystems = systems.length > 0
   const sysDcSum   = systems.reduce((s, x) => s + (x.size_kwdc ?? 0), 0)
@@ -116,7 +120,10 @@ export function TechnicalTab({ project, buildings = [], meters = [], systems = [
         </div>
       </div>
 
-      <SystemsTable projectId={p.id} systems={systems} buildings={buildings} meters={meters} />
+      <SitePlanCard sitePlans={sitePlans} systems={systems} />
+
+      <SystemsTable projectId={p.id} systems={systems} buildings={buildings} meters={meters}
+        sitePlans={sitePlans} users={users} />
     </div>
   )
 }
