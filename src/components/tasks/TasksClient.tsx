@@ -145,11 +145,14 @@ export function TasksClient({ tasks: initialTasks, projects, users }: { tasks: a
   }
   const [selectedTask, setSelectedTask] = useState<string | null>(null)
   // Deep-link: /tasks?id=<taskId> opens that task's drawer (from notifications,
-  // RFI/finding chips, etc.).
+  // RFI/finding chips, etc.). /tasks?project=<projectId> pre-selects the project
+  // filter (from the project detail Tasks tab's "Open in Task Tracker").
   const searchParams = useSearchParams()
   useEffect(() => {
     const idParam = searchParams.get('id')
     if (idParam) setSelectedTask(idParam)
+    const projectParam = searchParams.get('project')
+    if (projectParam) setProjectFilter(projectParam)
   }, [searchParams])
   const [showNewModal, setShowNewModal] = useState(false)
   const [saving, setSaving] = useState(false)

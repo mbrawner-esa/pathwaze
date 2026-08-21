@@ -6,6 +6,67 @@
 
 ---
 
+## 2026-08-21
+
+- **Project Tasks tab** — the project detail page has a **Tasks** tab (second,
+  right after Threads) listing that project's tasks grouped by status, with
+  priority dot, type chip, due date (overdue in red), and assignee. Completed
+  tasks are hidden behind a "Show completed" toggle; a row opens that task's
+  drawer, and "Open in Task Tracker" jumps to `/tasks` pre-filtered to the
+  project. No migration.
+- **Outlook email → project Threads** — stakeholder emails now flow into the
+  project Threads tab, CRM-style. Each user connects their own mailbox once from
+  Settings → "Email (Outlook)" (Microsoft SSO, **read-only**); mail whose sender
+  or recipient matches a `stakeholders.email` is mirrored to that stakeholder's
+  project. Covers the whole mailbox (Inbox, Sent, and filed mail) over the last
+  12 months, backfilled oldest-first in chunks so a large mailbox can't time out,
+  and kept current by a daily cron. (Migrations 049 + 050 — run required.)
+- **Threads reorganization** — the Threads tab is now one unified feed across
+  Slack messages, emails, and notes instead of a Slack-only mirror. Adds a search
+  box, sorting (newest first by default, plus by date/author), and collapsed
+  emails and Slack messages that expand on click so a long thread stays readable.
+  Slack formatting (bold, bullets, mrkdwn) renders properly, and file attachments
+  are clickable.
+- **Note / Task / File composer on Threads** — the composer that was already on
+  every other project tab now works on Threads too, so you can capture a note or
+  spin off a task without leaving the conversation.
+- **Per-tab activity feeds** — each project tab's activity feed now shows only
+  what happened on that tab: Site = buildings/parcels/site info, Utility =
+  meters/accounts, Technical = systems/specs, Drawings = as-builts and their
+  status. Project field edits (including **stage** and **deal health**) are now
+  logged, so the history is there for portfolio reporting.
+- **Deep-linked activity** — entity names in the activity feed and the
+  notification bell are now links. Clicking "…updated a meter" jumps to that
+  exact record, scrolls to it, highlights it, and **opens its detail drawer**
+  (meters, buildings, permits, systems, and offtaker pricing; Drawings scrolls
+  and highlights, since it opens a full review view rather than a drawer).
+- **Auto design revisions on Systems** — `design_rev` now bumps itself, with a
+  date, whenever a design-defining field changes (sizes, yield, system type,
+  module/inverter counts and ratings, design URL, linked areas). Cosmetic edits
+  like renaming or changing status don't bump it. The old hand-typed version box
+  is gone — the field is read-only, and doubles as a last-modified marker.
+- **Site Plan records** — a site plan PDF is uploaded in the **Drawings** tab as
+  its own drawing type and linked to one or more systems; the Technical tab shows
+  a read-only table of the current plan. A new site-plan revision bumps the
+  revision on every system it's linked to. (Migration 052 — run required.)
+
+## 2026-08-20
+
+- **Meter usage-dataset fields** — meters now record how their usage data was
+  captured: **Data Type** (Annual Bills, Interval Data 30-min, Interval Data
+  60-min), **Billing Start Year**, and **Billing Start Month**. (Migration 051 —
+  run required.)
+- **Permitting data load** — 99 Permit Scout permit records loaded across 16
+  AdventHealth projects (7 previously curated rows preserved). The
+  extract/preview/load scripts are committed under `scripts/` for reuse.
+
+## 2026-08-19
+
+- **Docs** — consolidated project documentation to four living files
+  (`README.md`, `CLAUDE.md`, `ROADMAP.md`, `CHANGELOG.md`); older `HANDOFF.md`,
+  `BACKLOG.md`, and `DRAWINGS_AND_RFI_PLAN.md` moved to `docs/archive/` as
+  historical reference.
+
 ## 2026-07-15
 
 - **Saved filter presets** — Projects and Tasks lists can now save the current

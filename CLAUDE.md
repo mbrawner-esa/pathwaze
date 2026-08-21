@@ -34,8 +34,11 @@ would push outdated code. If you're unsure which clone you're in, run
   `supabase/migrations/NNN_*.sql` file must be **run manually on Supabase** by
   the user. Always call out new migration numbers explicitly in the summary.
 - Migrations are numbered sequentially, idempotent (`IF NOT EXISTS` /
-  `DROP POLICY IF EXISTS`). Next free number as of 2026-08-19: **049**
-  (latest applied: 048).
+  `DROP POLICY IF EXISTS`). Next free number as of 2026-08-21: **053**
+  (latest applied: **052** — 049–052 are all live on Supabase).
+  ⚠️ Never reuse a number: the abandoned `schedule-tab` branch carries
+  migrations numbered 022/023 that collide with main's. That branch is a delete
+  candidate — never merge it as-is.
 - **Never set `EMAIL_NOTIFY_SELF=true` in Production** — dev/preview only.
 - Secrets live in `.env.local` (gitignored) + Vercel project settings. Never
   paste real credentials into chat or commit them.
@@ -122,12 +125,23 @@ set_universal_findings (Universal answers shared per area+collection "set").
 RFIs: rfis (per-project numbered), rfi_responses, rfi_distribution, rfi_links
 (polymorphic), rfi_response_files.
 
+Email: `email_connections` (per-user Outlook OAuth — encrypted refresh token,
+`last_synced_at` high-water mark; **service-role-only RLS**, no authenticated
+policies, migration 049). `project_threads` also carries email rows —
+`source='email'`, Slack columns nullable, unique `(project_id, message_id)` for
+upsert dedup (050).
+
 Recent additions: `saved_filters` (per-user filter presets, migration 046),
 `rfi_attachments` (files on the RFI itself, 047), `review_comments` (free-form
-drawing-review comments, 048).
+drawing-review comments, 048), `email_connections` + email-capable
+`project_threads` (049/050), meter usage-dataset columns — `data_type`,
+`billing_start_year`, `billing_start_month` (051), and system revisions +
+Site Plans — `systems.design_rev` / `design_rev_at` / `design_rev_by`,
+`drawing_collections.link_target` (`'area_discipline'` | `'system'`), and the
+`drawing_systems` link table (052).
 
 See `supabase/migrations/` for the canonical schema — each migration is
-numbered (001…048) and is idempotent (CREATE/ALTER … IF NOT EXISTS).
+numbered (001…052) and is idempotent (CREATE/ALTER … IF NOT EXISTS).
 Storage buckets: task-files, project-files, drawings, rfi-files.
 
 ## Roles
@@ -154,8 +168,12 @@ server route handlers (defense in depth).
 - /rfis — Procore-style RFI log (master nav); /rfis/[id] — RFI detail
   (ball-in-court, linkages, responses, official-response-closes)
 - /stakeholders — CRM directory
-- /dataroom — health dashboard
-- /settings — profile + notification prefs + task subscriptions
+- /dataroom — health dashboard. ⚠️ **Hidden** — commented out of `NAV_ITEMS`
+  (`NavBar.tsx`) and out of the project `TABS` (`ProjectDetailClient.tsx`) until
+  the Dataroom concept is re-defined + Box is built. The route still resolves if
+  you navigate directly.
+- /settings — profile + notification prefs + task subscriptions + **Email
+  (Outlook)** connect/disconnect (per-user delegated OAuth)
 - /admin/users — invite + manage users (admin only)
 - /admin/archived — view + restore + delete archived projects (admin only)
 - /investor/[token] — investor read-only portal
@@ -164,6 +182,12 @@ server route handlers (defense in depth).
   overdue open RFIs. Gated by `CRON_SECRET` (Vercel sends it as a Bearer header);
   supports `?dry=1`. Uses a **service-role** client with `cache: 'no-store'`
   (Next.js was caching the PostgREST GET → stale/empty results).
+- /api/cron/email-sync — **daily** Vercel cron (`0 11 * * *`; the project is on
+  the **Hobby** plan, which doesn't allow sub-daily schedules — this is a
+  settled decision, not a gap). Mirrors each connected user's Outlook mail into
+  `project_threads` where the correspondent matches a `stakeholders.email`.
+  `CRON_SECRET`-gated; supports `?dry=1` and `?user=<uuid>`; `maxDuration=60`.
+- /api/auth/outlook/{connect,callback,disconnect} — per-user Graph OAuth
 
 ## Conventions
 - All DB queries via Supabase client
@@ -195,6 +219,25 @@ server route handlers (defense in depth).
   sync across the area+collection "set" via `set_universal_findings` (per-drawing
   override = a `review_findings` row with `is_override`). A finding can Delegate
   (→ Engineering task, `delegated_task_id`) or Create RFI (`rfi_id`).
+  ⚠️ `ensureReview()` in `src/lib/drawings.ts` resolves an action plan by
+  `drawing_type`, defaulting to `'as_built'` — a **site-plan** upload must pass
+  `drawing_type: 'site_plan'` or it silently inherits the As-Built checklist.
+  Branch link UI on `drawing_collections.link_target`, not a hardcoded key.
+- **Deep-linking to a record**: activity-feed and notification-bell entity names
+  resolve to hrefs via `entityHref()` in `src/lib/activity-links.ts`; the target
+  page reads `?focus=<id>` and `useFocusRow(rowIds, open)`
+  (`src/components/project/useFocusRow.ts`) scrolls to the row, highlights it,
+  and **opens its drawer**. Wired for meters, buildings, permits, systems, and
+  offtaker pricing. When adding a new entity table, wire both sides — an
+  `entityHref` case and `useFocusRow` — or the link lands on the tab and stops.
+- **Outlook email sync**: `src/lib/graph.ts` (Graph OAuth + mail fetch),
+  `src/lib/crypto.ts` (AES-256-GCM for refresh tokens), `src/lib/supabase/service.ts`
+  (shared service-role client). Env: `MS_TENANT_ID`, `MS_CLIENT_ID`,
+  `MS_CLIENT_SECRET`, `TOKEN_ENC_KEY`.
+  ⚠️ **Local dev and prod share the same Supabase DB**, so `TOKEN_ENC_KEY` must
+  be **identical** in Vercel and `.env.local` — otherwise a refresh token stored
+  by one can't be decrypted by the other. Sync is read-only (no `Mail.Send`
+  grant); adding outbound reply needs a new tenant admin-consent step.
 
 ## Team
 - Morgan Brawner (admin): MB, #2F3E50
