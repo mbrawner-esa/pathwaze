@@ -206,7 +206,7 @@ export function BuildingsTable({
               const c = CATEGORY_PILL[b.category] ?? CATEGORY_PILL['Other']
               const cityState = [b.city, b.state].filter(Boolean).join(', ')
               return (
-                <tr key={b.id} onClick={() => startEdit(b)} className="border-b border-[#f1f5f9] hover:bg-[#f8fafc] cursor-pointer">
+                <tr key={b.id} data-entity-id={b.id} onClick={() => startEdit(b)} className="border-b border-[#f1f5f9] hover:bg-[#f8fafc] cursor-pointer">
                   <td className="px-4 py-3 font-medium text-[#181818]">{b.name}</td>
                   <td className="px-4 py-3"><span className="px-2 py-0.5 rounded text-xs font-medium" style={{ background: c.bg, color: c.text }}>{b.category}</span></td>
                   <td className="px-4 py-3 text-[#3E3E3C]">{b.owner_name ?? '—'}</td>

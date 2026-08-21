@@ -176,7 +176,7 @@ export function SystemsTable({
               const sp = STATUS_PILL[s.design_status] ?? STATUS_PILL['Not Started']
               const yld = s.yield_kwh_kwp ?? (s.size_kwdc > 0 ? Math.round(s.annual_production_kwh / s.size_kwdc) : null)
               return (
-                <tr key={s.id} onClick={() => startEdit(s)} className="border-b border-[#f1f5f9] hover:bg-[#f8fafc] cursor-pointer">
+                <tr key={s.id} data-entity-id={s.id} onClick={() => startEdit(s)} className="border-b border-[#f1f5f9] hover:bg-[#f8fafc] cursor-pointer">
                   <td className="px-4 py-3 font-medium text-[#181818]">{s.name}</td>
                   <td className="px-4 py-3 text-[#3E3E3C]">{s.design_version}</td>
                   <td className="px-4 py-3"><span className="px-2 py-0.5 rounded text-xs font-medium" style={{ background: sp.bg, color: sp.text }}>{s.design_status}</span></td>

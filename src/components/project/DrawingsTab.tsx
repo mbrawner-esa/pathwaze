@@ -240,7 +240,7 @@ export function DrawingsTab({ projectId, drawings: initial, areas, collections: 
               const rev = reviewOf(d)
               const st = STATUS_PILL[rev?.status ?? 'not_started']
               return (
-                <div key={d.id} className="flex items-center gap-3 px-[18px] py-3 border-b border-[#ECEBEA] last:border-b-0 hover:bg-[#FBFCFE]">
+                <div key={d.id} data-entity-id={d.id} className="flex items-center gap-3 px-[18px] py-3 border-b border-[#ECEBEA] last:border-b-0 hover:bg-[#FBFCFE]">
                   <FileText size={20} className="text-[#b91c1c] shrink-0" />
                   <div className="flex-1 min-w-0">
                     <div className="text-[13.5px] font-bold text-[#181818] flex items-center gap-2 flex-wrap">

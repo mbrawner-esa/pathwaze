@@ -235,7 +235,7 @@ function PermitSection({
               const lv = LEVEL_PILL[pm.level]    ?? LEVEL_PILL['Local']
               const st = pm.stage ? STAGE_PILL[pm.stage] : null
               return (
-                <tr key={pm.id} onClick={() => startEdit(pm)} className="border-b border-[#f1f5f9] hover:bg-[#f8fafc] cursor-pointer">
+                <tr key={pm.id} data-entity-id={pm.id} onClick={() => startEdit(pm)} className="border-b border-[#f1f5f9] hover:bg-[#f8fafc] cursor-pointer">
                   <td className="px-4 py-3 font-medium text-[#181818]">
                     {pm.name}
                     {!pm.required && <span className="ml-2 text-[10px] font-semibold uppercase tracking-wider text-[#94a3b8]">Optional</span>}

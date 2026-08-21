@@ -397,6 +397,7 @@ export function OfftakerPricingTable({
             {rows.map(r => (
               <tr
                 key={r.id}
+                data-entity-id={r.id}
                 onClick={() => setOpenId(r.id)}
                 className={`border-b border-[#f1f5f9] cursor-pointer hover:bg-[#f8fafc] ${r.is_selected ? 'bg-[#FFFBEB]/50' : ''}`}
               >

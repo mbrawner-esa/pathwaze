@@ -67,6 +67,24 @@ export function ProjectDetailClient({ project, financials, milestones, stakehold
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab])
 
+  // Deep-link focus: when a link carries ?focus=<entityId>, scroll to and
+  // briefly highlight the matching row on the active tab (once it has rendered).
+  const focusId = searchParams.get('focus')
+  useEffect(() => {
+    if (!focusId) return
+    const timer = setTimeout(() => {
+      const el = document.querySelector(`[data-entity-id="${CSS.escape(focusId)}"]`) as HTMLElement | null
+      if (!el) return
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      const prev = el.style.backgroundColor
+      el.style.transition = 'background-color 0.4s ease'
+      el.style.backgroundColor = '#FEF9C3'
+      setTimeout(() => { el.style.backgroundColor = prev }, 2200)
+    }, 350)
+    return () => clearTimeout(timer)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusId, activeTab])
+
   // Reverse sync: when the ?tab= param changes (e.g. an in-page link like the
   // Project Contact → Stakeholders link updates the URL), switch tabs to match.
   // Both effects guard on equality, so they settle without ping-ponging.

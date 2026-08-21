@@ -181,7 +181,7 @@ export function MetersTable({
               const s = STATUS_PILL[m.status] ?? STATUS_PILL['TBD']
               const ix = m.ix_status ? IX_STATUS_PILL[m.ix_status] : null
               return (
-                <tr key={m.id} onClick={() => startEdit(m)} className="border-b border-[#f1f5f9] hover:bg-[#f8fafc] cursor-pointer">
+                <tr key={m.id} data-entity-id={m.id} onClick={() => startEdit(m)} className="border-b border-[#f1f5f9] hover:bg-[#f8fafc] cursor-pointer">
                   <td className="px-4 py-3 font-medium text-[#181818]">{m.meter_num}</td>
                   <td className="px-4 py-3 text-[#3E3E3C]">{m.account_num ?? '—'}</td>
                   <td className="px-4 py-3 text-[#3E3E3C]">{buildingName(m.building_id)}</td>

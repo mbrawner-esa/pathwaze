@@ -25,7 +25,8 @@ export function entityHref(
     case 'stakeholder': return `/stakeholders?id=${entityId}`
     default: {
       const tab = ENTITY_TAB[entityType]
-      return tab && projectId ? `/projects/${projectId}?tab=${tab}` : null
+      // focus=<id> lets the tab scroll to + highlight the exact row.
+      return tab && projectId ? `/projects/${projectId}?tab=${tab}&focus=${entityId}` : null
     }
   }
 }
