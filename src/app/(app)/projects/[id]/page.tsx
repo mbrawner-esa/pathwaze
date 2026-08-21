@@ -65,7 +65,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
   const activity = [
     ...((actLog ?? []) as any[]).map(a => ({
       id: `act-${a.id}`, kind: 'system' as const,
-      entity_type: a.entity_type, action: a.action, metadata: a.metadata,
+      entity_type: a.entity_type, entity_id: a.entity_id, action: a.action, metadata: a.metadata,
       user_name: a.users?.full_name ?? null,
       user_avatar_url: a.users?.avatar_url ?? null,
       created_at: a.created_at,

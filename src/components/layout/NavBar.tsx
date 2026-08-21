@@ -13,6 +13,7 @@ import { createClient } from '@/lib/supabase/client'
 import { useState, useEffect } from 'react'
 import { PathwazeLogo } from '@/components/ui/PathwazeLogo'
 import { Avatar } from '@/components/ui/Avatar'
+import { entityHref } from '@/lib/activity-links'
 
 interface Notification {
   id: string
@@ -42,23 +43,11 @@ function formatAction(n: Notification): { who: string; action: string; entity: s
 }
 
 // Map an activity_log row → URL the user should land on when clicking it.
-// Returns null when we can't deep-link (e.g. permit/meter without project_id).
+// Sub-entities deep-link to their tab inside the project. Returns null when we
+// can't build a link (e.g. a sub-entity with no project_id in metadata).
 function notifHref(n: Notification): string | null {
-  switch (n.entity_type) {
-    case 'project':     return `/projects/${n.entity_id}`
-    case 'task':        return `/tasks?id=${n.entity_id}`
-    case 'rfi':         return `/rfis/${n.entity_id}`
-    case 'stakeholder': return `/stakeholders?id=${n.entity_id}`
-    // permits/meters/buildings/systems live inside a project; metadata may carry project_id
-    case 'permit':
-    case 'meter':
-    case 'building':
-    case 'system': {
-      const pid = (n.metadata as { project_id?: string })?.project_id
-      return pid ? `/projects/${pid}` : null
-    }
-    default: return null
-  }
+  const pid = (n.metadata as { project_id?: string })?.project_id
+  return entityHref(n.entity_type, n.entity_id, pid)
 }
 
 const NAV_ITEMS = [

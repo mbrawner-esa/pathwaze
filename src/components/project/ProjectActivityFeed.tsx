@@ -1,14 +1,18 @@
 'use client'
+import type { ReactNode } from 'react'
+import Link from 'next/link'
 import { Avatar } from '@/components/ui/Avatar'
 import { Activity, MessageSquare, Tag, StickyNote, Calendar, Paperclip } from 'lucide-react'
 import { MessageText, type MentionUser } from '@/components/ui/MessageText'
 import { NotesRender } from '@/components/ui/NotesRender'
+import { entityHref } from '@/lib/activity-links'
 
 export interface ActivityEntry {
   id: string
   kind: 'system' | 'message' | 'note'
   // System (activity_log)
   entity_type?: string
+  entity_id?: string
   action?: string
   metadata?: Record<string, unknown>
   // Message (project_thread)
@@ -63,10 +67,16 @@ function fmtPricingValue(field: string, v: unknown): string {
   return String(v)
 }
 
-function describeSystem(entry: ActivityEntry): string {
+function describeSystem(entry: ActivityEntry): ReactNode {
   const what = (entry.action ?? '').replace(/_/g, ' ')
   const meta = entry.metadata ?? {}
-  const md = meta as { from?: unknown; to?: unknown; name?: unknown; field?: unknown; label?: unknown; option_label?: unknown; new_version?: unknown }
+  const md = meta as { from?: unknown; to?: unknown; name?: unknown; field?: unknown; label?: unknown; option_label?: unknown; new_version?: unknown; project_id?: unknown }
+
+  const href = entityHref(entry.entity_type, entry.entity_id, typeof md.project_id === 'string' ? md.project_id : null)
+  // Render `label` as a link to the object when we can deep-link, else bold text.
+  const objLink = (label: ReactNode) => href
+    ? <Link href={href} className="text-[#2C5485] hover:underline font-medium">{label}</Link>
+    : <span className="font-medium">{label}</span>
 
   // Pricing-option field change → friendly description with option + version.
   if (entry.entity_type === 'offtaker_pricing' && entry.action === 'field_changed' && md.field) {
@@ -74,23 +84,28 @@ function describeSystem(entry: ActivityEntry): string {
     const label = PRICING_FIELD_LABELS[f] ?? f.replace(/_/g, ' ')
     const opt = md.option_label ? String(md.option_label) : 'a pricing option'
     const ver = md.new_version ? ` (v${md.new_version})` : ''
-    return `changed ${label} on ${opt}${ver}: ${fmtPricingValue(f, md.from)} → ${fmtPricingValue(f, md.to)}`
+    return <>changed {label} on {objLink(`${opt}${ver}`)}: {fmtPricingValue(f, md.from)} → {fmtPricingValue(f, md.to)}</>
   }
 
-  // Common patterns
-  if (entry.action === 'stage_changed' && md.from && md.to) return `moved stage from ${md.from} → ${md.to}`
-  if (entry.action === 'mentioned_in_slack')                return `mentioned this project in Slack`
-  if (entry.action === 'created')                            return `created a ${entry.entity_type}${md.name ? ` "${md.name}"` : ''}`
-  if (entry.action === 'updated')                            return `updated a ${entry.entity_type}${md.name ? ` "${md.name}"` : ''}`
-  if (entry.action === 'deleted')                            return `deleted a ${entry.entity_type}${md.name ? ` "${md.name}"` : ''}`
+  // Created / updated / deleted a sub-entity → the entity noun is the link.
+  if (entry.action === 'created') return <>created a {objLink(entry.entity_type)}{md.name ? <> “{String(md.name)}”</> : null}</>
+  if (entry.action === 'updated') return <>updated a {objLink(entry.entity_type)}{md.name ? <> “{String(md.name)}”</> : null}</>
+  if (entry.action === 'deleted') return <>deleted a {objLink(entry.entity_type)}{md.name ? <> “{String(md.name)}”</> : null}</>
+
+  if (entry.action === 'stage_changed' && md.from && md.to) return <>moved stage from {String(md.from)} → {String(md.to)}</>
+  if (entry.action === 'mentioned_in_slack')                return 'mentioned this project in Slack'
+
+  // Project field change → "changed <label>: from → to" (the project itself, not linked).
   if (entry.action?.endsWith('_changed') && md.field) {
     const fieldLabel = String(md.label ?? md.field).replace(/_/g, ' ')
     const from = md.from == null ? '' : String(md.from)
     const to = md.to == null ? '' : String(md.to)
-    // Show the transition only for short scalar values; ids/long text just read as "updated".
     const short = from.length <= 40 && to.length <= 40
-    return short && (from || to) ? `changed ${fieldLabel}: ${from || '—'} → ${to || '—'}` : `updated ${fieldLabel}`
+    return short && (from || to) ? <>changed {fieldLabel}: {from || '—'} → {to || '—'}</> : <>updated {fieldLabel}</>
   }
+
+  // RFIs, drawing status, and other actions with a deep-link → link the phrase.
+  if (href) return objLink(what)
   return what
 }
 
