@@ -11,11 +11,13 @@ import { ScheduleTab } from './ScheduleTab'
 import { DataRoomTab } from './DataRoomTab'
 import { DrawingsTab } from './DrawingsTab'
 import { ThreadsTab } from './ThreadsTab'
+import { ProjectTasksTab } from './ProjectTasksTab'
 import { ProjectActivityFeed, type ActivityEntry } from './ProjectActivityFeed'
 import { ProjectActivityActions } from './ProjectActivityActions'
 
 const TABS = [
   { id: 'threads', label: 'Threads' },
+  { id: 'tasks', label: 'Tasks' },
   { id: 'site', label: 'Site' },
   { id: 'utility', label: 'Utility' },
   { id: 'stakeholders', label: 'Stakeholders' },
@@ -44,7 +46,7 @@ const TAB_ACTIVITY_ENTITIES: Record<string, string[]> = {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function ProjectDetailClient({ project, financials, milestones, stakeholders, permits, docs, buildings, meters, systems, threads = [], notes = [], activity = [], users = [], pricingRows = [], drawings = [], collections = [], reviewTypes = [], sitePlans = [] }: any) {
+export function ProjectDetailClient({ project, financials, milestones, stakeholders, permits, docs, buildings, meters, systems, threads = [], notes = [], tasks = [], activity = [], users = [], pricingRows = [], drawings = [], collections = [], reviewTypes = [], sitePlans = [] }: any) {
   const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
@@ -134,13 +136,19 @@ export function ProjectDetailClient({ project, financials, milestones, stakehold
             <ThreadsTab threads={threads} notes={notes} channelLinked={!!project.slack_channel_id} users={users} />
           </>
         )}
+        {activeTab === 'tasks' && (
+          <>
+            <ProjectActivityActions projectId={project.id} projectName={project.name} users={users} />
+            <ProjectTasksTab tasks={tasks} projectId={project.id} />
+          </>
+        )}
           </div>
         </div>
       </div>
 
-      {/* Activity feed — bottom of every project page, except when Threads tab is active.
-          Scoped to the entities that live on the active tab. */}
-      {activeTab !== 'threads' && (
+      {/* Activity feed — bottom of every project page, except Threads and Tasks
+          (those tabs render their own composer + content). Scoped to the active tab. */}
+      {activeTab !== 'threads' && activeTab !== 'tasks' && (
         <div className="px-8 pt-6 pb-10 mx-auto w-full" style={{ maxWidth: 1760 }}>
           <ProjectActivityActions projectId={project.id} projectName={project.name} users={users} />
           <ProjectActivityFeed
