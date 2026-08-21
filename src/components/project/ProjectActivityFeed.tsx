@@ -66,7 +66,7 @@ function fmtPricingValue(field: string, v: unknown): string {
 function describeSystem(entry: ActivityEntry): string {
   const what = (entry.action ?? '').replace(/_/g, ' ')
   const meta = entry.metadata ?? {}
-  const md = meta as { from?: unknown; to?: unknown; name?: unknown; field?: unknown; option_label?: unknown; new_version?: unknown }
+  const md = meta as { from?: unknown; to?: unknown; name?: unknown; field?: unknown; label?: unknown; option_label?: unknown; new_version?: unknown }
 
   // Pricing-option field change → friendly description with option + version.
   if (entry.entity_type === 'offtaker_pricing' && entry.action === 'field_changed' && md.field) {
@@ -83,7 +83,14 @@ function describeSystem(entry: ActivityEntry): string {
   if (entry.action === 'created')                            return `created a ${entry.entity_type}${md.name ? ` "${md.name}"` : ''}`
   if (entry.action === 'updated')                            return `updated a ${entry.entity_type}${md.name ? ` "${md.name}"` : ''}`
   if (entry.action === 'deleted')                            return `deleted a ${entry.entity_type}${md.name ? ` "${md.name}"` : ''}`
-  if (entry.action?.endsWith('_changed') && md.field)        return `changed ${md.field}${md.from !== undefined && md.to !== undefined ? `: ${md.from} → ${md.to}` : ''}`
+  if (entry.action?.endsWith('_changed') && md.field) {
+    const fieldLabel = String(md.label ?? md.field).replace(/_/g, ' ')
+    const from = md.from == null ? '' : String(md.from)
+    const to = md.to == null ? '' : String(md.to)
+    // Show the transition only for short scalar values; ids/long text just read as "updated".
+    const short = from.length <= 40 && to.length <= 40
+    return short && (from || to) ? `changed ${fieldLabel}: ${from || '—'} → ${to || '—'}` : `updated ${fieldLabel}`
+  }
   return what
 }
 

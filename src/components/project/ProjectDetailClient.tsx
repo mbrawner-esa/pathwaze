@@ -126,11 +126,14 @@ export function ProjectDetailClient({ project, financials, milestones, stakehold
         <div className="px-8 pt-6 pb-10 mx-auto w-full" style={{ maxWidth: 1760 }}>
           <ProjectActivityActions projectId={project.id} projectName={project.name} users={users} />
           <ProjectActivityFeed
-            entries={(activity as ActivityEntry[]).filter(e =>
-              e.kind === 'system' &&
-              !!e.entity_type &&
-              (TAB_ACTIVITY_ENTITIES[activeTab] ?? []).includes(e.entity_type)
-            )}
+            entries={(activity as ActivityEntry[]).filter(e => {
+              if (e.kind !== 'system') return false
+              // Entity edits (building/meter/system/permit/…) mapped to this tab.
+              if (e.entity_type && (TAB_ACTIVITY_ENTITIES[activeTab] ?? []).includes(e.entity_type)) return true
+              // Project field edits routed to their tab via metadata.category.
+              if (e.entity_type === 'project' && e.action === 'field_changed' && e.metadata?.category === activeTab) return true
+              return false
+            })}
             users={users}
           />
         </div>

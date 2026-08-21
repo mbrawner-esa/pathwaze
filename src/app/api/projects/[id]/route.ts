@@ -1,6 +1,66 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { postToChannel, projectStageChangedBlocks } from '@/lib/slack'
+import { logActivity } from '@/lib/activity'
+
+// Project fields that should be logged to activity_log when they change, with a
+// friendly label and the tab (category) their edits belong to. Fields absent
+// here (e.g. slack_channel_id, archived_at) are not logged. 'overview' fields
+// (stage, deal_health, …) are logged for the portfolio/priority history and the
+// bell feed but don't map to a per-tab activity feed.
+const FIELD_META: Record<string, { category: string; label: string }> = {
+  name: { category: 'overview', label: 'name' },
+  customer: { category: 'overview', label: 'customer' },
+  stage: { category: 'overview', label: 'stage' },
+  deal_health: { category: 'overview', label: 'deal health' },
+  assignee_id: { category: 'overview', label: 'assignee' },
+  primary_stakeholder_id: { category: 'overview', label: 'primary contact' },
+  tranche: { category: 'overview', label: 'tranche' },
+  region: { category: 'overview', label: 'region' },
+  start_date: { category: 'overview', label: 'start date' },
+  target_cod: { category: 'overview', label: 'target COD' },
+  // Site
+  address: { category: 'site', label: 'address' },
+  city: { category: 'site', label: 'city' },
+  state: { category: 'site', label: 'state' },
+  zip: { category: 'site', label: 'ZIP' },
+  lat: { category: 'site', label: 'latitude' },
+  lng: { category: 'site', label: 'longitude' },
+  facility_type: { category: 'site', label: 'facility type' },
+  site_type: { category: 'site', label: 'site type' },
+  site_acres: { category: 'site', label: 'site acres' },
+  roof_type: { category: 'site', label: 'roof type' },
+  // Utility
+  utility: { category: 'utility', label: 'utility' },
+  rate_schedule: { category: 'utility', label: 'rate schedule' },
+  rate_schedule_type: { category: 'utility', label: 'rate schedule type' },
+  annual_usage_kwh: { category: 'utility', label: 'annual usage' },
+  peak_demand_kw: { category: 'utility', label: 'peak demand' },
+  nem_program: { category: 'utility', label: 'NEM program' },
+  utility_poc: { category: 'utility', label: 'utility contact' },
+  interconnection_num: { category: 'utility', label: 'interconnection #' },
+  interconnection_status: { category: 'utility', label: 'interconnection status' },
+  interconnection_voltage: { category: 'utility', label: 'interconnection voltage' },
+  interconnection_feasibility: { category: 'utility', label: 'interconnection feasibility' },
+  interconnection_cost_estimate: { category: 'utility', label: 'interconnection cost' },
+  // Technical
+  system_kwdc: { category: 'technical', label: 'system kWdc' },
+  system_kwac: { category: 'technical', label: 'system kWac' },
+  annual_production_kwh: { category: 'technical', label: 'annual production' },
+  modules: { category: 'technical', label: 'modules' },
+  inverters: { category: 'technical', label: 'inverters' },
+  monitoring: { category: 'technical', label: 'monitoring' },
+  azimuth: { category: 'technical', label: 'azimuth' },
+  tilt: { category: 'technical', label: 'tilt' },
+  // Permitting
+  ahj: { category: 'permitting', label: 'AHJ' },
+  building_permit_num: { category: 'permitting', label: 'building permit #' },
+  building_permit_status: { category: 'permitting', label: 'building permit status' },
+  electrical_permit_num: { category: 'permitting', label: 'electrical permit #' },
+  permit_submitted: { category: 'permitting', label: 'permit submitted' },
+  permit_approved: { category: 'permitting', label: 'permit approved' },
+  inspector: { category: 'permitting', label: 'inspector' },
+}
 
 // Whitelist of project columns that can be updated via this endpoint.
 // Keeps the endpoint safe from accidental writes to id, project_number, etc.
@@ -46,8 +106,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     return NextResponse.json({ error: 'No valid fields to update' }, { status: 400 })
   }
 
-  // Fetch before-state so we can diff stage for Slack
-  const { data: before } = await supabase.from('projects').select('stage, slack_channel_id, name').eq('id', id).single()
+  // Fetch before-state so we can diff stage for Slack + log field changes.
+  const { data: before } = await supabase.from('projects').select('*').eq('id', id).single()
 
   // Archive / unarchive is admin-only (defense in depth — UI already hides the
   // menu items for non-admins, but block at the API too).
@@ -82,6 +142,28 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     }
   } catch (e) {
     console.warn('[slack] project stage notify failed:', e)
+  }
+
+  // ── Activity log: record each changed project field (routes to its tab feed) ──
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const beforeRow = (before ?? {}) as Record<string, any>
+    for (const key of Object.keys(update)) {
+      const meta = FIELD_META[key]
+      if (!meta) continue
+      const from = beforeRow[key]
+      const to = update[key]
+      if (String(from ?? '') === String(to ?? '')) continue   // unchanged
+      await logActivity(supabase, user, {
+        entity_type: 'project',
+        entity_id: id,
+        action: 'field_changed',
+        project_id: id,
+        metadata: { field: key, label: meta.label, category: meta.category, from: from ?? null, to: to ?? null },
+      })
+    }
+  } catch (e) {
+    console.warn('[activity] project field log failed:', e)
   }
 
   return NextResponse.json(data)
