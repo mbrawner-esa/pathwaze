@@ -1,19 +1,37 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { serviceClient } from '@/lib/supabase/service'
-import { refreshAccessToken, fetchInboxDelta, type GraphMessage } from '@/lib/graph'
+import { refreshAccessToken, fetchMailboxMessages, fetchMessageBody, type GraphMessage } from '@/lib/graph'
 import { encryptSecret, decryptSecret } from '@/lib/crypto'
 
 export const dynamic = 'force-dynamic'
 
 // GET /api/cron/email-sync
-// For every connected mailbox: pull the inbox delta, keep only messages whose
-// sender/recipients match a known stakeholder, and mirror those into that
+// For every connected mailbox: read messages across the WHOLE mailbox from the
+// last 12 months (Inbox, Sent Items, filed folders), keep only those whose
+// sender/recipients match a known stakeholder, and mirror them into that
 // stakeholder's project Threads (source='email'). Read-only — never modifies mail.
+//
+// Incremental: each run only re-reads from the last successful sync's
+// high-water mark (minus a small overlap), floored at 12 months ago. Dedup on
+// (project_id, message_id) makes overlap and re-runs harmless.
 //
 // Protected by CRON_SECRET (Vercel Cron sends it as a Bearer token / ?key=).
 // Supports ?dry=1 (report only) and ?user=<uuid> (sync a single user).
 
 const BODY_MAX = 20000
+
+// Floor date: 12 months before `ref`.
+function twelveMonthsBefore(ref: Date): Date {
+  const d = new Date(ref)
+  d.setMonth(d.getMonth() - 12)
+  return d
+}
+
+function bodyToText(body: { contentType?: string; content?: string } | null, fallbackPreview?: string): string {
+  const raw = body?.content?.trim() || fallbackPreview?.trim() || ''
+  const text = body?.contentType === 'html' ? raw.replace(/<[^>]+>/g, ' ') : raw
+  return text.slice(0, BODY_MAX)
+}
 
 interface Conn {
   id: string
@@ -22,7 +40,7 @@ interface Conn {
   refresh_token_enc: string | null
   access_token: string | null
   expires_at: string | null
-  delta_link: string | null
+  last_synced_at: string | null
 }
 
 function addrsOf(m: GraphMessage): string[] {
@@ -32,13 +50,6 @@ function addrsOf(m: GraphMessage): string[] {
   for (const r of m.toRecipients ?? []) push(r.emailAddress)
   for (const r of m.ccRecipients ?? []) push(r.emailAddress)
   return out
-}
-
-function bodyTextOf(m: GraphMessage): string {
-  const raw = m.body?.content?.trim() || m.bodyPreview?.trim() || ''
-  // We request text bodies via Prefer header, but strip tags defensively.
-  const text = m.body?.contentType === 'html' ? raw.replace(/<[^>]+>/g, ' ') : raw
-  return text.slice(0, BODY_MAX)
 }
 
 // Fresh access token for a connection; refreshes + persists if expired/expiring.
@@ -107,7 +118,7 @@ export async function GET(req: NextRequest) {
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let q = (svc.from('email_connections') as any)
-    .select('id, user_id, account_email, refresh_token_enc, access_token, expires_at, delta_link')
+    .select('id, user_id, account_email, refresh_token_enc, access_token, expires_at, last_synced_at')
   if (onlyUser) q = q.eq('user_id', onlyUser)
   const { data: conns, error: connErr } = await q
   if (connErr) return NextResponse.json({ error: connErr.message }, { status: 500 })
@@ -122,12 +133,21 @@ export async function GET(req: NextRequest) {
       continue
     }
 
+    // Forward-walk floor: resume from the last high-water mark, but never older
+    // than 12 months. On first connect (no high-water) this starts 12 months back.
+    const runStart = new Date()
+    const floorTwelveMo = twelveMonthsBefore(runStart)
+    const floor = conn.last_synced_at
+      ? new Date(Math.max(new Date(conn.last_synced_at).getTime(), floorTwelveMo.getTime()))
+      : floorTwelveMo
+    const sinceIso = floor.toISOString()
+
     let messages: GraphMessage[] = []
-    let nextDelta: string | null = conn.delta_link
+    let truncated = false
     try {
-      const r = await fetchInboxDelta(token, conn.delta_link)
+      const r = await fetchMailboxMessages(token, sinceIso)
       messages = r.messages
-      nextDelta = r.deltaLink
+      truncated = r.truncated
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
       await svc.from('email_connections').update({ last_error: msg.slice(0, 500) }).eq('id', conn.id)
@@ -139,7 +159,6 @@ export async function GET(req: NextRequest) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const rows: any[] = []
     for (const m of messages) {
-      if (m['@removed']) continue                 // deleted/moved — nothing to mirror
       const stakeholderHit = addrsOf(m).map(a => stakeholderByEmail.get(a)).find(Boolean)
       if (!stakeholderHit) continue               // not a stakeholder conversation → ignore
       matched++
@@ -147,6 +166,9 @@ export async function GET(req: NextRequest) {
       const fromAddr = m.from?.emailAddress?.address?.toLowerCase() || null
       const internal = fromAddr ? userByEmail.get(fromAddr) : undefined
       const toAddr = (m.toRecipients ?? []).map(r => r.emailAddress?.address).filter(Boolean).join(', ')
+      // Fetch the full body only for matched messages (small set) — and only when
+      // actually writing. Dry runs use the lightweight preview.
+      const body = dry ? null : await fetchMessageBody(token, m.id)
       rows.push({
         project_id: stakeholderHit.project_id,
         source: 'email',
@@ -158,10 +180,18 @@ export async function GET(req: NextRequest) {
         user_id: internal?.id ?? null,
         user_name: internal?.full_name ?? m.from?.emailAddress?.name ?? m.from?.emailAddress?.address ?? 'Email',
         user_avatar_url: internal?.avatar_url ?? null,
-        message: bodyTextOf(m),
-        created_at: m.receivedDateTime ?? new Date().toISOString(),
+        message: bodyToText(body, m.bodyPreview),
+        created_at: m.receivedDateTime ?? m.sentDateTime ?? new Date().toISOString(),
       })
     }
+
+    // High-water mark for the next run: newest receivedDateTime we just scanned
+    // (messages come back oldest-first). When nothing was in the window, advance
+    // to now so the floor keeps pace.
+    const newest = messages.length
+      ? messages[messages.length - 1].receivedDateTime ?? messages[messages.length - 1].sentDateTime ?? null
+      : null
+    const nextHighWater = newest ?? runStart.toISOString()
 
     if (!dry && rows.length) {
       // Dedup on (project_id, message_id) — safe to re-run.
@@ -176,13 +206,15 @@ export async function GET(req: NextRequest) {
     }
 
     if (!dry) {
+      // Advance the high-water mark. If truncated, more of the window remains —
+      // the next run resumes from here and keeps backfilling forward.
       await svc.from('email_connections')
-        .update({ delta_link: nextDelta, last_synced_at: new Date().toISOString(), last_error: null })
+        .update({ last_synced_at: nextHighWater, last_error: truncated ? 'backfilling: more history to page' : null })
         .eq('id', conn.id)
     }
 
     totalMirrored += rows.length
-    report.push({ account: conn.account_email, scanned: messages.length, matched, mirrored: dry ? 0 : rows.length })
+    report.push({ account: conn.account_email, since: sinceIso, scanned: messages.length, matched, mirrored: dry ? 0 : rows.length, truncated })
   }
 
   return NextResponse.json({ ok: true, dry, connections: (conns ?? []).length, mirrored: totalMirrored, report })

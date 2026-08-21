@@ -121,44 +121,66 @@ export interface GraphMessage {
   subject?: string
   bodyPreview?: string
   receivedDateTime?: string
+  sentDateTime?: string
   from?: { emailAddress?: GraphAddress }
   toRecipients?: { emailAddress?: GraphAddress }[]
   ccRecipients?: { emailAddress?: GraphAddress }[]
   body?: { contentType?: string; content?: string }
-  categories?: string[]
-  ['@removed']?: unknown
 }
 
-const DELTA_SELECT = 'id,conversationId,subject,bodyPreview,receivedDateTime,from,toRecipients,ccRecipients,body,categories'
+// Metadata only — deliberately NO body. We page through the whole mailbox to
+// find stakeholder matches, and most messages won't match, so pulling bodies
+// here would be wasted transfer. Bodies are fetched per-match via fetchMessageBody.
+// Metadata only — deliberately NO body. We page the mailbox to find stakeholder
+// matches, and most messages won't match, so pulling bodies here would be wasted
+// transfer. Bodies are fetched per-match via fetchMessageBody.
+const MSG_SELECT = 'id,conversationId,subject,bodyPreview,receivedDateTime,sentDateTime,from,toRecipients,ccRecipients'
+const PAGE_SIZE = 100
+const DEFAULT_MAX_PAGES = 50   // per-run chunk (~5k messages) so a run fits a function timeout
 
-// Incremental inbox read. Pass the stored deltaLink to get only what changed
-// since last run, or null for the first run. Follows nextLink pages and returns
-// the fresh deltaLink to persist for next time.
-export async function fetchInboxDelta(
+// Mailbox-wide read across ALL folders (Inbox, Sent Items, filed subfolders):
+// /me/messages returns the whole mailbox, unlike a per-folder delta. Ordered
+// OLDEST-first from `sinceIso` so the caller can walk forward in bounded chunks
+// (persisting the newest receivedDateTime seen as the next run's floor). Returns
+// truncated=true when the chunk cap was hit and there's more to page.
+export async function fetchMailboxMessages(
   accessToken: string,
-  deltaLink: string | null,
-): Promise<{ messages: GraphMessage[]; deltaLink: string | null }> {
-  let url = deltaLink
-    || `${GRAPH}/me/mailFolders/inbox/messages/delta?$select=${DELTA_SELECT}`
+  sinceIso: string,
+  maxPages: number = DEFAULT_MAX_PAGES,
+): Promise<{ messages: GraphMessage[]; truncated: boolean }> {
+  const filter = encodeURIComponent(`receivedDateTime ge ${sinceIso}`)
+  let url: string = `${GRAPH}/me/messages?$select=${MSG_SELECT}&$top=${PAGE_SIZE}&$orderby=receivedDateTime%20asc&$filter=${filter}`
   const messages: GraphMessage[] = []
-  let nextDelta: string | null = null
+  let truncated = false
+  const headers = { Authorization: `Bearer ${accessToken}` }
 
-  // Request plain-text bodies so the mirrored message is readable, not raw HTML.
-  const headers = {
-    Authorization: `Bearer ${accessToken}`,
-    Prefer: 'outlook.body-content-type="text"',
-  }
-
-  // Guard against runaway paging.
-  for (let page = 0; page < 50; page++) {
+  for (let page = 0; page < maxPages; page++) {
     const res: Response = await fetch(url, { headers, cache: 'no-store' })
-    if (!res.ok) throw new Error(`Graph delta failed: ${res.status} ${await res.text().catch(() => '')}`)
+    if (!res.ok) throw new Error(`Graph messages failed: ${res.status} ${await res.text().catch(() => '')}`)
     const j = await res.json()
     if (Array.isArray(j.value)) messages.push(...(j.value as GraphMessage[]))
-    if (j['@odata.nextLink']) { url = j['@odata.nextLink']; continue }
-    nextDelta = j['@odata.deltaLink'] ?? null
-    break
+    if (j['@odata.nextLink']) {
+      url = j['@odata.nextLink']
+      if (page === maxPages - 1) truncated = true   // more pages remain past our cap
+      continue
+    }
+    break   // reached the end of the window
   }
 
-  return { messages, deltaLink: nextDelta }
+  return { messages, truncated }
+}
+
+// Full plain-text body for a single matched message. Requested with the text
+// Prefer header so we store readable text rather than raw HTML.
+export async function fetchMessageBody(
+  accessToken: string,
+  id: string,
+): Promise<{ contentType?: string; content?: string } | null> {
+  const res = await fetch(`${GRAPH}/me/messages/${encodeURIComponent(id)}?$select=body`, {
+    headers: { Authorization: `Bearer ${accessToken}`, Prefer: 'outlook.body-content-type="text"' },
+    cache: 'no-store',
+  })
+  if (!res.ok) return null
+  const j = await res.json()
+  return j.body ?? null
 }
