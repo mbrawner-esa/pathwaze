@@ -227,6 +227,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
         meters={meters ?? []}
         systems={systemsWithAreas}
         threads={threads ?? []}
+        notes={notes ?? []}
         activity={activity}
         users={users ?? []}
         pricingRows={pricingRows ?? []}
