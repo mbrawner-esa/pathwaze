@@ -1,5 +1,6 @@
 'use client'
 import { useState } from 'react'
+import { useFocusRow } from './useFocusRow'
 import { useRouter } from 'next/navigation'
 import { Plus, Trash2 } from 'lucide-react'
 import { RowDrawer, DrawerInput, DrawerSelect, Section } from './_RowDrawer'
@@ -151,6 +152,9 @@ export function MetersTable({
 
   const selected = typeof open === 'object' ? open : null
   const buildingName = (id: string | null) => buildings.find(b => b.id === id)?.name ?? '—'
+
+  // Deep link (?focus=<meterId>) → open that meter's drawer.
+  useFocusRow(meters.map(m => m.id), id => { const m = meters.find(x => x.id === id); if (m) startEdit(m) })
 
   return (
     <div className="card overflow-hidden">
