@@ -1,5 +1,6 @@
 'use client'
 import { useState } from 'react'
+import { useFocusRow } from './useFocusRow'
 import { useRouter } from 'next/navigation'
 import { Plus, Trash2, FileText } from 'lucide-react'
 import { RowDrawer, DrawerInput, DrawerSelect, DrawerMultiSelect, Section } from './_RowDrawer'
@@ -144,6 +145,7 @@ export function SystemsTable({
   }
 
   const selected = typeof open === 'object' ? open : null
+  useFocusRow(systems.map(s => s.id), id => { const s = systems.find(x => x.id === id); if (s) startEdit(s) })
   const areaNames = (ids: string[]) => {
     const names = ids.map(id => buildings.find(b => b.id === id)?.name).filter(Boolean)
     return names.length ? names.join(', ') : '—'

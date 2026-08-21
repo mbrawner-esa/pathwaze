@@ -1,5 +1,6 @@
 'use client'
 import { useState } from 'react'
+import { useFocusRow } from './useFocusRow'
 import { useRouter } from 'next/navigation'
 import { Plus, Trash2 } from 'lucide-react'
 import { RowDrawer, DrawerField, DrawerInput, DrawerSelect, DrawerTextarea, Section } from './_RowDrawer'
@@ -173,6 +174,7 @@ export function BuildingsTable({
   }
 
   const selected = typeof open === 'object' ? open : null
+  useFocusRow(buildings.map(b => b.id), id => { const b = buildings.find(x => x.id === id); if (b) startEdit(b) })
   const linkedMeters  = selected ? meters.filter(m => m.building_id === selected.id) : []
   const linkedSystems = selected ? systems.filter(s => (s.building_ids ?? []).includes(selected.id)) : []
 

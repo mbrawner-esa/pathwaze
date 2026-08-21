@@ -1,5 +1,6 @@
 'use client'
 import { useState } from 'react'
+import { useFocusRow } from './useFocusRow'
 import { useRouter } from 'next/navigation'
 import { Plus, Trash2 } from 'lucide-react'
 import { formatDate } from '@/lib/utils'
@@ -191,6 +192,7 @@ function PermitSection({
   }
 
   const selected = typeof open === 'object' ? open : null
+  useFocusRow(permits.map(pm => pm.id), id => { const pm = permits.find(x => x.id === id); if (pm) startEdit(pm) })
   const approved = permits.filter(x => x.status === 'Approved').length
   const total = permits.length
   const allApproved = total > 0 && approved === total

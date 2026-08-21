@@ -27,6 +27,7 @@
  * activity_log entries written by the PATCH endpoint.
  */
 import { useState, useEffect, useCallback } from 'react'
+import { useFocusRow } from './useFocusRow'
 import { useRouter } from 'next/navigation'
 import { Plus, Trash2, X, Send, MessageSquare, Pencil, Info, Circle, CheckCircle2 } from 'lucide-react'
 import { formatCurrency, formatDate } from '@/lib/utils'
@@ -348,6 +349,9 @@ export function OfftakerPricingTable({
   function rowTotalSavings(r: PricingRow): number {
     return Object.values(r.meter_savings ?? {}).reduce((s, v) => s + Number(v), 0)
   }
+
+  // Deep link (?focus=<rowId>) → open that pricing option's drawer.
+  useFocusRow(rows.map(r => r.id), id => setOpenId(id))
 
   return (
     <div className="card overflow-hidden">
