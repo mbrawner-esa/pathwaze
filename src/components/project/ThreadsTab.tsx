@@ -273,9 +273,9 @@ function FeedRow({ item, users, expanded, onToggle }: { item: FeedItem; users: M
 
         {/* Slack */}
         {isSlack && (
-          <p className="text-[13px] text-[#181818] mt-0.5 whitespace-pre-wrap">
-            <MessageText text={item.message ?? ''} users={users} />
-          </p>
+          <div className="text-[13px] text-[#181818] mt-0.5">
+            <MessageText text={item.message ?? ''} users={users} block />
+          </div>
         )}
 
         {/* Note / Event / File */}
