@@ -4,6 +4,7 @@ import { Avatar } from '@/components/ui/Avatar'
 import { Slack, Mail, StickyNote, Calendar, Paperclip, Search, ChevronDown } from 'lucide-react'
 import { MessageText, type MentionUser } from '@/components/ui/MessageText'
 import { NotesRender } from '@/components/ui/NotesRender'
+import { createClient } from '@/lib/supabase/client'
 
 // Raw project_threads row (Slack mirror + mirrored Outlook email).
 export interface ProjectThread {
@@ -27,6 +28,7 @@ export interface ProjectNote {
   body: string | null
   event_date: string | null
   file_name: string | null
+  storage_path: string | null
   created_at: string
   user?: { full_name: string | null; avatar_url: string | null } | null
 }
@@ -46,6 +48,7 @@ interface FeedItem {
   body?: string | null
   event_date?: string | null
   file_name?: string | null
+  storage_path?: string | null
 }
 
 type SortKey = 'date_desc' | 'date_asc' | 'user' | 'type'
@@ -105,6 +108,7 @@ export function ThreadsTab({
       body: n.body,
       event_date: n.event_date,
       file_name: n.file_name,
+      storage_path: n.storage_path,
     }))
     return [...fromThreads, ...fromNotes]
   }, [threads, notes])
@@ -220,6 +224,40 @@ export function ThreadsTab({
   )
 }
 
+// Clickable file attachment — resolves a short-lived signed URL from the
+// private project-files bucket and opens it in a new tab.
+function FileAttachment({ path, name }: { path?: string | null; name: string }) {
+  const supabase = useMemo(() => createClient(), [])
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+
+  if (!path) {
+    return <p className="text-[11.5px] text-[#706E6B] mt-0.5 inline-flex items-center gap-1"><Paperclip size={11} /> {name}</p>
+  }
+
+  async function open() {
+    setBusy(true); setErr(null)
+    const { data, error } = await supabase.storage.from('project-files').createSignedUrl(path!, 60)
+    setBusy(false)
+    if (error || !data?.signedUrl) { setErr('Could not open file'); return }
+    window.open(data.signedUrl, '_blank', 'noopener,noreferrer')
+  }
+
+  return (
+    <span className="mt-0.5 inline-flex items-center gap-1.5">
+      <button
+        onClick={open}
+        disabled={busy}
+        className="inline-flex items-center gap-1 text-[11.5px] font-medium text-[#1d4ed8] hover:underline disabled:opacity-60"
+        title="Open file"
+      >
+        <Paperclip size={11} /> {name}{busy ? ' …' : ''}
+      </button>
+      {err && <span className="text-[11px] text-[#b91c1c]">{err}</span>}
+    </span>
+  )
+}
+
 function SourceBadge({ kind }: { kind: Kind }) {
   const map: Record<Kind, { label: string; icon: React.ReactNode; cls: string }> = {
     slack: { label: 'Slack', icon: <Slack size={9} />, cls: 'bg-[#F4ECE7] text-[#611f69]' },
@@ -303,7 +341,7 @@ function FeedRow({ item, users, expanded, onToggle }: { item: FeedItem; users: M
               <p className="text-[11.5px] text-[#706E6B] mt-0.5">📅 {new Date(item.event_date).toLocaleDateString()}</p>
             )}
             {item.kind === 'file' && item.file_name && (
-              <p className="text-[11.5px] text-[#706E6B] mt-0.5">📎 {item.file_name}</p>
+              <FileAttachment path={item.storage_path} name={item.file_name} />
             )}
           </>
         )}

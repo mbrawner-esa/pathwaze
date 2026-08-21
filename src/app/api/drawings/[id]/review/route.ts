@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { ensureReview } from '@/lib/drawings'
+import { logActivity } from '@/lib/rfi-notify'
 import { NextRequest, NextResponse } from 'next/server'
 
 // GET /api/drawings/[id]/review
@@ -96,5 +97,21 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const { data, error } = await (supabase.from('drawing_reviews') as any)
     .update(patch).eq('drawing_id', id).select('*').single()
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+  // Log as-built status changes so they surface in the project's Drawings feed.
+  // entity_type 'drawing' + metadata.project_id routes it to the Drawings tab.
+  if (body.status) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: dr } = await (supabase.from('drawings') as any)
+      .select('project_id, file_name').eq('id', id).maybeSingle()
+    if (dr?.project_id) {
+      await logActivity(supabase, {
+        entity_type: 'drawing', entity_id: id,
+        action: `set as-built review to ${String(body.status).replace(/_/g, ' ')}`,
+        user_id: user.id,
+        metadata: { project_id: dr.project_id, name: dr.file_name ?? null, status: body.status },
+      }).catch(() => {})
+    }
+  }
   return NextResponse.json(data)
 }

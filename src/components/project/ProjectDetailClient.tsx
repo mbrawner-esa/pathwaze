@@ -34,13 +34,13 @@ const VALID_TAB_IDS = new Set(TABS.map(t => t.id))
 // Activity feed shows only edits to the entities that live on that tab
 // (e.g. Utility → meters), instead of the whole project's activity.
 const TAB_ACTIVITY_ENTITIES: Record<string, string[]> = {
-  site: ['building', 'system', 'meter'],
-  utility: ['meter', 'building'],
+  site: ['building'],            // Buildings / Parcels / Site Information
+  utility: ['meter'],           // Meters / Accounts / Utility
   stakeholders: ['stakeholder'],
   permitting: ['permit'],
-  technical: ['building', 'system', 'meter'],
+  technical: ['system'],        // Systems & Specs
   financial: ['offtaker_pricing'],
-  drawings: ['rfi'],
+  drawings: ['drawing'],        // As-builts + review status changes
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
