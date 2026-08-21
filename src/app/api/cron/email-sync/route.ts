@@ -4,6 +4,7 @@ import { refreshAccessToken, fetchMailboxMessages, fetchMessageBody, type GraphM
 import { encryptSecret, decryptSecret } from '@/lib/crypto'
 
 export const dynamic = 'force-dynamic'
+export const maxDuration = 60   // give the chunked sync room (Hobby caps here)
 
 // GET /api/cron/email-sync
 // For every connected mailbox: read messages across the WHOLE mailbox from the
