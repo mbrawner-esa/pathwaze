@@ -34,8 +34,9 @@ would push outdated code. If you're unsure which clone you're in, run
   `supabase/migrations/NNN_*.sql` file must be **run manually on Supabase** by
   the user. Always call out new migration numbers explicitly in the summary.
 - Migrations are numbered sequentially, idempotent (`IF NOT EXISTS` /
-  `DROP POLICY IF EXISTS`). Next free number as of 2026-08-21: **053**
-  (latest applied: **052** — 049–052 are all live on Supabase).
+  `DROP POLICY IF EXISTS`). Next free number as of 2026-08-21: **054**
+  (latest applied: **052** — 049–052 are all live on Supabase;
+  **053 is written but NOT yet run**).
   ⚠️ Never reuse a number: the abandoned `schedule-tab` branch carries
   migrations numbered 022/023 that collide with main's. That branch is a delete
   candidate — never merge it as-is.
@@ -174,6 +175,10 @@ server route handlers (defense in depth).
   you navigate directly.
 - /settings — profile + notification prefs + task subscriptions + **Email
   (Outlook)** connect/disconnect (per-user delegated OAuth)
+- /whats-new — full release notes for the current release. Content lives in
+  `src/lib/whats-new.ts` (`RELEASE`); the same object feeds the login modal
+  (`WhatsNewGate`, rendered from `AppLayout`). Bump `RELEASE.key` to re-fire
+  the modal for everyone. Also linked from the avatar menu.
 - /admin/users — invite + manage users (admin only)
 - /admin/archived — view + restore + delete archived projects (admin only)
 - /investor/[token] — investor read-only portal

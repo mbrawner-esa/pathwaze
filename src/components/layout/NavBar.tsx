@@ -213,6 +213,8 @@ export function NavBar({ user }: NavBarProps) {
                     className="block w-full text-left px-4 py-2 text-[13px] text-[#181818] hover:bg-[#f8fafc]">Archived Projects</Link>
                 </>
               )}
+              <Link href="/whats-new" onClick={() => setShowUserMenu(false)}
+                className="block w-full text-left px-4 py-2 text-[13px] text-[#181818] hover:bg-[#f8fafc]">What&apos;s New</Link>
               <Link href="/settings" onClick={() => setShowUserMenu(false)}
                 className="block w-full text-left px-4 py-2 text-[13px] text-[#181818] hover:bg-[#f8fafc]">Settings</Link>
               <button onClick={logout} className="w-full text-left px-4 py-2 text-[13px] text-[#dc2626] hover:bg-[#fef2f2]">Logout</button>

@@ -8,6 +8,14 @@
 
 ## 2026-08-21
 
+- **What's New release notes** — a `/whats-new` page carries the full release
+  note (per-section detail plus step-by-step "How to" guides for drawing review
+  and connecting Outlook), and a modal surfaces a summary of it once per user on
+  their next page load after a release ships. Dismissing it — or clicking through
+  to the full note — stamps `users.whats_new_seen` with the release key, so it
+  never re-nags. Reachable any time from the avatar menu. Shipping the next
+  update is a content-only change: rewrite `RELEASE` in `src/lib/whats-new.ts`
+  and bump `RELEASE.key`. (Migration 053 — run required.)
 - **Project Tasks tab** — the project detail page has a **Tasks** tab (second,
   right after Threads) listing that project's tasks grouped by status, with
   priority dot, type chip, due date (overdue in red), and assignee. Completed

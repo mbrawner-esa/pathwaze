@@ -181,8 +181,8 @@ export type Database = {
         Update: Partial<Database['public']['Tables']['dataroom_docs']['Insert']>
       }
       users: {
-        Row: { id: string; email: string; full_name: string; role: string; avatar_url: string | null; created_at: string }
-        Insert: Omit<Database['public']['Tables']['users']['Row'], 'created_at'> & { id?: string }
+        Row: { id: string; email: string; full_name: string; role: string; avatar_url: string | null; created_at: string; whats_new_seen: string | null }
+        Insert: Omit<Database['public']['Tables']['users']['Row'], 'created_at' | 'whats_new_seen'> & { id?: string; whats_new_seen?: string | null }
         Update: Partial<Database['public']['Tables']['users']['Insert']>
       }
       activity_log: {
