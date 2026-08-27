@@ -155,9 +155,13 @@ export function EditableDealHealth({
             )
           })}
 
-          {suggestion && suggestion.value !== 'TBD' && (
+          {suggestion && (
             <div className="border-t border-[#f1f5f9] mt-1 pt-1.5 px-3 pb-2">
-              <p className="m-0 text-[11px] leading-snug text-[#706E6B]">{suggestion.reason}</p>
+              <p className="m-0 text-[11px] leading-snug text-[#706E6B]">
+                {suggestion.value === 'TBD'
+                  ? 'Workstreams have no opinion yet — no milestone has a target date.'
+                  : suggestion.reason}
+              </p>
               <button
                 type="button"
                 onClick={() => { setOverride(!overridden); setOpen(false) }}
@@ -165,7 +169,7 @@ export function EditableDealHealth({
                 className="flex items-center gap-1.5 mt-1.5 text-[11px] font-semibold text-[#55677A] hover:text-[#181818]"
                 title={overridden
                   ? 'Follow the workstreams again, so the suggestion can prompt when it disagrees.'
-                  : 'Keep this value and stop prompting. Majors move, so the suggestion will not always be the call you want.'}
+                  : 'Keep this value and stop prompting once the workstreams have dates. Majors move, so the suggestion will not always be the call you want.'}
               >
                 {overridden
                   ? <><RotateCcw size={11} /> Follow Workstreams</>
