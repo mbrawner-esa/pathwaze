@@ -1,6 +1,7 @@
 'use client'
 import { useRef, useState } from 'react'
 import { createClient as createBrowserClient } from '@/lib/supabase/client'
+import { uploadResumable } from '@/lib/storage-upload'
 import { Upload, FileText, ChevronRight, Trash2, Plus, Pencil } from 'lucide-react'
 import { DrawingReviewView } from './DrawingReviewView'
 import { DrawerMultiSelect } from './_RowDrawer'
@@ -89,6 +90,7 @@ export function DrawingsTab({ projectId, drawings: initial, areas, collections: 
   const [reviewDrawingId, setReviewDrawingId] = useState<string | null>(null)
   const [drawings, setDrawings] = useState<Drawing[]>(initial)
   const [uploading, setUploading] = useState(false)
+  const [uploadProgress, setUploadProgress] = useState<{ name: string; pct: number } | null>(null)
   const [error, setError] = useState<string | null>(null)
   const { prompt, dialog: promptDialog } = usePrompt()
   const fileInput = useRef<HTMLInputElement>(null)
@@ -104,9 +106,20 @@ export function DrawingsTab({ projectId, drawings: initial, areas, collections: 
       for (const file of Array.from(files)) {
         const safe = file.name.replace(/[^\w.\-]+/g, '_')
         const path = `${projectId}/${Date.now()}-${safe}`
-        const { error: upErr } = await sb.storage.from('drawings')
-          .upload(path, file, { upsert: false, contentType: file.type || 'application/pdf' })
-        if (upErr) { setError(`Upload failed: ${upErr.message}`); continue }
+        // Resumable (chunked) upload — handles large as-built sets and survives
+        // network drops, unlike the previous single-request .upload().
+        setUploadProgress({ name: file.name, pct: 0 })
+        try {
+          await uploadResumable({
+            bucket: 'drawings', path, file,
+            contentType: file.type || 'application/pdf',
+            onProgress: (pct) => setUploadProgress({ name: file.name, pct }),
+          })
+        } catch (upErr) {
+          const msg = upErr instanceof Error ? upErr.message : 'Upload failed'
+          setError(`Upload failed: ${msg}`)
+          continue
+        }
         const res = await fetch('/api/drawings', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -127,6 +140,7 @@ export function DrawingsTab({ projectId, drawings: initial, areas, collections: 
       }
     } finally {
       setUploading(false)
+      setUploadProgress(null)
       if (fileInput.current) fileInput.current.value = ''
     }
   }
@@ -232,6 +246,17 @@ export function DrawingsTab({ projectId, drawings: initial, areas, collections: 
       </div>
 
       {error && <div className="mb-3 px-3 py-2 bg-[#fef2f2] border border-[#fecaca] rounded text-[12px] text-[#991b1b]">{error}</div>}
+      {uploadProgress && (
+        <div className="mb-3 px-3 py-2 bg-[#EFF6FF] border border-[#bfdbfe] rounded text-[12px] text-[#1e40af]">
+          <div className="flex items-center justify-between mb-1.5">
+            <span className="truncate mr-2">Uploading {uploadProgress.name}</span>
+            <span className="font-semibold flex-shrink-0">{uploadProgress.pct}%</span>
+          </div>
+          <div className="h-1.5 rounded-full bg-[#dbeafe] overflow-hidden">
+            <div className="h-full bg-[#2563eb] transition-all" style={{ width: `${uploadProgress.pct}%` }} />
+          </div>
+        </div>
+      )}
       {!active.action_plan_id && !isSystemLinked(active) && (
         <div className="mb-3 px-3 py-2 bg-[#FFFBEB] border border-[#FCD9A0] rounded text-[12px] text-[#92400e]">
           This collection has no review checklist (action plan) yet. Drawings can be uploaded and organized; the review will activate once a checklist is attached.

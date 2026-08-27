@@ -36,6 +36,18 @@ export interface OutlookStatus {
   lastError: string | null
 }
 
+// Human-readable hint per failure `reason` from the OAuth callback. These point
+// at the actual cause (mostly Azure config) so a retry isn't just guesswork.
+const OUTLOOK_ERROR_REASONS: Record<string, string> = {
+  provider: 'Microsoft rejected the sign-in — the consent was declined, admin approval is required, or the app’s redirect URI doesn’t match its Azure registration.',
+  state: 'The sign-in took too long or was interrupted (the security check expired). Start again and complete it within a few minutes.',
+  token: 'Microsoft rejected the token exchange — usually an expired app secret or a redirect-URI mismatch in Azure. Please try again.',
+  norefresh: 'Microsoft didn’t return a refresh token. The app may be missing the offline_access permission.',
+  graph: 'Connected, but reading your mailbox profile failed. Please try again.',
+  encrypt: 'A server configuration problem stopped us saving the connection securely. Please try again shortly.',
+  db: 'The connection couldn’t be saved. Please try again shortly.',
+}
+
 const ALL_TASK_TYPES = [
   'Design', 'Engineering', 'Permitting', 'Interconnection',
   'Financial', 'Legal', 'Construction', 'Operations', 'Administrative',
@@ -228,7 +240,7 @@ export function SettingsClient({ user, outlook }: { user: SettingsUser; outlook:
         )}
         {outlookParam === 'error' && (
           <div className="mb-4 px-3 py-2 bg-[#fef2f2] border border-[#fecaca] rounded text-[12.5px] text-[#991b1b]">
-            Couldn&apos;t connect Outlook. Please try again.
+            Couldn&apos;t connect Outlook. {OUTLOOK_ERROR_REASONS[searchParams.get('reason') ?? ''] ?? 'Please try again.'}
           </div>
         )}
         <div className="flex items-start justify-between gap-4">

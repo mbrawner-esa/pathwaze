@@ -31,7 +31,19 @@ function clientSecret(): string {
 }
 
 export function graphAppUrl(path: string): string {
-  const base = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
+  const raw = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
+  // Normalize to the ORIGIN only. NEXT_PUBLIC_APP_URL is meant to be the site
+  // origin (e.g. https://pathwaze.esa-solar.com). If someone pastes the full
+  // callback URL or leaves a trailing slash, appending `path` would otherwise
+  // yield a doubled path like `…/api/auth/outlook/callback/api/auth/outlook/callback`
+  // and break OAuth with AADSTS50011 (redirect_uri mismatch). `new URL().origin`
+  // strips any stray path/slash/query so the value is resilient to that typo.
+  let base: string
+  try {
+    base = new URL(raw).origin
+  } catch {
+    base = raw.replace(/\/+$/, '')   // not a parseable URL — at least drop trailing slashes
+  }
   return `${base}${path.startsWith('/') ? '' : '/'}${path}`
 }
 

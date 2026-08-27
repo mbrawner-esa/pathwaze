@@ -133,7 +133,15 @@ async function send(args: { to: string; subject: string; html: string }): Promis
 // it's publicly reachable.
 
 function appUrl(): string {
-  return process.env.NEXT_PUBLIC_APP_URL || 'https://pathwaze.esa-solar.com'
+  // Normalize to the origin — same guard as graphAppUrl() in graph.ts — so a
+  // full path or trailing slash accidentally left in NEXT_PUBLIC_APP_URL can't
+  // produce malformed links (e.g. `…/settings` appended after a stray path).
+  const raw = process.env.NEXT_PUBLIC_APP_URL || 'https://pathwaze.esa-solar.com'
+  try {
+    return new URL(raw).origin
+  } catch {
+    return raw.replace(/\/+$/, '')
+  }
 }
 
 function shell(bodyHtml: string): string {

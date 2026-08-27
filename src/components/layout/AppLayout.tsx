@@ -8,7 +8,15 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/auth/login')
 
-  const { data: profile } = await supabase.from('users').select('full_name, role, email, avatar_url').eq('id', user.id).single()
+  const { data: profile } = await supabase.from('users').select('full_name, role, email, avatar_url, status').eq('id', user.id).single()
+
+  // Status gate — moved here from the Edge middleware, which used to run this
+  // same query on every request and was timing out (504). A server component
+  // can't reliably clear cookies, so a disabled user is sent to the /auth/logout
+  // route handler (which can) rather than being signed out inline.
+  const status = (profile as { status?: string } | null)?.status
+  if (status === 'disabled') redirect('/auth/logout?error=Account+disabled')
+  if (status === 'pending') redirect('/auth/pending')
 
   // Read separately from the profile above: migration 053 is applied by hand on
   // Supabase, so until it runs this column doesn't exist. Keeping it out of the
