@@ -102,82 +102,80 @@ export function EditableDealHealth({
   }
 
   return (
-    <div className="flex flex-col gap-1 items-start">
     <div className="relative" ref={ref}>
       <button
         onClick={() => setOpen(o => !o)}
         disabled={saving}
         className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11.5px] font-semibold transition-all hover:brightness-95"
         style={{ background: c.bg, color: c.text }}
-        title="Click to change project status"
+        title={overridden
+          ? 'Set by hand, against what the workstreams suggest. Click to change.'
+          : mismatch
+            ? `Workstreams suggest ${suggestion!.value}. ${suggestion!.reason} Click to change.`
+            : 'Click to change project status'}
       >
         <span className="w-1.5 h-1.5 rounded-full" style={{ background: c.dot }} />
         {value}
+        {/* Inline, next to the value: a lock when the value is deliberate, an
+            alert when the workstreams disagree and nobody has decided yet. */}
+        {overridden
+          ? <Lock size={10} className="opacity-60 shrink-0" />
+          : mismatch && <AlertTriangle size={10} className="shrink-0" style={{ color: suggestionColors!.dot }} />}
         <ChevronDown size={11} strokeWidth={2.5} className="opacity-70" />
       </button>
       {open && (
-        <div className="absolute left-0 top-[calc(100%+4px)] bg-white rounded-lg shadow-xl border border-[#e2e8f0] py-1 w-[160px] z-50">
+        <div className="absolute left-0 top-[calc(100%+4px)] bg-white rounded-lg shadow-xl border border-[#e2e8f0] py-1 w-[248px] z-50">
           <div className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.06em] text-[#706E6B] border-b border-[#f1f5f9]">
             Project Status
           </div>
           {HEALTH_OPTIONS.map(opt => {
             const oc = HEALTH_COLORS[opt]
             const active = opt === value
+            const isSuggested = suggestion?.value === opt && opt !== 'TBD'
             return (
               <button
                 key={opt}
                 onClick={() => pick(opt)}
+                title={isSuggested ? suggestion!.reason : undefined}
                 className={`w-full text-left px-3 py-2 text-[12.5px] flex items-center gap-2 hover:bg-[#f8fafc] ${active ? 'bg-[#fafbfc]' : ''}`}
               >
                 <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: oc.dot }} />
                 <span className="text-[#181818]" style={{ fontWeight: active ? 600 : 400 }}>{opt}</span>
+                {/* The workstreams' answer, marked in place rather than argued
+                    for in a separate banner. */}
+                {isSuggested && (
+                  <span
+                    className="ml-auto text-[9.5px] font-semibold uppercase tracking-[0.06em] px-1.5 py-0.5 rounded"
+                    style={{ background: oc.bg, color: oc.text }}
+                  >
+                    Workstreams
+                  </span>
+                )}
               </button>
             )
           })}
+
+          {suggestion && suggestion.value !== 'TBD' && (
+            <div className="border-t border-[#f1f5f9] mt-1 pt-1.5 px-3 pb-2">
+              <p className="m-0 text-[11px] leading-snug text-[#706E6B]">{suggestion.reason}</p>
+              <button
+                type="button"
+                onClick={() => { setOverride(!overridden); setOpen(false) }}
+                disabled={saving}
+                className="flex items-center gap-1.5 mt-1.5 text-[11px] font-semibold text-[#55677A] hover:text-[#181818]"
+                title={overridden
+                  ? 'Follow the workstreams again, so the suggestion can prompt when it disagrees.'
+                  : 'Keep this value and stop prompting. Majors move, so the suggestion will not always be the call you want.'}
+              >
+                {overridden
+                  ? <><RotateCcw size={11} /> Follow Workstreams</>
+                  : <><Lock size={11} /> Set Manually</>}
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>
 
-    {/* Overridden: say so, and offer to hand control back. */}
-    {overridden && (
-      <button
-        type="button"
-        onClick={() => setOverride(false)}
-        disabled={saving}
-        title="This value was set by hand against what the workstreams suggest. Click to follow the workstreams again."
-        className="flex items-center gap-1.5 text-[11px] px-1.5 py-0.5 rounded text-[#7B8794] hover:text-[#181818]"
-      >
-        <Lock size={10} className="shrink-0" />
-        <span>Set Manually</span>
-        <RotateCcw size={10} className="shrink-0 opacity-60" />
-      </button>
-    )}
-
-    {/* Disagreement, not yet acknowledged: apply it, or mark it deliberate. */}
-    {!overridden && mismatch && suggestionColors && (
-      <span className="flex items-center gap-1 flex-wrap">
-        <button
-          type="button"
-          onClick={() => pick(suggestion!.value)}
-          disabled={saving}
-          title={`${suggestion!.reason} Click to set deal health to ${suggestion!.value}.`}
-          className="flex items-center gap-1.5 text-[11px] px-1.5 py-0.5 rounded hover:opacity-80"
-          style={{ color: suggestionColors.text }}
-        >
-          <AlertTriangle size={11} className="shrink-0" />
-          <span>Workstreams Say <b className="font-semibold">{suggestion!.value}</b></span>
-        </button>
-        <button
-          type="button"
-          onClick={() => setOverride(true)}
-          disabled={saving}
-          title="Keep the current value and stop prompting. Majors move, so the suggestion will not always be the call you want."
-          className="text-[11px] px-1.5 py-0.5 rounded text-[#9AA7B4] hover:text-[#55677A] underline decoration-dotted"
-        >
-          Keep {value}
-        </button>
-      </span>
-    )}
-    </div>
   )
 }

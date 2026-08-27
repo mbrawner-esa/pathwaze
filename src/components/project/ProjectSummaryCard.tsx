@@ -2,7 +2,7 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { Pencil, X, Check, AlertTriangle } from 'lucide-react'
+import { Pencil, X, Check } from 'lucide-react'
 import { StageBadge } from '@/components/ui/StageBadge'
 import { SELECTABLE_STAGES } from '@/lib/stages'
 import { Avatar } from '@/components/ui/Avatar'
@@ -313,8 +313,9 @@ export function ProjectSummaryCard({
           )}
         </Field>
 
-        {/* Next Milestone: the actual next deliverable, with the major it sits
-            under for context, and an alert once its date is close or past. */}
+        {/* Next Milestone: one chip, matching the Active Workstreams row above.
+            It was a two-line block with a 13.5px title, which made it the
+            heaviest thing on a card where everything else is a field. */}
         <Field label="Next Milestone" full>
           {!nextMilestone ? (
             <span className="text-[#706E6B]">Nothing outstanding</span>
@@ -322,45 +323,31 @@ export function ProjectSummaryCard({
             const days = nextMilestone.target_date ? daysUntil(nextMilestone.target_date) : null
             // Overdue and "this week" are the two states worth interrupting for.
             // Anything further out is information, so it stays quiet.
-            const tone = days === null ? null
+            const tone = days === null
+              ? { bg: '#F1F5F9', fg: '#64748B', dot: '#94A3B8', text: 'No date set' }
               : days < 0 ? { bg: '#FEF2F2', fg: '#991B1B', dot: '#EF4444', text: `${Math.abs(days)}d overdue` }
               : days <= 7 ? { bg: '#FEF3C7', fg: '#92400E', dot: '#F59E0B', text: days === 0 ? 'Due today' : `${days}d left` }
               : { bg: '#F0FDF4', fg: '#166534', dot: '#22A45D', text: `${days}d out` }
 
+            const context = [nextMilestone.workstreamLabel, nextMilestone.majorLabel]
+              .filter(Boolean).join(' · ')
+
             return (
               <Link
                 href={`/projects/${project.id}?tab=workstreams`}
-                className="inline-flex items-center gap-2.5 rounded-md px-2.5 py-1.5 -ml-2.5 hover:bg-[#F7FAFC] transition-colors"
+                title={context ? `${context} — ${tone.text}` : tone.text}
+                className="inline-flex items-center gap-1.5 rounded-full pl-1.5 pr-2 py-0.5 hover:opacity-80"
+                style={{ background: tone.bg, color: tone.fg, border: `1px solid ${tone.dot}33` }}
               >
-                <span
-                  aria-hidden
-                  className="rounded-full shrink-0"
-                  style={{ width: 8, height: 8, background: tone?.dot ?? '#CBD5DF' }}
-                />
-                <span className="flex flex-col leading-tight">
-                  <span className="text-[13.5px] font-semibold text-[#181818]">
-                    {nextMilestone.label}
-                  </span>
-                  {(nextMilestone.majorLabel || nextMilestone.workstreamLabel) && (
-                    <span className="text-[11px] text-[#9AA7B4]">
-                      {[nextMilestone.workstreamLabel, nextMilestone.majorLabel].filter(Boolean).join(' · ')}
-                    </span>
-                  )}
-                </span>
-                {nextMilestone.target_date ? (
-                  <span
-                    className="inline-flex items-center gap-1 text-[11.5px] font-semibold px-2 py-1 rounded-full shrink-0"
-                    style={{ background: tone!.bg, color: tone!.fg }}
-                  >
-                    {days !== null && days <= 7 && <AlertTriangle size={10} />}
-                    {formatShortDate(nextMilestone.target_date)} · {tone!.text}
-                  </span>
-                ) : (
-                  <span className="text-[11.5px] px-2 py-1 rounded-full shrink-0"
-                        style={{ background: '#F1F5F9', color: '#64748B' }}>
-                    No date set
+                <span aria-hidden className="rounded-full shrink-0"
+                      style={{ width: 6, height: 6, background: tone.dot }} />
+                <span className="text-[12px] font-semibold">{nextMilestone.label}</span>
+                {nextMilestone.target_date && (
+                  <span className="text-[11px] opacity-70">
+                    {formatShortDate(nextMilestone.target_date)}
                   </span>
                 )}
+                <span className="text-[11px] opacity-70">· {tone.text}</span>
               </Link>
             )
           })()}
