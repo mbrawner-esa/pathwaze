@@ -34,8 +34,13 @@ would push outdated code. If you're unsure which clone you're in, run
   `supabase/migrations/NNN_*.sql` file must be **run manually on Supabase** by
   the user. Always call out new migration numbers explicitly in the summary.
 - Migrations are numbered sequentially, idempotent (`IF NOT EXISTS` /
-  `DROP POLICY IF EXISTS`). Next free number as of 2026-08-26: **064**
+  `DROP POLICY IF EXISTS`). Next free number as of 2026-08-26: **066**
   (latest applied: **063** — 054–063 are all live on Supabase).
+  ⚠️ **064 and 065 are written but NOT run.** 064 adds
+  `project_notes.category`, `task_threads.edited_at`, and four `users.notify_*`
+  columns; 065 adds `permit_attachments`. Until 064 runs, **Add Note fails**
+  (the insert carries a column the DB lacks) and task-comment editing 500s.
+  Order between the two does not matter.
   ⚠️ 054–063 are the Workstreams series and must run **in order**: 057 purges
   branch test data so 058/060 can retire placeholder majors, and 059 reshapes
   the date columns the rest depend on.

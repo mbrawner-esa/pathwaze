@@ -8,6 +8,43 @@
 
 ## 2026-08-26
 
+- **Task due dates showed a day early** — a due date of Aug 27 rendered as
+  Aug 26 everywhere in the app, which read as "it saved the wrong day". The
+  value was always stored correctly; the formatter parsed date-only values as
+  midnight UTC, which is the previous day anywhere west of UTC. Whole dates now
+  render as calendar days. The same flaw made a task due *today* show as
+  overdue from mid-morning onward — also fixed, in the task list, the RFI log
+  and detail, and the dashboard.
+
+- **Daily reminders for task deadlines** — one digest per person per day,
+  covering anything overdue plus everything due in the next 3 days, by Slack DM
+  and email. Previously a task could pass its due date with no notification at
+  all. Opt out per channel in Settings.
+
+- **The approver is notified when a task needs approval** — moving an
+  approval-gated task to Under Review now DMs and emails the approver instead
+  of leaving it sitting silently. Fires on the transition, so re-saving the
+  task doesn't re-notify. Opt out per channel in Settings.
+
+- **Task thread messages can be edited and deleted** — hover a message you
+  wrote to revise or remove it; edited messages are marked. Admins can delete
+  any message, but editing stays with the author. Slack mirroring is one-way,
+  so the in-app thread is the record.
+
+- **Notes written on a project tab now appear on that tab** — a note added from
+  Permitting, Technical, Utility (etc.) shows in that tab's Activity feed *and*
+  in Threads. Previously it only reached Threads, so the tab you wrote it on
+  never showed it. Existing notes are unaffected; they stay Threads-only.
+
+- **Attachments on permits** — upload files against any permit in both the
+  Discretionary and Ministerial tables, tagged by document role (Application,
+  Approval, Correction Notice, Inspection Report, Receipt, Other), with a file
+  count in the permit list. Stored in the existing `project-files` bucket.
+
+  ⚠️ Migrations **064** (notes category, comment `edited_at`, four notification
+  preference columns) and **065** (`permit_attachments`) must be run on
+  Supabase. Until 064 runs, adding a note fails.
+
 - **Task-assigned emails render the description properly** — task descriptions
   are written in the rich-text editor and saved as HTML, but the assignment
   email was escaping them, so recipients saw literal `&nbsp;`, `<div>`, and
