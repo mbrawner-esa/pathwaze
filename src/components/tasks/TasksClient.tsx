@@ -257,10 +257,17 @@ export function TasksClient({ tasks: initialTasks, projects, users, currentUserI
     return m
   }, [initialTasks])
 
+  // Parent title by id — so a subtask row can show the parent it belongs to.
+  const parentTitleById = useMemo(() => {
+    const m = new Map<string, string>()
+    for (const t of initialTasks) m.set(t.id, t.title)
+    return m
+  }, [initialTasks])
+
   const filtered = useMemo(() => initialTasks.filter(t => {
-    // Subtasks never appear in the top-level list/kanban — they live under their
-    // parent (progress chip on the row + Subtasks section in the drawer).
-    if (t.parent_task_id) return false
+    // Subtasks appear as their own rows (badged "Subtask · under <parent>") so
+    // that anything assigned to someone is visible in the list, kanban, and the
+    // assignee groupings. The parent still shows its done/total progress chip.
     const matchSearch = !search || t.title.toLowerCase().includes(search.toLowerCase())
     const matchStatus = statusFilter === 'All' || t.status === statusFilter
     const matchType = typeFilter === 'All' || t.type === typeFilter
@@ -946,7 +953,16 @@ export function TasksClient({ tasks: initialTasks, projects, users, currentUserI
                           <td className="px-4 py-3">
                             <div className="flex items-center gap-2">
                               <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: PRIORITY_COLORS[task.priority] ?? '#94a3b8' }} />
+                              {task.parent_task_id && (
+                                <span className="inline-flex items-center text-[10px] bg-[#EEF2FF] text-[#4338CA] px-1.5 py-0.5 rounded font-semibold"
+                                  title={parentTitleById.get(task.parent_task_id) ? `Subtask of ${parentTitleById.get(task.parent_task_id)}` : 'Subtask'}>
+                                  Subtask
+                                </span>
+                              )}
                               <span className="font-medium text-[#181818]">{task.title}</span>
+                              {task.parent_task_id && parentTitleById.get(task.parent_task_id) && (
+                                <span className="text-xs text-[#94a3b8]">· under {parentTitleById.get(task.parent_task_id)}</span>
+                              )}
                               {task.visibility === 'private' && (
                                 <span className="inline-flex items-center gap-1 text-[10px] bg-[#F1F5F9] text-[#475569] px-1.5 py-0.5 rounded" title="Private — only you can see this">
                                   <Lock size={9} /> Private
@@ -1109,6 +1125,12 @@ export function TasksClient({ tasks: initialTasks, projects, users, currentUserI
                           >
                             <div className="flex items-center gap-1.5 mb-1.5">
                               <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded" style={{ background: typeC.bg, color: typeC.text }}>{task.type}</span>
+                              {task.parent_task_id && (
+                                <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-[#EEF2FF] text-[#4338CA]"
+                                  title={parentTitleById.get(task.parent_task_id) ? `Subtask of ${parentTitleById.get(task.parent_task_id)}` : 'Subtask'}>
+                                  Subtask
+                                </span>
+                              )}
                               {task.visibility === 'private' && (
                                 <Lock size={10} className="text-[#94a3b8]" />
                               )}

@@ -12,6 +12,7 @@ export interface ProjectTask {
   status: string
   priority: string
   due_date: string | null
+  parent_task_id?: string | null
   assignee?: { id: string; full_name: string | null; avatar_url: string | null } | null
 }
 
@@ -47,6 +48,11 @@ export function ProjectTasksTab({ tasks = [], projectId }: { tasks: ProjectTask[
   const open = tasks.filter(t => t.status !== 'Complete')
   const done = tasks.filter(t => t.status === 'Complete')
 
+  // Subtasks are shown as their own rows (badged); resolve each one's parent
+  // title so the row can show the context it belongs to.
+  const titleById = new Map(tasks.map(t => [t.id, t.title]))
+  const parentTitle = (t: ProjectTask) => (t.parent_task_id ? titleById.get(t.parent_task_id) ?? null : null)
+
   const grouped = OPEN_STATUS_ORDER
     .map(status => ({ status, items: open.filter(t => t.status === status) }))
     .filter(g => g.items.length > 0)
@@ -77,16 +83,16 @@ export function ProjectTasksTab({ tasks = [], projectId }: { tasks: ProjectTask[
       ) : (
         <div className="divide-y divide-[#f1f5f9]">
           {grouped.map(g => (
-            <TaskGroup key={g.status} status={g.status} items={g.items} />
+            <TaskGroup key={g.status} status={g.status} items={g.items} parentTitle={parentTitle} />
           ))}
-          {showDone && done.length > 0 && <TaskGroup status="Complete" items={done} />}
+          {showDone && done.length > 0 && <TaskGroup status="Complete" items={done} parentTitle={parentTitle} />}
         </div>
       )}
     </div>
   )
 }
 
-function TaskGroup({ status, items }: { status: string; items: ProjectTask[] }) {
+function TaskGroup({ status, items, parentTitle }: { status: string; items: ProjectTask[]; parentTitle: (t: ProjectTask) => string | null }) {
   const pill = STATUS_PILL[status] ?? STATUS_PILL['Draft']
   return (
     <div>
@@ -95,13 +101,13 @@ function TaskGroup({ status, items }: { status: string; items: ProjectTask[] }) 
         <span className="text-[11px] text-[#94a3b8]">{items.length}</span>
       </div>
       <div>
-        {items.map(t => <TaskRow key={t.id} t={t} />)}
+        {items.map(t => <TaskRow key={t.id} t={t} parentTitle={parentTitle(t)} />)}
       </div>
     </div>
   )
 }
 
-function TaskRow({ t }: { t: ProjectTask }) {
+function TaskRow({ t, parentTitle }: { t: ProjectTask; parentTitle: string | null }) {
   const type = TYPE_COLORS[t.type] ?? TYPE_COLORS['Administrative']
   const overdue = !!t.due_date && t.status !== 'Complete' && t.due_date < todayISO()
   return (
@@ -110,7 +116,14 @@ function TaskRow({ t }: { t: ProjectTask }) {
       className="flex items-center gap-3 px-6 py-2.5 hover:bg-[#f8fafc] transition-colors"
     >
       <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: PRIORITY_COLORS[t.priority] ?? '#94a3b8' }} title={`${t.priority} priority`} />
-      <span className={`flex-1 min-w-0 truncate text-[13px] ${t.status === 'Complete' ? 'text-[#94a3b8] line-through' : 'text-[#181818]'}`}>{t.title}</span>
+      {t.parent_task_id && (
+        <span className="text-[9.5px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded flex-shrink-0 bg-[#EEF2FF] text-[#4338CA]"
+          title={parentTitle ? `Subtask of ${parentTitle}` : 'Subtask'}>Subtask</span>
+      )}
+      <span className={`flex-1 min-w-0 truncate text-[13px] ${t.status === 'Complete' ? 'text-[#94a3b8] line-through' : 'text-[#181818]'}`}>
+        {t.title}
+        {t.parent_task_id && parentTitle && <span className="text-[#94a3b8] font-normal"> · under {parentTitle}</span>}
+      </span>
       <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded flex-shrink-0" style={{ background: type.bg, color: type.text }}>{t.type}</span>
       {t.due_date && (
         <span className={`text-[11.5px] flex-shrink-0 w-24 text-right ${overdue ? 'text-[#b91c1c] font-semibold' : 'text-[#706E6B]'}`}>

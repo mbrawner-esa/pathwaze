@@ -37,7 +37,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
     supabase.from('project_threads').select('*').eq('project_id', id).order('created_at', { ascending: true }),
     supabase.from('project_notes').select('*, user:users(full_name, avatar_url)').eq('project_id', id).order('created_at', { ascending: false }),
     supabase.from('offtaker_pricing').select('*').eq('project_id', id).order('created_at', { ascending: true }),
-    supabase.from('tasks').select('id, title, type, status, priority, due_date, assignee:users!assignee_id(id, full_name, avatar_url)').eq('project_id', id).is('parent_task_id', null).order('created_at', { ascending: false }),
+    supabase.from('tasks').select('id, title, type, status, priority, due_date, parent_task_id, assignee:users!assignee_id(id, full_name, avatar_url)').eq('project_id', id).order('created_at', { ascending: false }),
     supabase.from('workstream_milestones').select('*').eq('project_id', id).order('sort_order'),
     supabase.from('workstream_gates').select('*').eq('project_id', id).order('sort_order'),
     supabase.from('workstream_major_state').select('*').eq('project_id', id),
