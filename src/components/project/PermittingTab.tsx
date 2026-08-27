@@ -1,9 +1,10 @@
 'use client'
-import { useState } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useFocusRow } from './useFocusRow'
 import { useRouter } from 'next/navigation'
-import { Plus, Trash2 } from 'lucide-react'
+import { Plus, Trash2, Paperclip, X } from 'lucide-react'
 import { formatDate } from '@/lib/utils'
+import { createClient as createBrowserClient } from '@/lib/supabase/client'
 import { RowDrawer, DrawerInput, DrawerSelect, DrawerTextarea, Section } from './_RowDrawer'
 
 interface Permit {
@@ -24,7 +25,13 @@ interface Permit {
   approved_at: string | null
   expiry_date: string | null
   notes: string | null
+  /** Nested count-only select from the project page; used for the table badge. */
+  permit_attachments?: { id: string }[]
 }
+
+// Document roles offered on upload. Free text in the DB (AHJs invent document
+// types), so this list can grow without a migration.
+const DOC_TYPES = ['Application', 'Approval', 'Correction Notice', 'Inspection Report', 'Receipt', 'Other']
 
 const STATUSES = ['Not Started', 'Submitted', 'In Review', 'Approved', 'Denied', 'Expired']
 const LEVELS = ['Local', 'State', 'Federal', 'Utility']
@@ -229,6 +236,7 @@ function PermitSection({
               <th className="text-left px-4 py-3 label">Status</th>
               <th className="text-left px-4 py-3 label">Submitted</th>
               <th className="text-left px-4 py-3 label">Approved</th>
+              <th className="text-left px-4 py-3 label">Files</th>
             </tr>
           </thead>
           <tbody>
@@ -251,6 +259,13 @@ function PermitSection({
                   <td className="px-4 py-3"><span className="px-2 py-0.5 rounded text-xs font-medium" style={{ background: sp.bg, color: sp.text }}>{pm.status}</span></td>
                   <td className="px-4 py-3 text-[#3E3E3C]">{formatDate(pm.submitted_at)}</td>
                   <td className="px-4 py-3 text-[#3E3E3C]">{formatDate(pm.approved_at)}</td>
+                  <td className="px-4 py-3">
+                    {(pm.permit_attachments?.length ?? 0) > 0 ? (
+                      <span className="inline-flex items-center gap-1 text-[11.5px] font-semibold text-[#2C5485]">
+                        <Paperclip size={11} /> {pm.permit_attachments!.length}
+                      </span>
+                    ) : <span className="text-[#cbd5e1]">—</span>}
+                  </td>
                 </tr>
               )
             })}
@@ -313,12 +328,142 @@ function PermitSection({
           </div>
         </Section>
 
+        <Section title="Attachments">
+          {selected
+            ? <PermitAttachments permitId={selected.id} />
+            : <p className="text-[12px] text-[#706E6B] pb-2">Save the permit first — files attach to an existing permit record.</p>}
+        </Section>
+
         <Section title="Notes">
           <DrawerTextarea label="Notes" value={form.notes} onChange={v => setForm(f => ({ ...f, notes: v }))} />
         </Section>
 
         {err && <div className="mt-3 px-3 py-2 bg-[#fef2f2] border border-[#fecaca] rounded text-[12px] text-[#991b1b]">{err}</div>}
       </RowDrawer>
+    </div>
+  )
+}
+
+// ── Permit attachments ────────────────────────────────────────────────
+// Files live in the shared 'project-files' bucket under `permits/<permitId>/`.
+// Upload is client-side straight to Storage (same as RFI attachments and
+// project-note files); the API only records metadata, so a large PDF never has
+// to transit a serverless function.
+function PermitAttachments({ permitId }: { permitId: string }) {
+  const router = useRouter()
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [files, setFiles] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+  const [uploading, setUploading] = useState(false)
+  const [docType, setDocType] = useState(DOC_TYPES[0])
+  const [err, setErr] = useState<string | null>(null)
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    try {
+      const res = await fetch(`/api/permits/${permitId}/files`)
+      if (res.ok) setFiles(await res.json())
+    } catch { /* leave the list empty; the upload path reports its own errors */ }
+    setLoading(false)
+  }, [permitId])
+
+  useEffect(() => { load() }, [load])
+
+  async function upload(list: File[]) {
+    if (!list.length) return
+    setUploading(true); setErr(null)
+    const sb = createBrowserClient()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const meta: any[] = []
+    const failed: string[] = []
+    for (const file of list) {
+      // Storage keys must be ASCII-safe; keep the original name for display.
+      const safe = file.name.replace(/[^\w.\-]+/g, '_')
+      const path = `permits/${permitId}/${Date.now()}-${safe}`
+      const { error: upErr } = await sb.storage.from('project-files')
+        .upload(path, file, { upsert: false, contentType: file.type || 'application/octet-stream' })
+      if (upErr) failed.push(file.name)
+      else meta.push({ file_name: file.name, storage_path: path, file_size: file.size, content_type: file.type, doc_type: docType })
+    }
+    if (meta.length) {
+      const res = await fetch(`/api/permits/${permitId}/files`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ files: meta }),
+      })
+      if (res.ok) {
+        const rows = await res.json()
+        setFiles(prev => [...prev, ...rows])
+        router.refresh()          // refresh the table's attachment count
+      } else {
+        const b = await res.json().catch(() => ({}))
+        failed.push(b?.error || 'metadata save failed')
+      }
+    }
+    if (failed.length) setErr(`Could not attach: ${failed.join(', ')}`)
+    setUploading(false)
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  async function open(f: any) {
+    if (!f.storage_path) return
+    // Opened before awaiting so the click still counts as a user gesture and
+    // the popup blocker stays out of the way.
+    const w = window.open('', '_blank')
+    const sb = createBrowserClient()
+    const { data: signed } = await sb.storage.from('project-files').createSignedUrl(f.storage_path, 120)
+    if (signed?.signedUrl && w) w.location.href = signed.signedUrl
+    else w?.close()
+  }
+
+  async function remove(fileId: string) {
+    if (!confirm('Remove this attachment?')) return
+    setFiles(prev => prev.filter(f => f.id !== fileId))   // optimistic
+    const res = await fetch(`/api/permits/${permitId}/files/${fileId}`, { method: 'DELETE' })
+    if (res.ok) router.refresh()
+    else { setErr('Could not remove the file.'); load() }
+  }
+
+  return (
+    <div className="pb-2">
+      <div className="flex items-end gap-2 mb-2">
+        <div className="flex-1">
+          <label className="block text-[11px] font-semibold uppercase tracking-wider text-[#706E6B] mb-1.5">Document Type</label>
+          <select value={docType} onChange={e => setDocType(e.target.value)}
+            className="w-full px-3 py-2 border border-[#cbd5e1] rounded text-[13px] bg-white">
+            {DOC_TYPES.map(t => <option key={t}>{t}</option>)}
+          </select>
+        </div>
+        <label className="btn-secondary cursor-pointer inline-flex items-center gap-1.5 whitespace-nowrap">
+          <Paperclip size={13} /> {uploading ? 'Uploading…' : 'Attach files'}
+          <input type="file" multiple className="hidden" disabled={uploading}
+            onChange={e => { if (e.target.files) upload(Array.from(e.target.files)); e.target.value = '' }} />
+        </label>
+      </div>
+
+      {loading ? (
+        <p className="text-[12px] text-[#706E6B]">Loading attachments…</p>
+      ) : files.length === 0 ? (
+        <p className="text-[12px] text-[#A8A8A8]">No files attached to this permit.</p>
+      ) : (
+        <ul className="space-y-1.5">
+          {files.map(f => (
+            <li key={f.id} className="flex items-center gap-2 px-2.5 py-1.5 bg-[#f8fafc] border border-[#e2e8f0] rounded">
+              <button onClick={() => open(f)} className="flex-1 min-w-0 text-left inline-flex items-center gap-1.5 text-[12.5px] font-medium text-[#2C5485] hover:underline">
+                <Paperclip size={12} className="shrink-0" />
+                <span className="truncate">{f.file_name}</span>
+              </button>
+              {f.doc_type && (
+                <span className="shrink-0 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-[#EFF4FA] text-[#2C5485]">{f.doc_type}</span>
+              )}
+              <span className="shrink-0 text-[10.5px] text-[#94a3b8]">{f.uploader?.full_name ?? ''}</span>
+              <button onClick={() => remove(f.id)} title="Remove"
+                className="shrink-0 p-0.5 text-[#A8A8A8] hover:text-[#b91c1c]"><X size={12} /></button>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {err && <div className="mt-2 px-3 py-2 bg-[#fef2f2] border border-[#fecaca] rounded text-[12px] text-[#991b1b]">{err}</div>}
     </div>
   )
 }

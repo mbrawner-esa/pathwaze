@@ -106,6 +106,32 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
     })),
   ].sort((a, b) => (a.created_at < b.created_at ? 1 : -1))
 
+  // Permit attachment counts. Deliberately a separate query rather than a
+  // nested select on `permits`: PostgREST fails the whole permits read if the
+  // relation is absent, which would silently empty the Permitting tab on a DB
+  // where migration 065 has not been run yet. This way the counts degrade to
+  // zero and the permits still list.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const permitIds = ((permits ?? []) as any[]).map(pm => pm.id)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let permitsWithFiles: any[] = permits ?? []
+  if (permitIds.length) {
+    const { data: permitFiles } = await supabase
+      .from('permit_attachments')
+      .select('id, permit_id')
+      .in('permit_id', permitIds) as { data: Array<{ id: string; permit_id: string }> | null }
+    if (permitFiles) {
+      const countByPermit: Record<string, { id: string }[]> = {}
+      for (const f of permitFiles) {
+        (countByPermit[f.permit_id] ??= []).push({ id: f.id })
+      }
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      permitsWithFiles = ((permits ?? []) as any[]).map(pm => ({
+        ...pm, permit_attachments: countByPermit[pm.id] ?? [],
+      }))
+    }
+  }
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const milestoneIds = ((wsMilestones ?? []) as any[]).map(m => m.id)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -365,7 +391,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
         wsGateLinks={wsGateLinks}
         userRole={userRole}
         stakeholders={stakeholders ?? []}
-        permits={permits ?? []}
+        permits={permitsWithFiles}
         docs={docs ?? []}
         buildings={buildings ?? []}
         meters={meters ?? []}
