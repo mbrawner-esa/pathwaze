@@ -7,7 +7,7 @@ import { StakeholdersTab } from './StakeholdersTab'
 import { PermittingTab } from './PermittingTab'
 import { TechnicalTab } from './TechnicalTab'
 import { FinancialTab } from './FinancialTab'
-import { ScheduleTab } from './ScheduleTab'
+import { WorkstreamsTab } from './WorkstreamsTab'
 import { DataRoomTab } from './DataRoomTab'
 import { DrawingsTab } from './DrawingsTab'
 import { ThreadsTab } from './ThreadsTab'
@@ -25,8 +25,14 @@ const TABS = [
   { id: 'technical', label: 'Technical' },
   { id: 'financial', label: 'Financial' },
   { id: 'drawings', label: 'Drawings' },
-  // Schedule + Data Room hidden until each is fully defined
-  // { id: 'schedule', label: 'Schedule' },
+  // Workstreams is built and its data is live, but the tab is hidden for the
+  // first production release so any last-minute changes land before the team
+  // starts working in it. Un-hiding is this one line.
+  // NOTE: hiding the tab does NOT hide the derived data — Active Workstreams and
+  // Next Milestone on the project summary, and the Next Milestone column on the
+  // projects list, all read from Workstreams regardless.
+  // { id: 'workstreams', label: 'Workstreams' },
+  // Data Room hidden until the concept is re-defined (roadmap L-2)
   // { id: 'dataroom', label: 'Data Room' },
 ]
 
@@ -46,7 +52,7 @@ const TAB_ACTIVITY_ENTITIES: Record<string, string[]> = {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function ProjectDetailClient({ project, financials, milestones, stakeholders, permits, docs, buildings, meters, systems, threads = [], notes = [], tasks = [], activity = [], users = [], pricingRows = [], drawings = [], collections = [], reviewTypes = [], sitePlans = [] }: any) {
+export function ProjectDetailClient({ project, financials, wsDefs = [], wsMilestones = [], wsDeps = [], wsGates = [], wsMajorState = [], wsUpdates = [], wsTasks = [], wsActivity = [], wsGateLinks = [], userRole = 'team', stakeholders, permits, docs, buildings, meters, systems, threads = [], notes = [], tasks = [], activity = [], users = [], pricingRows = [], drawings = [], collections = [], reviewTypes = [], sitePlans = [] }: any) {
   const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
@@ -127,7 +133,23 @@ export function ProjectDetailClient({ project, financials, milestones, stakehold
         {activeTab === 'permitting' && <PermittingTab project={project} permits={permits} />}
         {activeTab === 'technical' && <TechnicalTab project={{ ...project, _financials: financials }} buildings={buildings} meters={meters} systems={systems} sitePlans={sitePlans} users={users} />}
         {activeTab === 'financial' && <FinancialTab financials={financials} projectId={project.id} systemKwdc={project.system_kwdc} pricingRows={pricingRows} systems={systems} meters={meters} users={users} />}
-        {activeTab === 'schedule' && <ScheduleTab milestones={milestones} />}
+        {activeTab === 'workstreams' && (
+          <WorkstreamsTab
+            projectId={project.id}
+            projectName={project.name}
+            defs={wsDefs}
+            majorState={wsMajorState}
+            gates={wsGates}
+            gateLinks={wsGateLinks}
+            milestones={wsMilestones}
+            deps={wsDeps}
+            updates={wsUpdates}
+            tasks={wsTasks}
+            activity={wsActivity}
+            users={users}
+            isAdmin={userRole === 'admin'}
+          />
+        )}
         {activeTab === 'dataroom' && <DataRoomTab docs={docs} projectId={project.id} />}
         {activeTab === 'drawings' && <DrawingsTab projectId={project.id} drawings={drawings} areas={buildings} collections={collections} users={users} reviewTypes={reviewTypes} stakeholders={stakeholders} systems={systems} />}
         {activeTab === 'threads' && (

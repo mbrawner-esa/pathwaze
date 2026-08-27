@@ -1,13 +1,20 @@
 'use client'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts'
 
+// NOTE: this component is not currently rendered anywhere. Colours kept in step
+// with StageBadge so it is not a landmine if it is ever wired up; delete the
+// file instead if the chart is not coming back.
 const STAGE_COLORS: Record<string, string> = {
-  'Prospecting': '#3b82f6',
-  'Proposal': '#f97316',
-  'Contracting': '#a855f7',
-  'Permitting': '#f59e0b',
-  'Construction': '#ef4444',
-  'Operations': '#22c55e',
+  'Pre-Planning': '#3b82f6',
+  'Design Development': '#0ea5e9',
+  'Pre-NTP': '#06b6d4',
+  'Closing': '#a855f7',
+  'NTP': '#ec4899',
+  'Pre-Construction': '#f59e0b',
+  'Construction': '#f97316',
+  'Post Construction': '#eab308',
+  'Operation': '#22c55e',
+  'On Hold': '#6366f1',
 }
 
 export function PipelineChart({ data }: { data: { stage: string; count: number }[] }) {

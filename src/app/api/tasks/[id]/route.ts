@@ -17,8 +17,16 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: before } = await (supabase.from('tasks') as any).select('*').eq('id', id).single()
 
+  // completed_at is server-owned so it always matches the status transition,
+  // including when a task is reopened. Workstreams reads it to show recently
+  // completed work in the updates feed.
+  const patch = { ...body }
+  if (body.status !== undefined && before && body.status !== before.status) {
+    patch.completed_at = body.status === 'Complete' ? new Date().toISOString() : null
+  }
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data, error } = await (supabase.from('tasks') as any).update(body).eq('id', id).select().single()
+  const { data, error } = await (supabase.from('tasks') as any).update(patch).eq('id', id).select().single()
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
   // Write activity_log entries for each tracked field that changed

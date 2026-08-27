@@ -79,7 +79,7 @@ export function ProjectActionsMenu({ projectId, projectName, slackChannelId, sta
         await fetch(`/api/projects/${projectId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ stage: 'Archived' }) })
         setModal(null); router.refresh()
       }} />}
-      {modal === 'unarchive' && <ConfirmModal title="Unarchive project?" body={`"${projectName}" will be moved back to the Prospecting stage. You can update the stage as needed.`} confirmLabel="Unarchive" onClose={() => setModal(null)} onConfirm={async () => {
+      {modal === 'unarchive' && <ConfirmModal title="Unarchive project?" body={`"${projectName}" will be moved back to Pre-Planning. You can update the stage as needed.`} confirmLabel="Unarchive" onClose={() => setModal(null)} onConfirm={async () => {
         await fetch(`/api/projects/${projectId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ stage: 'Pre-Planning' }) })
         setModal(null); router.refresh()
       }} />}

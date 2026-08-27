@@ -57,7 +57,20 @@ function CloseRow({ onClose, busy, onSubmit, label }: { onClose: () => void; bus
 
 // ── Full-featured New Task modal ─────────────────────────────────────
 // Matches the modal on the /tasks page so users get the same fields here.
-function NewTaskModal({ projectId, projectName, users, onClose }: { projectId: string; projectName: string; users: User[]; onClose: () => void }) {
+// Exported because Workstreams creates tasks under a milestone and must offer
+// the same fields — a second, thinner task form would quietly diverge.
+export function NewTaskModal({
+  projectId, projectName, users, onClose, milestoneId, milestoneLabel,
+}: {
+  projectId: string
+  projectName: string
+  users: User[]
+  onClose: () => void
+  /** links the new task to a Workstreams milestone */
+  milestoneId?: string
+  /** shown in the header so it is clear what the task hangs off */
+  milestoneLabel?: string
+}) {
   const router = useRouter()
   const [form, setForm] = useState({
     title: '', description: '', type: 'Administrative', priority: 'Medium',
@@ -84,6 +97,7 @@ function NewTaskModal({ projectId, projectName, users, onClose }: { projectId: s
         requires_approval: form.requires_approval,
         due_date: form.due_date || null,
         status: 'Draft',
+        workstream_milestone_id: milestoneId ?? null,
       }),
     })
     if (res.ok) { onClose(); router.refresh() }
@@ -97,7 +111,9 @@ function NewTaskModal({ projectId, projectName, users, onClose }: { projectId: s
         {/* Header */}
         <div className="px-6 py-4 flex items-center justify-between" style={{ background: 'linear-gradient(135deg, #2C5485 0%, #70A0D0 100%)' }}>
           <div>
-            <div className="text-[11px] font-semibold text-white/75 uppercase tracking-[0.08em]">Task on {projectName}</div>
+            <div className="text-[11px] font-semibold text-white/75 uppercase tracking-[0.08em]">
+              {milestoneLabel ? `${milestoneLabel} · ${projectName}` : `Task on ${projectName}`}
+            </div>
             <h2 className="text-[17px] font-semibold text-white mt-0.5">New Task</h2>
           </div>
           <button onClick={onClose} className="text-white/70 hover:text-white p-1 rounded transition-colors">

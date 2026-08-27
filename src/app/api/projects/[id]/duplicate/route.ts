@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { DEFAULT_STAGE } from '@/lib/stages'
 
 // Duplicate a project: copies the projects row + project_financials only.
 // Salesforce-style — does NOT copy child entities (tasks, areas, meters,
-// systems, permits, stakeholders). New project starts at Prospecting with
+// systems, permits, stakeholders). New project starts at the default stage with
 // cleared dates.
 export async function POST(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const supabase = await createClient()
@@ -17,14 +18,14 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
   const { data: src, error: srcErr } = await supabase.from('projects').select('*').eq('id', id).single() as any
   if (srcErr || !src) return NextResponse.json({ error: srcErr?.message || 'Project not found' }, { status: 404 })
 
-  // Build copy — strip id, audit fields, dates, stage to Prospecting, name appended " (Copy)"
+  // Build copy — strip id, audit fields, dates, reset stage, name appended " (Copy)"
   const copy: Record<string, unknown> = { ...src }
   delete copy.id
   delete copy.created_at
   delete copy.updated_at
   delete copy.archived_at
   copy.name = `${src.name} (Copy)`
-  copy.stage = 'Prospecting'
+  copy.stage = DEFAULT_STAGE
   copy.start_date = null
   copy.target_cod = null
   copy.permit_submitted = null

@@ -1,7 +1,7 @@
 'use client'
 import { useState, useRef, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { ChevronDown } from 'lucide-react'
+import { ChevronDown, AlertTriangle, Lock, RotateCcw } from 'lucide-react'
 
 const HEALTH_OPTIONS = ['On Track', 'At Risk', 'Delayed', 'TBD']
 
@@ -15,9 +15,26 @@ const HEALTH_COLORS: Record<string, { bg: string; text: string; dot: string }> =
 export function EditableDealHealth({
   projectId,
   initial,
+  suggestion,
+  overridden = false,
 }: {
   projectId: string
   initial: string
+  /**
+   * True once someone has deliberately set a value against the suggestion.
+   * Majors move, so the suggestion will sometimes be wrong or simply not worth
+   * acting on; this records that the disagreement is intentional and stops the
+   * prompt asking again until it is cleared.
+   */
+  overridden?: boolean
+  /**
+   * What the workstreams say, derived from milestone dates against baseline.
+   * Advisory only — deal health also carries what the schedule cannot see
+   * (customer sentiment, financing, a competitor), so the human value stays the
+   * source of truth. Surfacing the disagreement is the whole point: a green deal
+   * sitting on three delayed workstreams is a conversation worth having.
+   */
+  suggestion?: { value: string; reason: string }
 }) {
   const router = useRouter()
   const [value, setValue] = useState(initial || 'TBD')
@@ -45,7 +62,9 @@ export function EditableDealHealth({
       const res = await fetch(`/api/projects/${projectId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ deal_health: next }),
+        // Choosing by hand IS the override: it stops the prompt re-asking about a
+        // decision that has just been made.
+        body: JSON.stringify({ deal_health: next, deal_health_override: true }),
       })
       if (res.ok) {
         router.refresh()
@@ -61,7 +80,29 @@ export function EditableDealHealth({
 
   const c = HEALTH_COLORS[value] || HEALTH_COLORS['TBD']
 
+  // Only worth showing when it disagrees, and only once the schedule has enough
+  // dates to have an opinion. A suggestion that merely agrees is noise.
+  const mismatch = suggestion
+    && suggestion.value !== 'TBD'
+    && suggestion.value !== value
+  const suggestionColors = suggestion ? (HEALTH_COLORS[suggestion.value] ?? HEALTH_COLORS['TBD']) : null
+
+  /** Record that the current value is deliberate, or hand control back. */
+  async function setOverride(next: boolean) {
+    setSaving(true)
+    try {
+      await fetch(`/api/projects/${projectId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ deal_health_override: next }),
+      })
+      router.refresh()
+    } catch { /* leave the value as-is; the next render will re-read it */ }
+    setSaving(false)
+  }
+
   return (
+    <div className="flex flex-col gap-1 items-start">
     <div className="relative" ref={ref}>
       <button
         onClick={() => setOpen(o => !o)}
@@ -95,6 +136,48 @@ export function EditableDealHealth({
           })}
         </div>
       )}
+    </div>
+
+    {/* Overridden: say so, and offer to hand control back. */}
+    {overridden && (
+      <button
+        type="button"
+        onClick={() => setOverride(false)}
+        disabled={saving}
+        title="This value was set by hand against what the workstreams suggest. Click to follow the workstreams again."
+        className="flex items-center gap-1.5 text-[11px] px-1.5 py-0.5 rounded text-[#7B8794] hover:text-[#181818]"
+      >
+        <Lock size={10} className="shrink-0" />
+        <span>Set Manually</span>
+        <RotateCcw size={10} className="shrink-0 opacity-60" />
+      </button>
+    )}
+
+    {/* Disagreement, not yet acknowledged: apply it, or mark it deliberate. */}
+    {!overridden && mismatch && suggestionColors && (
+      <span className="flex items-center gap-1 flex-wrap">
+        <button
+          type="button"
+          onClick={() => pick(suggestion!.value)}
+          disabled={saving}
+          title={`${suggestion!.reason} Click to set deal health to ${suggestion!.value}.`}
+          className="flex items-center gap-1.5 text-[11px] px-1.5 py-0.5 rounded hover:opacity-80"
+          style={{ color: suggestionColors.text }}
+        >
+          <AlertTriangle size={11} className="shrink-0" />
+          <span>Workstreams Say <b className="font-semibold">{suggestion!.value}</b></span>
+        </button>
+        <button
+          type="button"
+          onClick={() => setOverride(true)}
+          disabled={saving}
+          title="Keep the current value and stop prompting. Majors move, so the suggestion will not always be the call you want."
+          className="text-[11px] px-1.5 py-0.5 rounded text-[#9AA7B4] hover:text-[#55677A] underline decoration-dotted"
+        >
+          Keep {value}
+        </button>
+      </span>
+    )}
     </div>
   )
 }

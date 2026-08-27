@@ -25,6 +25,9 @@ export async function POST(req: NextRequest) {
     due_date: body.due_date || null,
     visibility,
     parent_task_id: body.parent_task_id || null,
+    // Set when the task is created from a Workstreams milestone. Nullable and
+    // ignored by every other caller.
+    workstream_milestone_id: body.workstream_milestone_id || null,
     created_by: user.id,
   }).select().single()
 

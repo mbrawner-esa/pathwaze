@@ -34,9 +34,11 @@ would push outdated code. If you're unsure which clone you're in, run
   `supabase/migrations/NNN_*.sql` file must be **run manually on Supabase** by
   the user. Always call out new migration numbers explicitly in the summary.
 - Migrations are numbered sequentially, idempotent (`IF NOT EXISTS` /
-  `DROP POLICY IF EXISTS`). Next free number as of 2026-08-21: **054**
-  (latest applied: **052** — 049–052 are all live on Supabase;
-  **053 is written but NOT yet run**).
+  `DROP POLICY IF EXISTS`). Next free number as of 2026-08-26: **064**
+  (latest applied: **063** — 054–063 are all live on Supabase).
+  ⚠️ 054–063 are the Workstreams series and must run **in order**: 057 purges
+  branch test data so 058/060 can retire placeholder majors, and 059 reshapes
+  the date columns the rest depend on.
   ⚠️ Never reuse a number: the abandoned `schedule-tab` branch carries
   migrations numbered 022/023 that collide with main's. That branch is a delete
   candidate — never merge it as-is.
@@ -112,8 +114,19 @@ The email template also pulls `appUrl` from the `NEXT_PUBLIC_APP_URL` env
 var (set in Vercel) — no code change needed when domain changes.
 
 ## DB Schema (current)
-Core: projects, project_financials, milestones, project_threads, project_notes,
+Core: projects, project_financials, project_threads, project_notes,
 activity_log, users, invited_emails, investor_access.
+Workstreams: `workstream_majors` (build-owned catalog of major milestones —
+NOT user-editable; renaming one is a migration, because Reports compare them
+across projects), `workstream_major_state` (per-project owner/co-owner +
+manual-completion override), `workstream_milestones` (user-created; carries
+target + baseline dates, weight %, critical flag), `workstream_milestone_deps`,
+`workstream_gates` + `workstream_gate_templates` (exit gates and key
+objectives), `workstream_gate_links` (an exit gate requiring a milestone from
+ANY workstream — the cross-workstream dependency), `workstream_updates`
+(append-only weekly updates), `workstream_milestone_templates`.
+⚠️ `milestones` is **DEPRECATED** (migration 054) and read by nothing. Left in
+place for one release; a follow-up migration drops it. Do not add readers.
 Site assets: buildings, meters, systems, permits, stakeholders, dataroom_docs.
 Tasks: tasks, task_threads, task_files, task_links, stakeholder_tasks.
 Pricing: offtaker_pricing, offtaker_pricing_threads.
@@ -159,8 +172,14 @@ server route handlers (defense in depth).
 - /auth/pending — pending-approval landing
 - /dashboard — portfolio KPIs + tasks-due + recent threads + active projects
 - /projects — project list with filters (archived projects hidden by default)
-- /projects/[id] — project detail (Threads / Site / Utility / Stakeholders /
-  Permitting / Technical / Financial tabs; tab is honored via ?tab=)
+- /projects/[id] — project detail (Threads / Tasks / Site / Utility /
+  Stakeholders / Permitting / Technical / Financial / Drawings tabs; tab is
+  honored via ?tab=)
+  ⚠️ **Workstreams** tab is built and its data is live, but the tab itself is
+  commented out of `TABS` (`ProjectDetailClient.tsx`) for the first production
+  release. Un-hiding is one line. Hiding the tab does NOT hide the derived data:
+  Active Workstreams and Next Milestone on the project summary, and the Next
+  Milestone column on /projects, all read from Workstreams regardless.
   (project detail also has a **Drawings** tab: drawing collections → upload →
   link area+discipline → per-drawing review against the action plan → findings →
   Delegate to a task / Create RFI)

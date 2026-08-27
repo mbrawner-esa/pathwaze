@@ -5,7 +5,7 @@
 import type { SupabaseClient, User } from '@supabase/supabase-js'
 
 interface LogParams {
-  entity_type: 'project' | 'task' | 'stakeholder' | 'permit' | 'meter' | 'building' | 'system'
+  entity_type: 'project' | 'task' | 'stakeholder' | 'permit' | 'meter' | 'building' | 'system' | 'workstream_milestone'
   entity_id: string
   action: string
   project_id?: string | null

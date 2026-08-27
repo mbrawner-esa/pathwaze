@@ -77,7 +77,7 @@ const ALLOWED_FIELDS = new Set([
   'electrical_permit_num', 'permit_submitted', 'permit_approved', 'inspector',
   'assignee_id', 'facility_type', 'site_type', 'site_acres', 'roof_type',
   'modules', 'inverters', 'monitoring', 'azimuth', 'tilt',
-  'start_date', 'target_cod', 'tranche', 'region',
+  'start_date', 'target_cod', 'tranche', 'region', 'deal_health_override',
   'slack_channel_id', 'archived_at', 'primary_stakeholder_id',
 ])
 

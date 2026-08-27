@@ -9,6 +9,11 @@ import { EditableDealHealth } from '@/components/project/EditableDealHealth'
 import { ProjectSummaryCard } from '@/components/project/ProjectSummaryCard'
 import { ProjectActionsMenu } from '@/components/project/ProjectActionsMenu'
 import { formatDate } from '@/lib/utils'
+import {
+  nextMilestoneDetail, rollUpMajor, majorsFor, suggestDealHealth,
+  WORKSTREAMS, WORKSTREAM_LABELS,
+  type MajorDef, type Milestone,
+} from '@/lib/workstreams'
 
 export default async function ProjectDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const supabase = await createClient()
@@ -18,7 +23,10 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
   const results = await Promise.all([
     supabase.from('projects').select('*, users!assignee_id(full_name, avatar_url)').eq('id', id).single(),
     supabase.from('project_financials').select('*').eq('project_id', id).single(),
-    supabase.from('milestones').select('*').eq('project_id', id).order('sort_order'),
+    // Workstreams (migration 054) replaces the legacy `milestones` table.
+    // Majors are catalog rows with no per-project row — their window and status
+    // are derived from the subs at read time.
+    supabase.from('workstream_majors').select('*').order('workstream').order('sort_order'),
     supabase.from('stakeholders').select('*').eq('project_id', id),
     supabase.from('permits').select('*').eq('project_id', id),
     supabase.from('dataroom_docs').select('*').eq('project_id', id),
@@ -30,13 +38,24 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
     supabase.from('project_notes').select('*, user:users(full_name, avatar_url)').eq('project_id', id).order('created_at', { ascending: false }),
     supabase.from('offtaker_pricing').select('*').eq('project_id', id).order('created_at', { ascending: true }),
     supabase.from('tasks').select('id, title, type, status, priority, due_date, assignee:users!assignee_id(id, full_name, avatar_url)').eq('project_id', id).is('parent_task_id', null).order('created_at', { ascending: false }),
-  ]) as unknown as [any, any, any, any, any, any, any, any, any, any, any, any, any, any]
+    supabase.from('workstream_milestones').select('*').eq('project_id', id).order('sort_order'),
+    supabase.from('workstream_gates').select('*').eq('project_id', id).order('sort_order'),
+    supabase.from('workstream_major_state').select('*').eq('project_id', id),
+    supabase.from('workstream_updates').select('*').eq('project_id', id).order('created_at', { ascending: false }),
+    // Tasks linked to a milestone — the work under it. Separate from the Tasks
+    // tab query, which excludes subtasks and carries different columns.
+    supabase.from('tasks')
+      .select('id, title, status, assignee_id, due_date, completed_at, workstream_milestone_id')
+      .eq('project_id', id).not('workstream_milestone_id', 'is', null),
+  ]) as unknown as [any, any, any, any, any, any, any, any, any, any, any, any, any, any, any, any, any, any, any]
   const [
-    { data: project }, { data: financials }, { data: milestones },
+    { data: project }, { data: financials }, { data: wsDefs },
     { data: stakeholders }, { data: permits }, { data: docs }, { data: users },
     { data: buildings }, { data: meters }, { data: systems },
     { data: threads }, { data: notes },
     { data: pricingRows }, { data: tasks },
+    { data: wsMilestones }, { data: wsGates }, { data: wsMajorState },
+    { data: wsUpdates }, { data: wsTasks },
   ] = results
 
   if (!project) notFound()
@@ -87,9 +106,95 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
     })),
   ].sort((a, b) => (a.created_at < b.created_at ? 1 : -1))
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const milestoneIds = ((wsMilestones ?? []) as any[]).map(m => m.id)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let wsDeps: any[] = []
+  if (milestoneIds.length) {
+    // Edges are scoped by milestone id rather than project id (the table has no
+    // project column — both ends are guaranteed same-project by trigger).
+    const { data } = await supabase
+      .from('workstream_milestone_deps')
+      .select('milestone_id, depends_on')
+      .in('milestone_id', milestoneIds) as { data: any[] | null }
+    wsDeps = data ?? []
+  }
+
+  // Exit-gate → milestone links. Scoped by gate id because the link table has
+  // no project column, same as the dependency edges.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const gateIds = ((wsGates ?? []) as any[]).map(g => g.id)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let wsGateLinks: any[] = []
+  if (gateIds.length) {
+    const { data } = await supabase
+      .from('workstream_gate_links')
+      .select('gate_id, milestone_id')
+      .in('gate_id', gateIds) as { data: any[] | null }
+    wsGateLinks = data ?? []
+  }
+
+  // Workstream events for the weekly-update thread. Fetched separately from the
+  // page-wide activity feed because that one is capped at 100 rows across every
+  // entity type, which a busy project would exhaust before reaching these.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: wsActivity } = await supabase
+    .from('activity_log')
+    .select('id, action, created_at, user_id, metadata')
+    .eq('entity_type', 'workstream_milestone')
+    .eq('metadata->>project_id', id)
+    .order('created_at', { ascending: false })
+    .limit(200) as any
+
   const assigneeName = project.users?.full_name ?? null
   const assigneeAvatarUrl = project.users?.avatar_url ?? null
-  const nextMilestone = (milestones ?? []).find((m: any) => !m.completed)
+  // "Next Milestone" now derives from Workstreams, not the retired `milestones`
+  // table — see ROADMAP Appendix A req. 11.
+  // The next actual deliverable, not the major it sits under — "LNTP CFO
+  // Approval" is a task someone owns; "Term Sheet" is a chapter heading.
+  const nextDetail = nextMilestoneDetail(
+    (wsDefs ?? []) as MajorDef[],
+    (wsMilestones ?? []) as Milestone[],
+    wsMajorState ?? [],
+  )
+  const nextMilestoneView = nextDetail
+    ? {
+        label: nextDetail.milestone.label,
+        target_date: nextDetail.milestone.end_date,
+        majorLabel: nextDetail.majorLabel,
+        workstreamLabel: WORKSTREAM_LABELS[nextDetail.workstream],
+      }
+    : undefined
+
+  // Active Workstreams for the summary card: the major currently in flight in
+  // each workstream. Shows where the project actually is right now, which the
+  // single manual Development Stage field could never express — three
+  // workstreams move independently.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const overrideByKey = new Map(((wsMajorState ?? []) as any[]).map(s => [s.major_key, s.completed_at ?? null]))
+  // Every major's roll-up, used both for the Active Workstreams chips and for
+  // the deal-health signal below.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const allRollups = ((wsDefs ?? []) as MajorDef[]).map(d =>
+    rollUpMajor(d, (wsMilestones ?? []) as Milestone[], undefined,
+      (((wsMajorState ?? []) as any[]).find(s => s.major_key === d.key)?.completed_at) ?? null))
+  const healthSignal = suggestDealHealth(allRollups)
+
+  const activeWorkstreams = WORKSTREAMS.flatMap(ws => {
+    const rollups = majorsFor((wsDefs ?? []) as MajorDef[], ws)
+      .map(d => rollUpMajor(d, (wsMilestones ?? []) as Milestone[], undefined, overrideByKey.get(d.key) ?? null))
+    // At-risk outranks active: if something in this workstream is in trouble,
+    // that is the one worth surfacing on the summary.
+    const pick = rollups.find(r => r.status === 'at_risk') ?? rollups.find(r => r.status === 'active')
+    if (!pick) return []
+    return [{
+      key: pick.key,
+      label: pick.label,
+      workstreamLabel: WORKSTREAM_LABELS[ws],
+      pct: pick.pct,
+      status: pick.status,
+    }]
+  })
   const lastUpdated = formatDate(new Date().toISOString())
 
   // Fetch current user's role for admin-gated actions
@@ -196,7 +301,12 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
           {project.project_number && (
             <span className="text-[11.5px] font-medium text-[#706E6B]">({project.project_number})</span>
           )}
-          <EditableDealHealth projectId={project.id} initial={project.deal_health} />
+          <EditableDealHealth
+            projectId={project.id}
+            initial={project.deal_health}
+            suggestion={{ value: healthSignal.value, reason: healthSignal.reason }}
+            overridden={!!project.deal_health_override}
+          />
           <div className="ml-auto">
             <ProjectActionsMenu
               projectId={project.id}
@@ -234,7 +344,8 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
           assigneeName={assigneeName}
           assigneeAvatarUrl={assigneeAvatarUrl}
           stakeholders={stakeholders ?? []}
-          nextMilestone={nextMilestone}
+          nextMilestone={nextMilestoneView}
+          activeWorkstreams={activeWorkstreams}
           lastUpdated={lastUpdated}
           users={users ?? []}
         />
@@ -243,7 +354,16 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
       <ProjectDetailClient
         project={project}
         financials={financials}
-        milestones={milestones ?? []}
+        wsDefs={wsDefs ?? []}
+        wsMilestones={wsMilestones ?? []}
+        wsDeps={wsDeps}
+        wsGates={wsGates ?? []}
+        wsMajorState={wsMajorState ?? []}
+        wsUpdates={wsUpdates ?? []}
+        wsTasks={wsTasks ?? []}
+        wsActivity={wsActivity ?? []}
+        wsGateLinks={wsGateLinks}
+        userRole={userRole}
         stakeholders={stakeholders ?? []}
         permits={permits ?? []}
         docs={docs ?? []}

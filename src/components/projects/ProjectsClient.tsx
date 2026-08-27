@@ -2,6 +2,7 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { ChevronDown, Search, Plus, X, Settings2, Check } from 'lucide-react'
 import { useRouter } from 'next/navigation'
+import { SELECTABLE_STAGES, DEFAULT_STAGE } from '@/lib/stages'
 import { StageBadge } from '@/components/ui/StageBadge'
 import { DealHealthBadge } from '@/components/ui/DealHealthBadge'
 import { Avatar } from '@/components/ui/Avatar'
@@ -33,7 +34,9 @@ interface ProjectsClientProps {
 
 // 'Archived' is intentionally excluded — archived projects don't appear in the
 // main list (filtered server-side). Admins can browse them at /admin/archived.
-const STAGES = ['All', 'Pre-Planning', 'Design Development', 'Bidding', 'Late Stage Development', 'Pre-Closing', 'NTP', 'Pre-Construction', 'Active Construction', 'Post Construction', 'Closeout', 'Operating']
+// Archived projects are hidden from this list entirely, so the filter offers
+// only the stages a visible project can be in.
+const STAGES = ['All', ...SELECTABLE_STAGES]
 const STATES = ['All', 'FL', 'IL']
 const GROUP_OPTIONS: { value: string; label: string }[] = [
   { value: 'none', label: 'None' },
@@ -149,7 +152,7 @@ export function ProjectsClient({ projects, users = [] }: ProjectsClientProps) {
     name: '',
     project_number: '',
     customer: 'AdventHealth',
-    stage: 'Prospecting',
+    stage: DEFAULT_STAGE,
     system_kwdc: '',
     address: '',
     city: '',
