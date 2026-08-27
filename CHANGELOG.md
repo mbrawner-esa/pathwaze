@@ -6,6 +6,18 @@
 
 ---
 
+## 2026-08-26
+
+- **Task-assigned emails render the description properly** — task descriptions
+  are written in the rich-text editor and saved as HTML, but the assignment
+  email was escaping them, so recipients saw literal `&nbsp;`, `<div>`, and
+  `<a href="...">` markup instead of formatted text and clickable links. The
+  email now renders the description: bold, bulleted and numbered lists, links,
+  and @-mentions all come through, styled to match the app. Tags the editor
+  can't produce are stripped, and only `http(s)`/`mailto` links survive.
+  Descriptions written before the rich-text editor still render as plain text.
+  No migration.
+
 ## 2026-08-21
 
 - **What's New release notes** — a `/whats-new` page carries the full release

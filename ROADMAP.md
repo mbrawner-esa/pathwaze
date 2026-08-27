@@ -70,7 +70,6 @@ W-1…W-3 carry over from the earlier pass.
 | # | Item | Notes |
 |---|------|-------|
 | **P-1** | **Graph webhooks instead of delta polling** | The Outlook email sync currently polls via a daily Vercel cron. Microsoft Graph change notifications (webhooks) would make ingestion near-real-time and drop the cron dependency. Deliberately deferred at scoping time; revisit when polling latency actually bites. |
-| **P-2** | **Task-assigned email renders the description as raw HTML** | `taskAssignedHtml()` in [`src/lib/email.ts:226`](src/lib/email.ts) wraps `p.taskDescription` in `escapeHtml()`, but task descriptions now come from `RichTextEditor` and are **HTML**. Result: recipients see literal `&nbsp;`, `<div>`, and `<a href="…">` markup in the body (confirmed on the "Financial Review (New Meter ID)" assignment email). Fix: sanitize-and-render instead of escape — allowlist the tags `RichTextEditor` actually emits (`p`, `br`, `div`, `strong`, `em`, `ul`/`ol`/`li`, `a`, `span.mention`), decode entities, strip everything else, and inline email-safe styles; drop the wrapping `<p>` since the content brings its own block tags. Audit the other rich-text-bearing notifications on the same pass (thread messages / RFI responses via `sendNotificationEmail`) — same escape-vs-render question applies. |
 
 ---
 
@@ -133,6 +132,9 @@ Reviewed and deliberately closed — recorded here so they aren't re-raised as n
 
 See [CHANGELOG.md](CHANGELOG.md) for the full record. Highlights:
 
+- **2026-08-26** — Workstreams tab (migrations 054–063, tab hidden for the
+  first release); task-assigned emails render the rich-text description instead
+  of escaping it.
 - **2026-08-21** — Project **Tasks** tab; Outlook email → project Threads (read-only Graph sync,
   migrations 049/050); Threads reorganization (unified sortable/searchable feed,
   collapsible Slack + email, note/task/file composer); activity deep-linking

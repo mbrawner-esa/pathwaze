@@ -207,6 +207,7 @@ function inviteHtml({ inviterName, loginUrl }: InviteEmailParams): string {
 // ────── Task assigned ──────
 
 function taskAssignedHtml(p: TaskAssignedEmailParams): string {
+  const description = p.taskDescription ? richTextToEmailHtml(p.taskDescription) : ''
   const meta: string[] = []
   if (p.projectName) meta.push(metaRow('Project', escapeHtml(p.projectName)))
   if (p.dueDate) meta.push(metaRow('Due', escapeHtml(formatDate(p.dueDate))))
@@ -223,7 +224,7 @@ function taskAssignedHtml(p: TaskAssignedEmailParams): string {
 
         <div style="padding:16px 18px;background:#f8fafc;border-left:3px solid #70A0D0;border-radius:6px;margin-bottom:20px;">
           <p style="margin:0 0 8px 0;font-size:15px;font-weight:600;color:#181818;line-height:1.35;">${escapeHtml(p.taskTitle)}</p>
-          ${p.taskDescription ? `<p style="margin:0;font-size:13px;color:#3E3E3C;line-height:1.5;">${escapeHtml(p.taskDescription)}</p>` : ''}
+          ${description ? `<div style="margin:0;font-size:13px;color:#3E3E3C;line-height:1.5;">${description}</div>` : ''}
         </div>
 
         ${meta.length ? `<table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;margin-bottom:24px;">${meta.join('')}</table>` : ''}
@@ -281,6 +282,80 @@ function taskCompletedHtml(p: TaskCompletedEmailParams): string {
 }
 
 // ──────────────────────────────── Utils ───────────────────────────────
+
+// ────── Rich text (RichTextEditor) → email-safe HTML ──────
+
+/** Tags the editor can emit, mapped to the inline style email clients need. */
+const RICH_TAG_STYLES: Record<string, string> = {
+  p: 'margin:0 0 8px 0;',
+  // contentEditable uses <div> as a line wrapper — no extra margin, the <br>s space it.
+  div: 'margin:0;',
+  ul: 'margin:0 0 8px 0;padding-left:20px;',
+  ol: 'margin:0 0 8px 0;padding-left:20px;',
+  li: 'margin:0 0 3px 0;',
+  b: '',
+  strong: '',
+  i: '',
+  em: '',
+}
+
+const MENTION_STYLE = 'color:#2C5485;font-weight:600;background:#EFF4FA;border-radius:3px;padding:0 3px;'
+const LINK_STYLE = 'color:#2C5485;text-decoration:underline;'
+
+/**
+ * Make user-authored rich text safe to drop into an email body.
+ *
+ * Descriptions and notes are saved by `RichTextEditor` as contentEditable
+ * HTML. Running that through `escapeHtml` shows the recipient literal
+ * `<div>` / `&nbsp;` / `<a href="…">` markup, so instead: allowlist the tags
+ * the editor emits, unwrap every other tag (keeping its text), and stamp
+ * inline styles — email clients strip <style> blocks and class attributes.
+ *
+ * Legacy values are plain text; those are escaped, with newlines as <br>.
+ * The HTML-vs-plain-text sniff mirrors `NotesRender`.
+ */
+function richTextToEmailHtml(raw: string): string {
+  const src = raw.trim()
+  if (!src) return ''
+  if (!/<(p|ul|ol|li|br|b|strong|i|em|div|span|a)\b/i.test(src)) {
+    return escapeHtml(src).replace(/\r?\n/g, '<br />')
+  }
+
+  return src
+    // Drop these outright — tag *and* content.
+    .replace(/<(script|style)\b[\s\S]*?<\/\1\s*>/gi, '')
+    .replace(/<!--[\s\S]*?-->/g, '')
+    .replace(/<\/?([a-z][a-z0-9]*)\b([^>]*)>/gi, (match, rawName: string, attrs: string) => {
+      const name = rawName.toLowerCase()
+      const closing = match.startsWith('</')
+
+      if (name === 'br') return '<br />'
+
+      if (name === 'a') {
+        if (closing) return '</a>'
+        const href = /href\s*=\s*("([^"]*)"|'([^']*)')/i.exec(attrs)
+        const url = (href?.[2] ?? href?.[3] ?? '').trim()
+        // Absolute http(s)/mailto only — blocks javascript: and data: hrefs.
+        // A rejected link keeps its <a> wrapper (so the closing tag stays
+        // balanced) but renders as plain text.
+        if (!/^(https?:\/\/|mailto:)/i.test(url)) return '<a>'
+        return `<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer" style="${LINK_STYLE}">`
+      }
+
+      if (name === 'span') {
+        // Keep @-mentions (restyled inline); any other span is a bare wrapper.
+        if (closing) return '</span>'
+        return /class\s*=\s*("|')[^"']*\bmention\b/i.test(attrs)
+          ? `<span style="${MENTION_STYLE}">`
+          : '<span>'
+      }
+
+      const style = RICH_TAG_STYLES[name]
+      if (style === undefined) return '' // not allowlisted — unwrap, keep the text
+      if (closing) return `</${name}>`
+      return style ? `<${name} style="${style}">` : `<${name}>`
+    })
+}
 
 function escapeHtml(s: string): string {
   return s.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!))
