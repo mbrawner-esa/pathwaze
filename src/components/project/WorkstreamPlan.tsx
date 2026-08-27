@@ -4,18 +4,19 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import {
   Plus, Trash2, GripVertical, AlertTriangle, Check, X, ChevronRight, Pencil, CheckCircle2,
-  Link2, Zap, Lock,
+  Link2, Zap, Lock, Users,
 } from 'lucide-react'
 import { RichTextEditor } from '@/components/ui/RichTextEditor'
 import { NotesRender } from '@/components/ui/NotesRender'
 import { NewMilestoneDialog, type NewMilestoneValues } from './NewMilestoneDialog'
 import { formatDate, formatShortDate } from '@/lib/utils'
 import { NewTaskModal } from './ProjectActivityActions'
+import { Avatar } from '@/components/ui/Avatar'
 import {
   tasksByMilestone, buildThread, weightWarning, gateRequirements, objectiveMark,
-  varianceLabel, TASK_COMPLETE,
+  varianceLabel, departmentsFor, TASK_COMPLETE,
   type Milestone, type Gate, type MilestoneDep, type MajorRollup, type LinkedTask,
-  type WorkstreamActivity, type GateLink,
+  type WorkstreamActivity, type GateLink, type Department, type DepartmentTag,
 } from '@/lib/workstreams'
 
 interface AppUser { id: string; full_name: string; avatar_url?: string | null }
@@ -57,39 +58,9 @@ const CARD_STYLE: Record<Milestone['status'], { bg: string; spine: string }> = {
   complete:    { bg: '#F4FDF7',     spine: '#22A45D' },
 }
 
-function initials(name: string) {
-  return name.split(/\s+/).filter(Boolean).slice(0, 2).map(p => p[0]?.toUpperCase() ?? '').join('')
-}
-
-function Avatar({ user, size = 20 }: { user: AppUser; size?: number }) {
-  // Real headshot where the profile has one; initials are the fallback, not the
-  // default. A wall of identical navy circles tells you nothing at a glance.
-  if (user.avatar_url) {
-    return (
-      // eslint-disable-next-line @next/next/no-img-element
-      <img
-        src={user.avatar_url}
-        alt={user.full_name}
-        title={user.full_name}
-        className="rounded-full object-cover shrink-0"
-        style={{ width: size, height: size }}
-      />
-    )
-  }
-  return (
-    <span
-      title={user.full_name}
-      className="inline-grid place-items-center rounded-full font-bold text-white shrink-0"
-      style={{ width: size, height: size, background: '#2F3E50', fontSize: size * 0.45 }}
-    >
-      {initials(user.full_name)}
-    </span>
-  )
-}
-
 export function WorkstreamPlan({
   projectId, projectName, rollup, milestones, deps, gates, gateLinks, majorLabelOf,
-  updates, tasks, activity, users, conflicts, isAdmin,
+  updates, tasks, activity, users, departments, departmentTags, conflicts, isAdmin,
 }: {
   projectId: string
   projectName: string
@@ -104,6 +75,8 @@ export function WorkstreamPlan({
   tasks: LinkedTask[]
   activity: WorkstreamActivity[]
   users: AppUser[]
+  departments: Department[]
+  departmentTags: DepartmentTag[]
   conflicts: Set<string>
   isAdmin: boolean
 }) {
@@ -159,6 +132,17 @@ export function WorkstreamPlan({
       setBusy(false)
     }
   }
+
+  const tagDepartment = (milestoneId: string, key: string) =>
+    call('/api/workstreams/departments', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ milestone_id: milestoneId, department_key: key }),
+    })
+
+  const untagDepartment = (milestoneId: string, key: string) =>
+    call(`/api/workstreams/departments?milestone_id=${encodeURIComponent(milestoneId)}&department_key=${encodeURIComponent(key)}`,
+      { method: 'DELETE' })
 
   const patchMilestone = (id: string, patch: Record<string, unknown>) =>
     call(`/api/workstreams/milestones/${id}`, {
@@ -358,6 +342,15 @@ export function WorkstreamPlan({
                           </button>
                         </div>
 
+                        <DepartmentChips
+                          milestoneId={m.id}
+                          tagged={departmentsFor(m.id, departmentTags, departments)}
+                          departments={departments}
+                          busy={busy}
+                          onTag={tagDepartment}
+                          onUntag={untagDepartment}
+                        />
+
                         {m.stage_gate && (
                           <p className="m-0 mt-1 text-[12px] text-[#55677A]">
                             <b className="font-semibold text-[#3E3E3C]">Gate: </b>{m.stage_gate}
@@ -530,7 +523,7 @@ export function WorkstreamPlan({
                                     {t.due_date && (
                                       <span className="text-[10.5px] text-[#9AA7B4] shrink-0">{formatShortDate(t.due_date)}</span>
                                     )}
-                                    {who && <Avatar user={who} size={17} />}
+                                    {who && <Avatar name={who.full_name} imageUrl={who.avatar_url} size="sm" />}
                                   </li>
                                 )
                               })}
@@ -603,7 +596,7 @@ export function WorkstreamPlan({
                     return (
                       <li key={item.id} className="px-3 py-2.5 border-b border-[#EDF1F5] last:border-0">
                         <div className="flex items-center gap-1.5 mb-1">
-                          {who && <Avatar user={who} />}
+                          {who && <Avatar name={who.full_name} imageUrl={who.avatar_url} size="sm" />}
                           <b className="text-[12.5px] font-semibold">{who?.full_name ?? 'Someone'}</b>
                           <time className="ml-auto text-[10.5px] text-[#9AA7B4]">{formatDate(item.at)}</time>
                         </div>
@@ -1072,6 +1065,80 @@ function DateField({
         }}
       />
     </label>
+  )
+}
+
+/**
+ * Which internal teams a milestone pulls in.
+ *
+ * Teams rather than people on purpose: the point is that Asset Management can
+ * see engagement coming a month out without anyone having to guess which
+ * individual will pick it up that far ahead.
+ */
+function DepartmentChips({
+  milestoneId, tagged, departments, busy, onTag, onUntag,
+}: {
+  milestoneId: string
+  tagged: Department[]
+  departments: Department[]
+  busy: boolean
+  onTag: (milestoneId: string, key: string) => Promise<boolean>
+  onUntag: (milestoneId: string, key: string) => Promise<boolean>
+}) {
+  const [adding, setAdding] = useState(false)
+  const untagged = departments.filter(d => !tagged.some(t => t.key === d.key))
+
+  return (
+    <div className="flex items-center gap-1.5 flex-wrap mt-1.5">
+      {tagged.map(d => (
+        <span
+          key={d.key}
+          className="inline-flex items-center gap-1 text-[10.5px] font-semibold px-1.5 py-0.5 rounded"
+          style={{ background: '#EEF2F6', color: '#3E5060' }}
+        >
+          <Users size={9} className="shrink-0 opacity-70" />
+          {d.name}
+          <button
+            type="button"
+            onClick={() => onUntag(milestoneId, d.key)}
+            disabled={busy}
+            aria-label={`Remove ${d.name}`}
+            className="text-[#9AA7B4] hover:text-[#991B1B]"
+          >
+            <X size={9} />
+          </button>
+        </span>
+      ))}
+
+      {adding && untagged.length > 0 ? (
+        <select
+          autoFocus
+          defaultValue=""
+          disabled={busy}
+          aria-label="Add a department"
+          onBlur={() => setAdding(false)}
+          onChange={async e => {
+            if (!e.target.value) return
+            const ok = await onTag(milestoneId, e.target.value)
+            if (ok) setAdding(false)
+          }}
+          className="text-[10.5px] px-1.5 py-0.5 border border-[#D6DEE7] rounded"
+        >
+          <option value="">Department…</option>
+          {untagged.map(d => <option key={d.key} value={d.key}>{d.name}</option>)}
+        </select>
+      ) : untagged.length > 0 && (
+        <button
+          type="button"
+          onClick={() => setAdding(true)}
+          disabled={busy}
+          title="Tag a team that gets pulled into this milestone"
+          className="inline-flex items-center gap-1 text-[10.5px] font-semibold px-1.5 py-0.5 rounded border border-dashed border-[#C6D0DA] text-[#7B8794] hover:text-[#2F3E50] hover:border-[#9AA7B4]"
+        >
+          <Users size={9} /> {tagged.length ? 'Team' : 'Add Team'}
+        </button>
+      )}
+    </div>
   )
 }
 

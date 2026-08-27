@@ -1,15 +1,16 @@
 'use client'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { MoreVertical, CheckCircle2, RotateCcw, AlertTriangle } from 'lucide-react'
+import { MoreVertical, CheckCircle2, RotateCcw, AlertTriangle, PauseCircle } from 'lucide-react'
 import { formatDate, formatShortDate } from '@/lib/utils'
 import { WorkstreamPlan } from './WorkstreamPlan'
 import { WorkstreamOverview } from './WorkstreamOverview'
 import { Celebrate } from '@/components/ui/Celebrate'
+import { Avatar } from '@/components/ui/Avatar'
 import {
   WORKSTREAMS, WORKSTREAM_LABELS, majorsFor, rollUpMajor, dateConflicts, focusMajor,
   type WorkstreamKey, type MajorDef, type MajorState, type Milestone,
   type MilestoneDep, type Gate, type MajorRollup, type LinkedTask,
-  type WorkstreamActivity, type GateLink,
+  type WorkstreamActivity, type GateLink, type Department, type DepartmentTag,
 } from '@/lib/workstreams'
 import { varianceLabel, HEALTH_LABEL, type ScheduleHealth } from '@/lib/workstreams'
 
@@ -45,13 +46,9 @@ const HEALTH_STYLE: Record<ScheduleHealth, { bg: string; fg: string; dot: string
   delayed:  { bg: '#FEF2F2', fg: '#991B1B', dot: '#EF4444' },
 }
 
-function initials(name: string) {
-  return name.split(/\s+/).filter(Boolean).slice(0, 2).map(p => p[0]?.toUpperCase() ?? '').join('')
-}
-
 export function WorkstreamsTab({
   projectId, projectName, defs, majorState, gates, gateLinks, milestones, deps,
-  updates, tasks, activity, users, isAdmin,
+  updates, tasks, activity, users, departments, departmentTags, onHold, isAdmin,
 }: {
   projectId: string
   projectName: string
@@ -65,6 +62,14 @@ export function WorkstreamsTab({
   tasks: LinkedTask[]
   activity: WorkstreamActivity[]
   users: AppUser[]
+  departments: Department[]
+  departmentTags: DepartmentTag[]
+  /**
+   * The project is On Hold. Dates stop driving anything: no variance, no traffic
+   * light, no overdue escalation. A parked site would otherwise turn red purely
+   * because time keeps passing.
+   */
+  onHold: boolean
   isAdmin: boolean
 }) {
   const [view, setView] = useState<View>('overview')
@@ -90,10 +95,10 @@ export function WorkstreamsTab({
     const out = {} as Record<WorkstreamKey, MajorRollup[]>
     for (const ws of WORKSTREAMS) {
       out[ws] = majorsFor(defs, ws).map(d =>
-        rollUpMajor(d, milestones, conflicts, stateByKey.get(d.key)?.completed_at ?? null))
+        rollUpMajor(d, milestones, conflicts, stateByKey.get(d.key)?.completed_at ?? null, onHold))
     }
     return out
-  }, [defs, milestones, conflicts, stateByKey])
+  }, [defs, milestones, conflicts, stateByKey, onHold])
 
   // Fire the celebration when a major first reads as complete and has never
   // been celebrated. The marker is persisted so it never replays on reload.
@@ -161,6 +166,18 @@ export function WorkstreamsTab({
           label={`${defs.find(d => d.key === celebrating)?.label ?? 'Major milestone'} complete`}
           onDone={() => setCelebrating(null)}
         />
+      )}
+
+      {onHold && (
+        <p className="flex items-start gap-2 m-0 mb-3 px-3 py-2 rounded text-[12.5px]"
+           style={{ background: '#EEF2FF', color: '#3730A3', border: '1px solid #C7D2FE' }}>
+          <PauseCircle size={14} className="mt-px shrink-0" />
+          <span>
+            <b className="font-semibold">This project is on hold.</b> The schedule is paused:
+            variance and the traffic lights are suspended, and it is left out of lookaheads.
+            Baselines are untouched, so nothing about the original plan is lost.
+          </span>
+        </p>
       )}
 
       {/* ── header: title + workstream selector ── */}
@@ -367,6 +384,8 @@ export function WorkstreamsTab({
                       tasks={tasks}
                       activity={activity}
                       users={users}
+                      departments={departments}
+                      departmentTags={departmentTags}
                       conflicts={conflicts}
                       isAdmin={isAdmin}
                     />
@@ -489,19 +508,17 @@ function OwnerPicker({
 }: {
   label: string
   value: string
-  user?: { id: string; full_name: string }
-  users: { id: string; full_name: string }[]
+  user?: AppUser
+  users: AppUser[]
   onChange: (v: string) => void
 }) {
   return (
     <label className="flex items-center gap-1.5 text-[11px] text-[#9AA7B4]">
       {user ? (
-        <span
-          title={`${label}: ${user.full_name}`}
-          className="inline-grid place-items-center rounded-full text-[9px] font-bold text-white shrink-0"
-          style={{ width: 18, height: 18, background: label === 'Owner' ? '#2F3E50' : '#6E879E' }}
-        >
-          {initials(user.full_name)}
+        // The shared Avatar, so an owner here looks like the same person they do
+        // everywhere else in the app — and picks up their profile photo.
+        <span title={`${label}: ${user.full_name}`} className="shrink-0">
+          <Avatar name={user.full_name} imageUrl={user.avatar_url} size="sm" />
         </span>
       ) : (
         <span className="uppercase tracking-[0.1em]">{label}</span>

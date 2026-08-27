@@ -46,7 +46,7 @@ const TAB_ACTIVITY_ENTITIES: Record<string, string[]> = {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function ProjectDetailClient({ project, financials, wsDefs = [], wsMilestones = [], wsDeps = [], wsGates = [], wsMajorState = [], wsUpdates = [], wsTasks = [], wsActivity = [], wsGateLinks = [], userRole = 'team', stakeholders, permits, docs, buildings, meters, systems, threads = [], notes = [], tasks = [], activity = [], users = [], pricingRows = [], drawings = [], collections = [], reviewTypes = [], sitePlans = [] }: any) {
+export function ProjectDetailClient({ project, financials, wsDefs = [], wsMilestones = [], wsDeps = [], wsGates = [], wsMajorState = [], wsUpdates = [], wsTasks = [], wsActivity = [], wsGateLinks = [], wsDepartments = [], wsDepartmentTags = [], userRole = 'team', stakeholders, permits, docs, buildings, meters, systems, threads = [], notes = [], tasks = [], activity = [], users = [], pricingRows = [], drawings = [], collections = [], reviewTypes = [], sitePlans = [] }: any) {
   const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
@@ -141,6 +141,9 @@ export function ProjectDetailClient({ project, financials, wsDefs = [], wsMilest
             tasks={wsTasks}
             activity={wsActivity}
             users={users}
+            departments={wsDepartments}
+            departmentTags={wsDepartmentTags}
+            onHold={project.stage === 'On Hold'}
             isAdmin={userRole === 'admin'}
           />
         )}

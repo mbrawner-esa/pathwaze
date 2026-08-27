@@ -101,6 +101,31 @@ export interface MilestoneDep {
   depends_on: string
 }
 
+/** An ESA internal team that milestones and tasks can be tagged with. */
+export interface Department {
+  key: string
+  name: string
+  sort_order: number
+}
+
+/** milestone_id or task_id → department_key. */
+export interface DepartmentTag {
+  department_key: string
+  milestone_id?: string
+  task_id?: string
+}
+
+/** Department keys tagged on one milestone, in catalog order. */
+export function departmentsFor(
+  id: string,
+  tags: DepartmentTag[],
+  departments: Department[],
+  field: 'milestone_id' | 'task_id' = 'milestone_id',
+): Department[] {
+  const keys = new Set(tags.filter(t => t[field] === id).map(t => t.department_key))
+  return departments.filter(d => keys.has(d.key)).sort((a, b) => a.sort_order - b.sort_order)
+}
+
 /**
  * A milestone an exit gate depends on. May cross workstreams — this is how a
  * Commercial gate waits on a Technical milestone.
@@ -265,6 +290,14 @@ export function rollUpMajor(
    * under it is stale or was never worth tracking.
    */
   completedOverride: string | null = null,
+  /**
+   * The project is On Hold (projects.on_hold_at). While paused, dates drive
+   * nothing: no variance, no traffic light, and no date-driven escalation. A held
+   * site would otherwise turn red purely because time keeps passing, which is
+   * noise on a decision that has already been taken. Human-set status still
+   * counts — a blocked milestone is blocked whether or not the site is paused.
+   */
+  paused = false,
 ): MajorRollup {
   const mine = milestones.filter(m => m.major_key === def.key)
 
@@ -295,10 +328,15 @@ export function rollUpMajor(
   else if (allDone) status = 'complete'
   else if (mine.some(m => m.status === 'blocked')) status = 'at_risk'
   // A milestone past its target with nobody having said so is exactly the case
-  // the status field misses, so the dates escalate it on their own.
-  else if (overdueCount > 0) status = 'at_risk'
+  // the status field misses, so the dates escalate it on their own — unless the
+  // project is paused, when a passing date means nothing.
+  else if (!paused && overdueCount > 0) status = 'at_risk'
   else if (mine.some(m => m.status === 'in_progress')) status = 'active'
-  else if (start && dayNumber(start) <= todayNumber()) status = 'active'
+  // "The window has opened" is itself a date-driven inference, so it is
+  // suppressed while paused too. On hold, status reflects only what a person
+  // set: a not-started milestone reads as upcoming, not as active-because-a-
+  // date-went-by.
+  else if (!paused && start && dayNumber(start) <= todayNumber()) status = 'active'
   else status = 'upcoming'
 
   const weightTotal = mine.reduce((sum, m) => sum + Number(m.weight_pct ?? 0), 0)
@@ -324,7 +362,7 @@ export function rollUpMajor(
   // collapse into one negative number rather than competing for attention.
   let variance: number | null = null
   let health: ScheduleHealth | null = null
-  if (end !== null) {
+  if (end !== null && !paused) {
     const slipped = (slipDays ?? 0) > 0
     if (status === 'complete') {
       // Finished: the honest figure is how it landed against the baseline.
@@ -684,11 +722,21 @@ export function nextMilestoneDetail(
  */
 export type DealHealth = 'On Track' | 'At Risk' | 'Delayed' | 'TBD'
 
-export function suggestDealHealth(rollups: MajorRollup[]): {
+export function suggestDealHealth(rollups: MajorRollup[], paused = false): {
   value: DealHealth
   reason: string
   driver: MajorRollup | null
 } {
+  // A paused project has no schedule opinion to give. Suggesting anything would
+  // be answering a question nobody asked while the site is parked.
+  if (paused) {
+    return {
+      value: 'TBD',
+      reason: 'This project is on hold, so its schedule is paused.',
+      driver: null,
+    }
+  }
+
   const dated = rollups.filter(r => r.health !== null && r.status !== 'complete')
   if (!dated.length) {
     return { value: 'TBD', reason: 'No workstream milestone has dates yet.', driver: null }

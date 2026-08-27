@@ -2,7 +2,7 @@
 import {
   rollUpMajor, weightWarning, dateConflicts, derivedMajorDeps,
   nextMilestone, daysBetween, tasksByMilestone, buildThread,
-  gateRequirements, varianceLabel, objectiveMark, suggestDealHealth,
+  gateRequirements, varianceLabel, objectiveMark, suggestDealHealth, departmentsFor,
   nextMilestoneDetail,
   type Milestone, type MajorDef, type MilestoneDep, type LinkedTask,
   type WorkstreamActivity, type GateLink,
@@ -360,6 +360,66 @@ console.log('\nsuggestDealHealth — workstreams roll up to deal health')
   })])
   check('completed majors are excluded',
     suggestDealHealth([doneLate, roll('b', future(60), future(60))]).value, 'On Track')
+}
+
+console.log('\non hold — the schedule stops driving anything')
+{
+  const d = def('m1', 'technical', 1)
+  const past = [ms({ id: 'a', major_key: 'm1', end_date: '2020-01-01', baseline_date: '2019-01-01' })]
+
+  // Running: an overdue milestone whose target also slipped past its baseline.
+  const live = rollUpMajor(d, past)
+  check('running -> escalates on the dates', live.status, 'at_risk')
+  check('running -> has a light', live.health, 'delayed')
+  check('running -> has variance', live.variance !== null, true)
+
+  // Paused: the same data, but time passing is no longer a signal.
+  const held = rollUpMajor(d, past, undefined, null, true)
+  check('paused -> no traffic light', held.health, null)
+  check('paused -> no variance', held.variance, null)
+  check('paused -> dates do not escalate', held.status, 'upcoming')
+
+  // Human-set status still counts: blocked is blocked whether or not the site
+  // is parked. Only the DATE-driven signals are suspended.
+  check('paused still respects blocked',
+    rollUpMajor(d, [ms({ id: 'b', major_key: 'm1', status: 'blocked' })], undefined, null, true).status, 'at_risk')
+  check('paused still completes',
+    rollUpMajor(d, [ms({ id: 'c', major_key: 'm1', status: 'complete' })], undefined, null, true).status, 'complete')
+
+  // Baselines are untouched — the record of the original commitment survives.
+  check('paused keeps the baseline visible', held.baseline, '2019-01-01')
+
+  // And the deal-health suggestion stops having an opinion.
+  const paused = suggestDealHealth([live], true)
+  check('paused deal health -> TBD', paused.value, 'TBD')
+  check('paused deal health explains why', paused.reason.includes('on hold'), true)
+  check('running deal health still judges', suggestDealHealth([live], false).value, 'Delayed')
+}
+
+console.log('\ndepartmentsFor — team tags')
+{
+  const departments = [
+    { key: 'engineering', name: 'Engineering', sort_order: 3 },
+    { key: 'asset_management', name: 'Asset Management', sort_order: 2 },
+    { key: 'gis', name: 'GIS', sort_order: 6 },
+  ]
+  const tags = [
+    { milestone_id: 'm1', department_key: 'gis' },
+    { milestone_id: 'm1', department_key: 'asset_management' },
+    { milestone_id: 'm2', department_key: 'engineering' },
+    { task_id: 't1', department_key: 'engineering' },
+  ]
+
+  // Catalog order, not tag order: the list should read the same everywhere.
+  check('returns catalog order', departmentsFor('m1', tags, departments).map(x => x.key),
+    ['asset_management', 'gis'])
+  check('scoped per milestone', departmentsFor('m2', tags, departments).map(x => x.key), ['engineering'])
+  check('untagged milestone -> empty', departmentsFor('m3', tags, departments), [])
+  // Task tags live in the same shape but must not bleed into milestone lookups.
+  check('task tags excluded from milestone lookup',
+    departmentsFor('t1', tags, departments), [])
+  check('task lookup works when asked',
+    departmentsFor('t1', tags, departments, 'task_id').map(x => x.key), ['engineering'])
 }
 
 console.log('\nobjectiveMark — emoji instead of 1/2/3')

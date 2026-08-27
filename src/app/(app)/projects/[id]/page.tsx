@@ -42,12 +42,13 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
     supabase.from('workstream_gates').select('*').eq('project_id', id).order('sort_order'),
     supabase.from('workstream_major_state').select('*').eq('project_id', id),
     supabase.from('workstream_updates').select('*').eq('project_id', id).order('created_at', { ascending: false }),
+    supabase.from('departments').select('*').order('sort_order'),
     // Tasks linked to a milestone — the work under it. Separate from the Tasks
     // tab query, which excludes subtasks and carries different columns.
     supabase.from('tasks')
       .select('id, title, status, assignee_id, due_date, completed_at, workstream_milestone_id')
       .eq('project_id', id).not('workstream_milestone_id', 'is', null),
-  ]) as unknown as [any, any, any, any, any, any, any, any, any, any, any, any, any, any, any, any, any, any, any]
+  ]) as unknown as [any, any, any, any, any, any, any, any, any, any, any, any, any, any, any, any, any, any, any, any]
   const [
     { data: project }, { data: financials }, { data: wsDefs },
     { data: stakeholders }, { data: permits }, { data: docs }, { data: users },
@@ -55,7 +56,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
     { data: threads }, { data: notes },
     { data: pricingRows }, { data: tasks },
     { data: wsMilestones }, { data: wsGates }, { data: wsMajorState },
-    { data: wsUpdates }, { data: wsTasks },
+    { data: wsUpdates }, { data: wsDepartments }, { data: wsTasks },
   ] = results
 
   if (!project) notFound()
@@ -160,6 +161,18 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
     wsGateLinks = data ?? []
   }
 
+  // Department tags for this project's milestones. Scoped by milestone id
+  // because the join table has no project column.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let wsDepartmentTags: any[] = []
+  if (milestoneIds.length) {
+    const { data } = await supabase
+      .from('workstream_milestone_departments')
+      .select('milestone_id, department_key')
+      .in('milestone_id', milestoneIds) as { data: any[] | null }
+    wsDepartmentTags = data ?? []
+  }
+
   // Workstream events for the weekly-update thread. Fetched separately from the
   // page-wide activity feed because that one is capped at 100 rows across every
   // entity type, which a busy project would exhaust before reaching these.
@@ -203,8 +216,10 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const allRollups = ((wsDefs ?? []) as MajorDef[]).map(d =>
     rollUpMajor(d, (wsMilestones ?? []) as Milestone[], undefined,
-      (((wsMajorState ?? []) as any[]).find(s => s.major_key === d.key)?.completed_at) ?? null))
-  const healthSignal = suggestDealHealth(allRollups)
+      (((wsMajorState ?? []) as any[]).find(s => s.major_key === d.key)?.completed_at) ?? null,
+      project.stage === 'On Hold'))
+  const onHold = project.stage === 'On Hold'
+  const healthSignal = suggestDealHealth(allRollups, onHold)
 
   const activeWorkstreams = WORKSTREAMS.flatMap(ws => {
     const rollups = majorsFor((wsDefs ?? []) as MajorDef[], ws)
@@ -389,6 +404,8 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
         wsTasks={wsTasks ?? []}
         wsActivity={wsActivity ?? []}
         wsGateLinks={wsGateLinks}
+        wsDepartments={wsDepartments ?? []}
+        wsDepartmentTags={wsDepartmentTags}
         userRole={userRole}
         stakeholders={stakeholders ?? []}
         permits={permitsWithFiles}

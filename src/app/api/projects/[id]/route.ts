@@ -109,6 +109,16 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   // Fetch before-state so we can diff stage for Slack + log field changes.
   const { data: before } = await supabase.from('projects').select('*').eq('id', id).single()
 
+  // on_hold_at follows the stage rather than being a field anyone sets. The stage
+  // IS the signal, so a second control would only let the two disagree — a
+  // project reading "On Hold" while its schedule kept accruing variance.
+  if (update.stage !== undefined) {
+    const wasHeld = (before as { stage?: string } | null)?.stage === 'On Hold'
+    const nowHeld = update.stage === 'On Hold'
+    if (nowHeld && !wasHeld) update.on_hold_at = new Date().toISOString()
+    if (!nowHeld && wasHeld) update.on_hold_at = null
+  }
+
   // Archive / unarchive is admin-only (defense in depth — UI already hides the
   // menu items for non-admins, but block at the API too).
   const isArchiveAction =
