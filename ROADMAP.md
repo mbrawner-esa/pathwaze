@@ -5,12 +5,12 @@
 > facts live in [CLAUDE.md](CLAUDE.md). A new session should read CLAUDE.md +
 > this file to get oriented without prior chat context.
 
-**Last updated:** 2026-08-24 — Workstreams layout decided (**Option A**, inline
-accordion) after reviewing a three-option interactive mock; decision + rejected
-alternatives recorded in Appendix A. Earlier: added the **Workstreams** tab
-scope (full spec in the appendix below), the **On Hold** development stage, the
-development-budget / EPC-bidding / Reports roadmap items, and the Technical
-Department Dashboard integration wish. Earlier the same day: full re-organization. Every open item across
+**Last updated:** 2026-08-26 — **Workstreams shipped and is live** (migrations
+054–066). Department tags and the on-hold pause landed with it; the lookahead
+those two feed is now **R-10**, scoped as the first slice of Reports rather than
+a bolt-on. Earlier: layout decided (Option A, inline accordion) from a
+three-option mock, with the rejected alternatives recorded in Appendix A.
+Earlier still: full re-organization. Every open item across
 ROADMAP, the archived BACKLOG, the original product-design sessions, and the
 Aug 2026 feature batch was consolidated, de-duplicated, and triaged into the
 buckets below. Items reviewed and closed during that pass are listed under
@@ -24,13 +24,13 @@ buckets below. Items reviewed and closed during that pass are listed under
 
 ## 🔨 Working List (active / next up)
 
-Week of **2026-08-24** is scoped as W-0 (Workstreams) + W-0b (On Hold stage);
-W-1…W-3 carry over from the earlier pass.
+W-0 and W-0b are **done**; they stay listed until the team has used Workstreams
+for a cycle and the punchlist from real use is clear. W-1…W-3 carry over.
 
 | # | Item | Effort | Notes |
 |---|------|--------|-------|
-| **W-0** | **Workstreams tab** — ✅ **shipped 2026-08-26** (migrations 054–063 applied; tab hidden behind a one-line comment for the first release). | **XL** | The week's headline item. Milestone-oriented vertical timeline + per-milestone action plans, stage gates, and objectives — explicitly **not** a Gantt chart. Full spec: [Appendix A](#appendix-a--workstreams-tab-spec). **Layout settled: Option A, inline accordion** (mock reviewed 2026-08-24). Needs net-new schema (workstreams, milestones-with-dates, action-plan steps + dependency edges, weekly updates, co-owners) and it **retires the `milestones` table** — see the retirement checklist in the appendix. Nothing from the `schedule-tab` branch carries forward. |
-| **W-0b** | ✅ **Done** — shipped with W-0 (migration 062). The stage taxonomy is now 11 values incl. On Hold, driven from `src/lib/stages.ts`. | **S** | `projects.stage` is **free text** — no DB check constraint (`018_project_contact_and_stages.sql` only remaps legacy values), so this is front-end only. Add the value to all five hardcoded lists and give it a badge color: `STAGES` in [ProjectSummaryCard.tsx:12](src/components/project/ProjectSummaryCard.tsx:12), `STAGES` in [ProjectsClient.tsx:36](src/components/projects/ProjectsClient.tsx:36), [StageBadge.tsx](src/components/ui/StageBadge.tsx), [PipelineChart.tsx](src/components/dashboard/PipelineChart.tsx), and the stage maps in [ArchivedProjectsClient.tsx](src/components/admin/ArchivedProjectsClient.tsx) / [ProjectActionsMenu.tsx](src/components/project/ProjectActionsMenu.tsx). Decide where it sorts in the pipeline order (suggest: rendered outside the linear pipeline, since a held project keeps its prior stage semantically). |
+| **W-0** | **Workstreams tab** — ✅ **live 2026-08-26** | **XL** | Migrations **054–068**, all applied. Hierarchy: workstream → major milestone (fixed catalog) → milestone → real `tasks`. Each milestone carries a target plus an admin-locked baseline; variance between them drives an On Track / At Risk / Delayed light. Also shipped: weighted progress, exit gates that can require a milestone from any workstream, an update thread interleaving completed tasks, a deal-health suggestion with override, department tags, and the on-hold pause. Full spec: [Appendix A](#appendix-a--workstreams-tab-spec). The `milestones` table is retired and unread — a follow-up migration drops it. ⚠️ Almost nothing is dated yet, so timelines and traffic lights will look empty until baselines are set. |
+| **W-0b** | **Stage taxonomy + On Hold** — ✅ **done** (migration 062) | **S** | Eleven lifecycle values (Pre-Planning → Operation, plus On Hold and Archived), now sourced from **`src/lib/stages.ts`** instead of five hardcoded lists that had drifted apart. Archiving still rides on `stage = 'Archived'`. Fixed three paths that were still writing the pre-018 value `'Prospecting'`. ⚠️ The taxonomy has no post-Operation stage; if projects are ever tracked past that, it needs one. |
 | **W-1** | **Reply-from-threads** | M | Outbound replies composed in the Threads tab go back out via email or Slack so conversations continue in-app. Requires adding delegated **`Mail.Send`** to the "Pathwaze Mail" Azure app (today's grant is read-only) — a new tenant admin-consent step. Builds directly on the shipped Outlook→Threads sync. |
 | **W-2** | **Design drift / baseline comparison on Systems** | M | `design_rev` (migration 052) already stamps *that* a system changed and when. This is the other half: retain the prior revision's values so you can see *what* changed between revs — design version history on the Technical tab. |
 | **W-3** | **ClaudeCode → `#Pathwaze_bugs` Slack automation** | M | Route team feature requests / bug reports from Claude Code into the `#Pathwaze_bugs` channel for triage, so intake stops living in ad-hoc sessions. |
@@ -48,8 +48,9 @@ W-1…W-3 carry over from the earlier pass.
 | **R-5** | **Finalize the Financial section** | M | Close out the remaining gaps on the project Financial tab so it's the system of record rather than a partial view. Needs a scoping pass to enumerate what "finalized" means field-by-field. |
 | **R-6** | **Development budget module** | L | New module (not a Financial-tab field set): upload and track quotes per site rolling up into a development budget per project. Pairs with R-5 and feeds R-8 reporting. |
 | **R-7** | **EPC bidding portal** | L | Invite contractors to bid. External-facing, so it needs an access model — likely token-scoped like the existing investor portal (`/investor/[token]`) rather than full accounts. Consumes the development budget (R-6). |
-| **R-8** | **Reports** | L | Consumer of the Workstreams data model (W-0): high-level Gantt, critical path, next milestone, estimated milestone dates, cross-project rollups. **W-0's fields must be designed as report inputs from the start** — that's the dependency, not a nice-to-have. |
+| **R-8** | **Reports** | L | Consumer of the Workstreams data model (W-0): high-level Gantt, critical path, next milestone, estimated milestone dates, cross-project rollups. W-0 shipped with its fields designed as report inputs, so the data is in place. **R-10 is the first slice of this** — build it as part of Reports, not as a bolt-on. |
 | **R-9** | **Revise the As-Built review questions** | S | Content pass on the seeded As-Built action plan (`action_plans` / `action_plan_sections` / `action_plan_items`). Data change, not code — but note there is deliberately **no admin editor** for action plans (dropped in triage), so revisions ship as a migration. |
+| **R-10** | **Lookahead view** (first slice of Reports) | M–L | "What lands in the next N days, and who gets pulled in." Upcoming milestones in a rolling window, filterable by **department** and groupable by project or team — so Engineering can see it is needed for site walks ~30 days out without reading 19 project pages. ⚠️ **Its inputs already exist and are live**: department tags on milestones and tasks (migration 068), target + baseline dates, and `projects.on_hold_at`. **Held projects must be excluded** — that is half of why the on-hold pause was built. Two open questions: does a person see their *own* department automatically (needs users→departments, currently unmodelled), and does this live on /dashboard, a new /lookahead route, or inside Reports? |
 
 ---
 

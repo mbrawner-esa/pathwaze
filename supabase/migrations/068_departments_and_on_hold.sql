@@ -1,5 +1,10 @@
 -- Department tags + the on-hold pause.
--- ⚠️ Run on Supabase, after 065. (Deploys do not touch the database.)
+-- ⚠️ ALREADY RUN on Supabase (2026-08-26), while numbered 066.
+--
+-- Renamed 066 → 068 after the fact: 066 and 067 had already been taken by the
+-- bug-batch branch, and this file was numbered from a stale CLAUDE.md rather
+-- than from the directory. The content is unchanged and is live; the rename only
+-- restores the "never reuse a number" rule so the ordering stays readable.
 --
 -- Part A — DEPARTMENTS. Tags on milestones and tasks naming which internal team
 --   gets pulled in, so a team can see engagement coming before it lands

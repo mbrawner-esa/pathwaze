@@ -34,8 +34,12 @@ would push outdated code. If you're unsure which clone you're in, run
   `supabase/migrations/NNN_*.sql` file must be **run manually on Supabase** by
   the user. Always call out new migration numbers explicitly in the summary.
 - Migrations are numbered sequentially, idempotent (`IF NOT EXISTS` /
-  `DROP POLICY IF EXISTS`). Next free number as of 2026-08-27: **068**
-  (latest applied: **066** — 054–066 are all live on Supabase).
+  `DROP POLICY IF EXISTS`). Next free number as of 2026-08-27: **069**
+  (latest applied: **068** — 054–068 are all live on Supabase).
+  ⚠️ **Check `ls supabase/migrations` before claiming a number, not this line.**
+  Two sessions ran concurrently on 2026-08-26 and both wrote a `066_*`; the
+  Workstreams one was renamed to `068` after the fact. This line goes stale the
+  moment another session adds a file.
   066 raised the `drawings` bucket per-file limit to 2 GB (the project-wide
   Storage → Settings upload limit must also be ≥ 2 GB for it to take effect).
   ⚠️ **067 is written but NOT run** — adds a `manager`-role SELECT policy on
