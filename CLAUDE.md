@@ -178,14 +178,15 @@ server route handlers (defense in depth).
 - /auth/pending — pending-approval landing
 - /dashboard — portfolio KPIs + tasks-due + recent threads + active projects
 - /projects — project list with filters (archived projects hidden by default)
-- /projects/[id] — project detail (Threads / Tasks / Site / Utility /
-  Stakeholders / Permitting / Technical / Financial / Drawings tabs; tab is
-  honored via ?tab=)
-  ⚠️ **Workstreams** tab is built and its data is live, but the tab itself is
-  commented out of `TABS` (`ProjectDetailClient.tsx`) for the first production
-  release. Un-hiding is one line. Hiding the tab does NOT hide the derived data:
-  Active Workstreams and Next Milestone on the project summary, and the Next
-  Milestone column on /projects, all read from Workstreams regardless.
+- /projects/[id] — project detail (Threads / Workstreams / Tasks / Site /
+  Utility / Stakeholders / Permitting / Technical / Financial / Drawings tabs;
+  tab is honored via ?tab=)
+  **Workstreams** went live 2026-08-26. Milestone-oriented planning: fixed major
+  milestones (catalog) → user-created milestones carrying target + baseline dates,
+  weight % and a critical-path flag → real `tasks`. Variance (target vs baseline)
+  drives an On Track / At Risk / Delayed light. Derived data also appears outside
+  the tab: Active Workstreams + Next Milestone on the project summary, and the
+  Next Milestone column on /projects.
   (project detail also has a **Drawings** tab: drawing collections → upload →
   link area+discipline → per-drawing review against the action plan → findings →
   Delegate to a task / Create RFI)

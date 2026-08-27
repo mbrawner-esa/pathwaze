@@ -17,6 +17,7 @@ import { ProjectActivityActions } from './ProjectActivityActions'
 
 const TABS = [
   { id: 'threads', label: 'Threads' },
+  { id: 'workstreams', label: 'Workstreams' },
   { id: 'tasks', label: 'Tasks' },
   { id: 'site', label: 'Site' },
   { id: 'utility', label: 'Utility' },
@@ -25,13 +26,6 @@ const TABS = [
   { id: 'technical', label: 'Technical' },
   { id: 'financial', label: 'Financial' },
   { id: 'drawings', label: 'Drawings' },
-  // Workstreams is built and its data is live, but the tab is hidden for the
-  // first production release so any last-minute changes land before the team
-  // starts working in it. Un-hiding is this one line.
-  // NOTE: hiding the tab does NOT hide the derived data — Active Workstreams and
-  // Next Milestone on the project summary, and the Next Milestone column on the
-  // projects list, all read from Workstreams regardless.
-  // { id: 'workstreams', label: 'Workstreams' },
   // Data Room hidden until the concept is re-defined (roadmap L-2)
   // { id: 'dataroom', label: 'Data Room' },
 ]
