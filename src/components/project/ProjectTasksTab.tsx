@@ -3,6 +3,7 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { Avatar } from '@/components/ui/Avatar'
 import { ExternalLink } from 'lucide-react'
+import { formatDate, todayISO } from '@/lib/utils'
 
 export interface ProjectTask {
   id: string
@@ -37,10 +38,9 @@ const STATUS_PILL: Record<string, { bg: string; text: string }> = {
   Complete: { bg: '#F0FDF4', text: '#166534' },
 }
 
-function fmtDue(s: string): string {
-  return new Date(s).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
-}
-const todayISO = () => new Date().toISOString().slice(0, 10)
+// Both of these used to shift the day: `new Date('2026-08-27')` is midnight UTC,
+// and `toISOString()` reports UTC's date, not the viewer's. Shared helpers now.
+const fmtDue = (s: string) => formatDate(s)
 
 export function ProjectTasksTab({ tasks = [], projectId }: { tasks: ProjectTask[]; projectId: string }) {
   const [showDone, setShowDone] = useState(false)

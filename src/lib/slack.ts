@@ -179,6 +179,40 @@ export function taskStatusChangedBlocks(args: {
   }
 }
 
+/**
+ * A task the recipient approves has moved into Under Review -- the ball is now
+ * in their court. Distinct from `taskStatusChangedBlocks`, which tells the
+ * *assignee* their task moved: this one is addressed to the approver and says
+ * what is being asked of them.
+ */
+export function taskApprovalRequestedBlocks(args: {
+  title: string
+  projectName: string
+  dueDate?: string | null
+  priority?: string | null
+  submittedBy: string
+  taskPath: string
+}): { text: string; blocks: SlackBlock[] } {
+  const fields: { type: string; text: string }[] = []
+  if (args.projectName) fields.push({ type: 'mrkdwn', text: `*Project*
+${args.projectName}` })
+  if (args.dueDate)     fields.push({ type: 'mrkdwn', text: `*Due*
+${args.dueDate}` })
+  if (args.priority)    fields.push({ type: 'mrkdwn', text: `*Priority*
+${args.priority}` })
+
+  return {
+    text: `Approval needed: ${args.title}`,
+    blocks: [
+      { type: 'header', text: { type: 'plain_text', text: 'Approval needed' } },
+      { type: 'section', text: { type: 'mrkdwn', text: `*${args.title}*
+_${args.submittedBy} moved this to Under Review -- you are the approver._` } },
+      ...(fields.length ? [{ type: 'section', fields }] : []),
+      { type: 'actions', elements: [{ type: 'button', text: { type: 'plain_text', text: 'Review it' }, url: appUrl(args.taskPath), style: 'primary' }] },
+    ],
+  }
+}
+
 export function projectStageChangedBlocks(args: {
   projectName: string
   from: string

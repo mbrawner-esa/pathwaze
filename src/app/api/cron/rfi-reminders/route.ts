@@ -1,6 +1,7 @@
 import { createClient as createSbClient } from '@supabase/supabase-js'
 import { sendDM } from '@/lib/slack'
 import { emailUser, emailStakeholder, rfiUrl, rfiNo } from '@/lib/rfi-notify'
+import { runTaskDueReminders } from '@/lib/reminders'
 import { NextRequest, NextResponse } from 'next/server'
 
 export const dynamic = 'force-dynamic'
@@ -18,7 +19,15 @@ function serviceClient() {
 }
 
 // GET /api/cron/rfi-reminders
-// Daily job: nudge the ball-in-court on every open, overdue RFI.
+// Daily job, two parts:
+//   (1) nudge the ball-in-court on every open, overdue RFI;
+//   (2) send each assignee their task due-date digest (overdue + next 3 days).
+//
+// (2) is bolted on here rather than given its own schedule because Vercel
+// **Hobby** allows two cron jobs per project and both slots are taken by this
+// route and email-sync. The worker lives in `@/lib/reminders` and is also
+// reachable at /api/cron/task-reminders for manual and dry runs.
+//
 // Protect with CRON_SECRET (Vercel Cron sends it as a Bearer token / ?key=).
 export async function GET(req: NextRequest) {
   const secret = process.env.CRON_SECRET
@@ -60,6 +69,16 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  if (dry) return NextResponse.json({ ok: true, dry: true, overdue: (overdue ?? []).length, wouldNotify })
-  return NextResponse.json({ ok: true, overdue: (overdue ?? []).length, notified })
+  // ── Part 2: task due-date digests ──
+  // Isolated so a failure here still reports the RFI half of the run.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let taskReminders: any
+  try {
+    taskReminders = await runTaskDueReminders(supabase, { dry })
+  } catch (e) {
+    taskReminders = { error: e instanceof Error ? e.message : String(e) }
+  }
+
+  if (dry) return NextResponse.json({ ok: true, dry: true, overdue: (overdue ?? []).length, wouldNotify, taskReminders })
+  return NextResponse.json({ ok: true, overdue: (overdue ?? []).length, notified, taskReminders })
 }

@@ -11,7 +11,14 @@ interface User { id: string; full_name: string }
 
 type Action = 'task' | 'note' | 'event' | 'file' | null
 
-export function ProjectActivityActions({ projectId, projectName, users }: { projectId: string; projectName: string; users: User[] }) {
+export function ProjectActivityActions({ projectId, projectName, users, category }: {
+  projectId: string
+  projectName: string
+  users: User[]
+  /** Project tab this composer is rendered on. Tags notes/events/files so the
+   *  tab's own Activity feed can show them. Omitted on Threads and Tasks. */
+  category?: string
+}) {
   const [active, setActive] = useState<Action>(null)
   const [showTaskModal, setShowTaskModal] = useState(false)
 
@@ -25,9 +32,9 @@ export function ProjectActivityActions({ projectId, projectName, users }: { proj
       </div>
       {active && active !== 'task' && (
         <div className="px-4 py-4 bg-[#fafbfc] border-b border-[#f1f5f9]">
-          {active === 'note' && <NoteForm projectId={projectId} type="note" users={users} onClose={() => setActive(null)} />}
-          {active === 'event' && <NoteForm projectId={projectId} type="event" users={users} onClose={() => setActive(null)} />}
-          {active === 'file' && <FileForm projectId={projectId} onClose={() => setActive(null)} />}
+          {active === 'note' && <NoteForm projectId={projectId} type="note" users={users} category={category} onClose={() => setActive(null)} />}
+          {active === 'event' && <NoteForm projectId={projectId} type="event" users={users} category={category} onClose={() => setActive(null)} />}
+          {active === 'file' && <FileForm projectId={projectId} category={category} onClose={() => setActive(null)} />}
         </div>
       )}
       {showTaskModal && (
@@ -221,7 +228,7 @@ function SectionHeader({ children }: { children: React.ReactNode }) {
 }
 
 // ── Note + Event form (shared) ───────────────────────────────────────
-function NoteForm({ projectId, type, users, onClose }: { projectId: string; type: 'note' | 'event'; users: User[]; onClose: () => void }) {
+function NoteForm({ projectId, type, users, category, onClose }: { projectId: string; type: 'note' | 'event'; users: User[]; category?: string; onClose: () => void }) {
   const router = useRouter()
   const [title, setTitle] = useState('')
   const [body, setBody] = useState('')
@@ -236,7 +243,7 @@ function NoteForm({ projectId, type, users, onClose }: { projectId: string; type
     const res = await fetch(`/api/projects/${projectId}/notes`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ type, title, body, event_date: type === 'event' ? eventDate : null }),
+      body: JSON.stringify({ type, title, body, event_date: type === 'event' ? eventDate : null, category: category ?? null }),
     })
     if (res.ok) { onClose(); router.refresh() }
     else { const b = await res.json().catch(() => ({})); setErr(b?.error || 'Failed') }
@@ -265,7 +272,7 @@ function NoteForm({ projectId, type, users, onClose }: { projectId: string; type
 }
 
 // ── File upload form ──────────────────────────────────────────────────
-function FileForm({ projectId, onClose }: { projectId: string; onClose: () => void }) {
+function FileForm({ projectId, category, onClose }: { projectId: string; category?: string; onClose: () => void }) {
   const router = useRouter()
   const supabase = createClient()
   const [file, setFile] = useState<File | null>(null)
@@ -287,6 +294,7 @@ function FileForm({ projectId, onClose }: { projectId: string; onClose: () => vo
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           type: 'file',
+          category: category ?? null,
           title: title || file.name,
           storage_path: path,
           file_name: file.name,

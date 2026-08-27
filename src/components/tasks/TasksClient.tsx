@@ -116,7 +116,8 @@ function describeActivity(a: any): string {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function TasksClient({ tasks: initialTasks, projects, users }: { tasks: any[]; projects: any[]; users: any[] }) {
+export function TasksClient({ tasks: initialTasks, projects, users, currentUserId, currentUserRole = 'team' }:
+  { tasks: any[]; projects: any[]; users: any[]; currentUserId: string; currentUserRole?: string }) {
   const router = useRouter()
   const { prompt, dialog: promptDialog } = usePrompt()
   const [view, setView] = useState<'list' | 'kanban'>('list')
@@ -166,6 +167,11 @@ export function TasksClient({ tasks: initialTasks, projects, users }: { tasks: a
   const [comments, setComments] = useState<any[]>([])
   const [newComment, setNewComment] = useState('')
   const [loadingComments, setLoadingComments] = useState(false)
+  // In-place comment editing. Only one message is editable at a time; the
+  // draft lives here rather than on the row so cancelling restores cleanly.
+  const [editingCommentId, setEditingCommentId] = useState<string | null>(null)
+  const [editingCommentText, setEditingCommentText] = useState('')
+  const [commentErr, setCommentErr] = useState<string | null>(null)
 
   // Activity state
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -753,6 +759,59 @@ export function TasksClient({ tasks: initialTasks, projects, users }: { tasks: a
       const comment = await res.json()
       setComments(prev => [...prev, comment])
       setNewComment('')
+    }
+  }
+
+  // ── Comment edit / delete ──
+  // You can revise or remove your own messages; admins can remove anyone's.
+  // The route re-checks authorship, so these guards are UI affordance only.
+  const canEditComment = (c: { user_id?: string | null }) => !!currentUserId && c.user_id === currentUserId
+  const canDeleteComment = (c: { user_id?: string | null }) =>
+    canEditComment(c) || currentUserRole === 'admin'
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  function startEditComment(c: any) {
+    setCommentErr(null)
+    setEditingCommentId(c.id)
+    setEditingCommentText(c.message ?? '')
+  }
+
+  function cancelEditComment() {
+    setEditingCommentId(null)
+    setEditingCommentText('')
+    setCommentErr(null)
+  }
+
+  async function saveEditComment() {
+    if (!editingCommentId || !selectedTask) return
+    if (!editingCommentText.trim()) { setCommentErr('Message cannot be empty.'); return }
+    setCommentErr(null)
+    const res = await fetch(`/api/tasks/${selectedTask}/comments/${editingCommentId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: editingCommentText }),
+    })
+    if (res.ok) {
+      const updated = await res.json()
+      setComments(prev => prev.map(c => (c.id === updated.id ? updated : c)))
+      cancelEditComment()
+    } else {
+      const b = await res.json().catch(() => ({}))
+      setCommentErr(b?.error || 'Could not save the edit.')
+    }
+  }
+
+  async function deleteComment(commentId: string) {
+    if (!selectedTask) return
+    if (!confirm('Delete this message? This cannot be undone.')) return
+    setCommentErr(null)
+    const res = await fetch(`/api/tasks/${selectedTask}/comments/${commentId}`, { method: 'DELETE' })
+    if (res.ok) {
+      setComments(prev => prev.filter(c => c.id !== commentId))
+      if (editingCommentId === commentId) cancelEditComment()
+    } else {
+      const b = await res.json().catch(() => ({}))
+      setCommentErr(b?.error || 'Could not delete the message.')
     }
   }
 
@@ -1800,19 +1859,58 @@ export function TasksClient({ tasks: initialTasks, projects, users }: { tasks: a
                     <p className="text-xs text-[#706E6B]">Loading...</p>
                   ) : (
                     <div className="space-y-3 mb-3">
-                      {comments.map(c => (
-                        <div key={c.id} className="flex gap-2.5">
+                      {comments.map(c => {
+                        const editing = editingCommentId === c.id
+                        return (
+                        <div key={c.id} className="flex gap-2.5 group">
                           <Avatar name={c.user?.full_name ?? 'User'} imageUrl={c.user?.avatar_url} size="sm" />
                           <div className="flex-1 min-w-0">
                             <div className="flex items-baseline gap-2">
                               <span className="text-[13px] font-semibold text-[#181818]">{c.user?.full_name ?? 'User'}</span>
                               <span className="text-[10.5px] text-[#706E6B]">{formatDate(c.created_at)}</span>
+                              {c.edited_at && (
+                                <span className="text-[10px] text-[#94a3b8] italic" title={`Edited ${formatDate(c.edited_at)}`}>edited</span>
+                              )}
+                              {/* Row actions reveal on hover so a long thread stays quiet at rest. */}
+                              {!editing && (canEditComment(c) || canDeleteComment(c)) && (
+                                <span className="ml-auto flex items-center gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
+                                  {canEditComment(c) && (
+                                    <button onClick={() => startEditComment(c)} title="Edit message"
+                                      className="p-1 rounded text-[#A8A8A8] hover:text-[#2C5485] hover:bg-[#EFF4FA]">
+                                      <Pencil size={11} />
+                                    </button>
+                                  )}
+                                  {canDeleteComment(c) && (
+                                    <button onClick={() => deleteComment(c.id)} title="Delete message"
+                                      className="p-1 rounded text-[#A8A8A8] hover:text-[#b91c1c] hover:bg-[#FEF2F2]">
+                                      <Trash2 size={11} />
+                                    </button>
+                                  )}
+                                </span>
+                              )}
                             </div>
-                            <p className="text-[13px] text-[#181818] mt-0.5"><MessageText text={c.message} users={users} /></p>
+                            {editing ? (
+                              <div className="mt-1">
+                                <MentionInput value={editingCommentText} onChange={setEditingCommentText}
+                                  onSubmit={saveEditComment} users={users}
+                                  placeholder="Edit your message…"
+                                  className="px-3 py-2 border border-[#cbd5e1] rounded text-[13px] focus:outline-none focus:border-[#70A0D0] focus:ring-2 focus:ring-[#70A0D0]/20" />
+                                <div className="flex gap-2 mt-2">
+                                  <button onClick={saveEditComment} className="btn-primary text-[12px] px-2.5 py-1">Save</button>
+                                  <button onClick={cancelEditComment} className="btn-secondary text-[12px] px-2.5 py-1">Cancel</button>
+                                </div>
+                              </div>
+                            ) : (
+                              <p className="text-[13px] text-[#181818] mt-0.5"><MessageText text={c.message} users={users} /></p>
+                            )}
                           </div>
                         </div>
-                      ))}
+                        )
+                      })}
                       {comments.length === 0 && <p className="text-xs text-[#706E6B] py-2">No messages yet — be the first to start a thread.</p>}
+                      {commentErr && (
+                        <div className="px-3 py-2 bg-[#fef2f2] border border-[#fecaca] rounded text-[12px] text-[#991b1b]">{commentErr}</div>
+                      )}
                     </div>
                   )}
                   <div className="flex gap-2">

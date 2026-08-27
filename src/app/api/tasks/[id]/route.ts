@@ -1,7 +1,8 @@
 import { createClient } from '@/lib/supabase/server'
 import { NextRequest, NextResponse } from 'next/server'
-import { sendDM, replyInThread, taskAssignedBlocks, taskStatusChangedBlocks } from '@/lib/slack'
-import { sendTaskAssignedEmail, sendTaskCompletedEmail, shouldEmailNotify } from '@/lib/email'
+import { sendDM, replyInThread, taskAssignedBlocks, taskStatusChangedBlocks, taskApprovalRequestedBlocks } from '@/lib/slack'
+import { sendTaskAssignedEmail, sendTaskCompletedEmail, sendNotificationEmail, shouldEmailNotify, escapeHtml } from '@/lib/email'
+import { formatDate } from '@/lib/utils'
 
 const TRACKED_FIELDS = ['status', 'priority', 'assignee_id', 'approver_id', 'approval_status', 'due_date', 'title']
 
@@ -130,6 +131,26 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       }
     }
 
+    // Approval request → DM the approver. Fires on the transition INTO Under
+    // Review, not on every save while the task sits there, so re-saving an
+    // unrelated field does not re-ping. The approver is a different person from
+    // the assignee, so this is its own send rather than a branch of the status DM.
+    const enteredReview = statusChanged && body.status === 'Under Review'
+    const approverId = body.approver_id !== undefined ? body.approver_id : before?.approver_id
+    if (enteredReview && data.requires_approval && approverId && notSelf(approverId)) {
+      const { data: ap } = await supabase
+        .from('users').select('notify_slack_task_approval').eq('id', approverId).single() as
+        { data: { notify_slack_task_approval?: boolean } | null }
+      if (ap?.notify_slack_task_approval !== false) {
+        const { text, blocks } = taskApprovalRequestedBlocks({
+          title: data.title, projectName, dueDate: data.due_date,
+          priority: data.priority, submittedBy: actorName, taskPath,
+        })
+        const r = await sendDM(supabase, approverId, text, blocks)
+        console.log('[slack] task approval-request DM result:', r)
+      }
+    }
+
     if (statusChanged && newAssigneeId && notSelf(newAssigneeId) && recipientPrefs.notify_slack_task_status !== false) {
       const { text, blocks } = taskStatusChangedBlocks({
         title: data.title, projectName, from: before.status, to: body.status,
@@ -196,7 +217,33 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       }
     }
 
-    // (b) Status → Complete → email the task creator (if not the actor)
+    // (b) Entered Under Review on an approval-gated task → email the approver
+    const enteredReviewEmail = statusChanged && body.status === 'Under Review'
+    const approverIdEmail = body.approver_id !== undefined ? body.approver_id : before?.approver_id
+    if (enteredReviewEmail && data.requires_approval && shouldEmailNotify(approverIdEmail, user.id)) {
+      const { data: ap } = await supabase
+        .from('users')
+        .select('email, full_name, notify_email_task_approval')
+        .eq('id', approverIdEmail)
+        .single() as { data: { email?: string; full_name?: string; notify_email_task_approval?: boolean } | null }
+      if (ap?.email && ap.notify_email_task_approval !== false) {
+        sendNotificationEmail({
+          to: ap.email,
+          recipientName: ap.full_name || ap.email,
+          subject: `Approval needed: ${data.title}`,
+          heading: 'Approval needed',
+          // `message` is rendered as raw HTML by the shell, and titles/project
+          // names are user-typed — escape them, keep our own markup.
+          message: `<b>${escapeHtml(data.title)}</b>${projectName ? ` — ${escapeHtml(projectName)}` : ''} moved to <b>Under Review</b>.`
+            + `<br>${escapeHtml(actorName)} submitted it and you're the approver.`
+            + (data.due_date ? `<br>Due ${escapeHtml(formatDate(data.due_date))}.` : ''),
+          ctaLabel: 'Review it',
+          ctaUrl: taskUrl,
+        }).catch(e => console.error('[task PATCH] approval email failed:', e))
+      }
+    }
+
+    // (c) Status → Complete → email the task creator (if not the actor)
     if (completedNow && shouldEmailNotify(data.created_by, user.id)) {
       const { data: c } = await supabase
         .from('users')

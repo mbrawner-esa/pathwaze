@@ -16,10 +16,17 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   const body = await request.json()
   const type: string = body.type === 'event' || body.type === 'file' ? body.type : 'note'
 
+  // Which project tab the note was written from. Notes composed on the Threads
+  // or Tasks tab have no tab scope and stay Threads-only; a tab-scoped note
+  // shows in BOTH that tab's Activity feed and Threads.
+  const CATEGORIES = ['site', 'utility', 'stakeholders', 'permitting', 'technical', 'financial', 'drawings']
+  const category = typeof body.category === 'string' && CATEGORIES.includes(body.category) ? body.category : null
+
   const payload: Record<string, unknown> = {
     project_id: projectId,
     user_id: user.id,
     type,
+    category,
     title: body.title || null,
     body: body.body || null,
     event_date: body.event_date || null,
@@ -41,7 +48,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     entity_id: projectId,
     action: type === 'event' ? 'event_added' : type === 'file' ? 'file_added' : 'note_added',
     project_id: projectId,
-    metadata: { type, title: payload.title, file_name: payload.file_name },
+    metadata: { type, title: payload.title, file_name: payload.file_name, category },
   })
 
   // @-mentions in the note body → notify each mentioned user (feed + email).

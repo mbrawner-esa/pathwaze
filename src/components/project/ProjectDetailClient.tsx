@@ -172,14 +172,20 @@ export function ProjectDetailClient({ project, financials, wsDefs = [], wsMilest
           (those tabs render their own composer + content). Scoped to the active tab. */}
       {activeTab !== 'threads' && activeTab !== 'tasks' && (
         <div className="px-8 pt-6 pb-10 mx-auto w-full" style={{ maxWidth: 1760 }}>
-          <ProjectActivityActions projectId={project.id} projectName={project.name} users={users} />
+          <ProjectActivityActions projectId={project.id} projectName={project.name} users={users} category={activeTab} />
           <ProjectActivityFeed
             entries={(activity as ActivityEntry[]).filter(e => {
+              // Notes / events / files written from THIS tab. They also stay in
+              // Threads (which takes the unfiltered list), so a note written on
+              // Permitting reads in both places rather than only in Threads.
+              if (e.kind === 'note') return e.category === activeTab
               if (e.kind !== 'system') return false
               // Entity edits (building/meter/system/permit/…) mapped to this tab.
               if (e.entity_type && (TAB_ACTIVITY_ENTITIES[activeTab] ?? []).includes(e.entity_type)) return true
               // Project field edits routed to their tab via metadata.category.
               if (e.entity_type === 'project' && e.action === 'field_changed' && e.metadata?.category === activeTab) return true
+              // The activity_log row for a tab-scoped note would double up with
+              // the note entry above, so it is deliberately not matched here.
               return false
             })}
             users={users}

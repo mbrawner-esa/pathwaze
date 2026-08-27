@@ -2,7 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import Link from 'next/link'
 
 export const dynamic = 'force-dynamic'
-import { formatDate } from '@/lib/utils'
+import { formatDate, isPastDue } from '@/lib/utils'
 import { Avatar } from '@/components/ui/Avatar'
 import { StageBadge } from '@/components/ui/StageBadge'
 
@@ -361,7 +361,7 @@ export default async function DashboardPage() {
                 <div className="mb-1">
                   <p className="px-4 pt-2 pb-1 text-[10.5px] font-bold uppercase tracking-wider text-[#94a3b8]">RFIs you&apos;re involved in</p>
                   {(myRfis ?? []).map((r: any) => {
-                    const overdue = r.due_date && r.status !== 'closed' && new Date(r.due_date) < new Date()
+                    const overdue = r.status !== 'closed' && isPastDue(r.due_date)
                     return (
                       <Link key={r.id} href={`/rfis/${r.id}`} className="flex items-start gap-3 px-4 py-2.5 rounded-lg hover:bg-[#fafbfc] transition-colors">
                         <span className="mt-0.5 text-[10px] font-bold text-[#2C5485] bg-[#EFF4FA] rounded px-1.5 py-0.5 flex-shrink-0">#{String(r.rfi_number ?? 0).padStart(3, '0')}</span>

@@ -22,6 +22,10 @@ export interface SettingsUser {
   notify_slack_task_threads: boolean
   notify_email_task_assigned: boolean
   notify_email_task_complete: boolean
+  notify_slack_task_approval: boolean
+  notify_email_task_approval: boolean
+  notify_slack_task_due: boolean
+  notify_email_task_due: boolean
   subscribed_task_types: string[] | null
 }
 
@@ -60,6 +64,10 @@ export function SettingsClient({ user, outlook }: { user: SettingsUser; outlook:
     notify_slack_task_threads:  user.notify_slack_task_threads  ?? true,
     notify_email_task_assigned: user.notify_email_task_assigned ?? true,
     notify_email_task_complete: user.notify_email_task_complete ?? true,
+    notify_slack_task_approval: user.notify_slack_task_approval ?? true,
+    notify_email_task_approval: user.notify_email_task_approval ?? true,
+    notify_slack_task_due:      user.notify_slack_task_due      ?? true,
+    notify_email_task_due:      user.notify_email_task_due      ?? true,
   })
   const [subs, setSubs] = useState<string[]>(user.subscribed_task_types ?? [...ALL_TASK_TYPES])
   const [saving, setSaving] = useState<string | null>(null)
@@ -159,6 +167,20 @@ export function SettingsClient({ user, outlook }: { user: SettingsUser; outlook:
           saving={saving === 'notify_slack_task_threads'}
           onChange={v => patch('notify_slack_task_threads', v)}
         />
+        <Toggle
+          label="Approval requests"
+          description="DM when a task you approve moves to Under Review."
+          checked={prefs.notify_slack_task_approval}
+          saving={saving === 'notify_slack_task_approval'}
+          onChange={v => patch('notify_slack_task_approval', v)}
+        />
+        <Toggle
+          label="Task deadlines"
+          description="Daily DM listing your tasks due in the next 3 days, plus anything overdue."
+          checked={prefs.notify_slack_task_due}
+          saving={saving === 'notify_slack_task_due'}
+          onChange={v => patch('notify_slack_task_due', v)}
+        />
       </Section>
 
       {/* Email */}
@@ -176,6 +198,20 @@ export function SettingsClient({ user, outlook }: { user: SettingsUser; outlook:
           checked={prefs.notify_email_task_complete}
           saving={saving === 'notify_email_task_complete'}
           onChange={v => patch('notify_email_task_complete', v)}
+        />
+        <Toggle
+          label="Approval requests"
+          description="Email when a task you approve moves to Under Review."
+          checked={prefs.notify_email_task_approval}
+          saving={saving === 'notify_email_task_approval'}
+          onChange={v => patch('notify_email_task_approval', v)}
+        />
+        <Toggle
+          label="Task deadlines"
+          description="Daily email listing your tasks due in the next 3 days, plus anything overdue."
+          checked={prefs.notify_email_task_due}
+          saving={saving === 'notify_email_task_due'}
+          onChange={v => patch('notify_email_task_due', v)}
         />
         <p className="text-[11px] text-[#94a3b8] mt-3">
           In-app notifications (the bell icon) are always on.

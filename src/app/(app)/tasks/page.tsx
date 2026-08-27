@@ -46,5 +46,6 @@ export default async function TasksPage() {
         return subscribedTypes.includes(t.type)
       })
 
-  return <TasksClient tasks={filteredTasks} projects={projects ?? []} users={users ?? []} />
+  return <TasksClient tasks={filteredTasks} projects={projects ?? []} users={users ?? []}
+    currentUserId={user.id} currentUserRole={role} />
 }

@@ -98,7 +98,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
     })),
     ...((notes ?? []) as any[]).map(n => ({
       id: `note-${n.id}`, kind: 'note' as const,
-      note_type: n.type, title: n.title, body: n.body,
+      note_type: n.type, title: n.title, body: n.body, category: n.category ?? null,
       event_date: n.event_date, file_name: n.file_name,
       user_name: n.user?.full_name ?? null,
       user_avatar_url: n.user?.avatar_url ?? null,

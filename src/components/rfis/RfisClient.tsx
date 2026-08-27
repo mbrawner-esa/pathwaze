@@ -2,6 +2,7 @@
 import { useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { ReceivedFromPicker } from './ReceivedFromPicker'
+import { isPastDue } from '@/lib/utils'
 
 type Any = any // eslint-disable-line @typescript-eslint/no-explicit-any
 
@@ -22,7 +23,7 @@ function daysOpen(r: Any): number | null {
   return Math.max(0, Math.round((end.getTime() - new Date(r.date_initiated).getTime()) / 86400000))
 }
 function isOverdue(r: Any): boolean {
-  return r.status === 'open' && !!r.due_date && new Date(r.due_date) < new Date()
+  return r.status === 'open' && isPastDue(r.due_date)
 }
 
 export function RfisClient({ rfis: initial, projects, users, stakeholders }: { rfis: Any[]; projects: Any[]; users: Any[]; stakeholders: Any[] }) {

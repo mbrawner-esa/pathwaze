@@ -8,6 +8,10 @@ const ALLOWED_FIELDS = [
   'notify_slack_task_threads',
   'notify_email_task_assigned',
   'notify_email_task_complete',
+  'notify_slack_task_approval',
+  'notify_email_task_approval',
+  'notify_slack_task_due',
+  'notify_email_task_due',
   'subscribed_task_types',
 ] as const
 

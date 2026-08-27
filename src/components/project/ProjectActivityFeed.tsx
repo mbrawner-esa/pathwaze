@@ -19,6 +19,8 @@ export interface ActivityEntry {
   message?: string
   // Note (project_notes)
   note_type?: 'note' | 'event' | 'file'
+  /** Project tab the note was authored from; null for Threads/Tasks notes. */
+  category?: string | null
   title?: string | null
   body?: string | null
   event_date?: string | null

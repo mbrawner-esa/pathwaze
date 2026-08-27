@@ -8,11 +8,12 @@ import { Avatar } from '@/components/ui/Avatar'
 import { RichTextEditor } from '@/components/ui/RichTextEditor'
 import { NotesRender } from '@/components/ui/NotesRender'
 import { ReceivedFromPicker } from './ReceivedFromPicker'
+import { isPastDue } from '@/lib/utils'
 
 type Any = any // eslint-disable-line @typescript-eslint/no-explicit-any
 
 const ballName = (r: Any) => r.ball_user?.full_name || r.ball_sh?.name || '—'
-const isOverdue = (r: Any) => r.status === 'open' && !!r.due_date && new Date(r.due_date) < new Date()
+const isOverdue = (r: Any) => r.status === 'open' && isPastDue(r.due_date)
 const rfiNo = (n: number) => '#' + String(n ?? 0).padStart(3, '0')
 const plainText = (html: string) => (html || '').replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').trim()
 
