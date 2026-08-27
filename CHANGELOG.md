@@ -6,6 +6,20 @@
 
 ---
 
+## 2026-08-27
+
+- **Cron endpoints now require their secret** — the three scheduled jobs (RFI
+  reminders, Outlook email sync, task deadline digest) checked `CRON_SECRET`
+  only when it was set, so on a deployment where it was missing the check was
+  skipped and the endpoints were publicly triggerable — enough for anyone with
+  a URL to fire team-wide Slack DMs and emails or start a mailbox sync. The
+  gate now refuses to run when the secret is absent rather than treating
+  "unconfigured" as "authorized". `/api/cron/task-reminders` is also read-only
+  by default; actually sending requires an explicit `?send=1`.
+  Requires `CRON_SECRET` in the Vercel Production environment. No migration.
+
+---
+
 ## 2026-08-26
 
 - **Task due dates showed a day early** — a due date of Aug 27 rendered as

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { serviceClient } from '@/lib/supabase/service'
+import { requireCronAuth } from '@/lib/cron-auth'
 import { refreshAccessToken, fetchMailboxMessages, fetchMessageBody, type GraphMessage } from '@/lib/graph'
 import { encryptSecret, decryptSecret } from '@/lib/crypto'
 
@@ -83,14 +84,8 @@ async function validAccessToken(
 }
 
 export async function GET(req: NextRequest) {
-  const secret = process.env.CRON_SECRET
-  if (secret) {
-    const auth = req.headers.get('authorization') || ''
-    const key = req.nextUrl.searchParams.get('key') || ''
-    if (auth !== `Bearer ${secret}` && key !== secret) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-  }
+  const denied = requireCronAuth(req)
+  if (denied) return denied
 
   const dry = req.nextUrl.searchParams.get('dry') === '1'
   const onlyUser = req.nextUrl.searchParams.get('user')

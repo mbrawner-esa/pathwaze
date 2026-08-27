@@ -2,6 +2,7 @@ import { createClient as createSbClient } from '@supabase/supabase-js'
 import { sendDM } from '@/lib/slack'
 import { emailUser, emailStakeholder, rfiUrl, rfiNo } from '@/lib/rfi-notify'
 import { runTaskDueReminders } from '@/lib/reminders'
+import { requireCronAuth } from '@/lib/cron-auth'
 import { NextRequest, NextResponse } from 'next/server'
 
 export const dynamic = 'force-dynamic'
@@ -30,14 +31,8 @@ function serviceClient() {
 //
 // Protect with CRON_SECRET (Vercel Cron sends it as a Bearer token / ?key=).
 export async function GET(req: NextRequest) {
-  const secret = process.env.CRON_SECRET
-  if (secret) {
-    const auth = req.headers.get('authorization') || ''
-    const key = req.nextUrl.searchParams.get('key') || ''
-    if (auth !== `Bearer ${secret}` && key !== secret) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-  }
+  const denied = requireCronAuth(req)
+  if (denied) return denied
 
   const dry = req.nextUrl.searchParams.get('dry') === '1'
   const supabase = serviceClient()
