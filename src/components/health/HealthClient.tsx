@@ -31,6 +31,13 @@ export interface HealthProject {
   dealHealthOverride: boolean
   suggestedHealth: string
   suggestionReason: string
+  /**
+   * projects.on_hold_at is set (migration 068). While paused, the schedule has
+   * nothing to say — variance, worst slip and overdue-count all read null/0 by
+   * design, not because there is no data. The table shows "On Hold" in those
+   * cells rather than a bare "—" so the two read differently.
+   */
+  paused: boolean
   city: string | null
   state: string | null
   assigneeName: string | null
@@ -304,12 +311,12 @@ export function HealthClient({
                       ) : <span className="text-[12.5px] text-[#94a3b8]">—</span>}
                     </td>
                     <td className="px-4 py-3 text-right tabular-nums text-[12.5px]"
-                        style={{ color: (p.nextMilestoneVariance ?? 0) < 0 ? '#b91c1c' : '#3E3E3C' }}>
-                      {varianceLabel(p.nextMilestoneVariance) ?? '—'}
+                        style={{ color: p.paused ? '#6366f1' : (p.nextMilestoneVariance ?? 0) < 0 ? '#b91c1c' : '#3E3E3C' }}>
+                      {p.paused ? 'On Hold' : varianceLabel(p.nextMilestoneVariance) ?? '—'}
                     </td>
                     <td className="px-4 py-3 text-right tabular-nums text-[12.5px]"
-                        style={{ color: p.worstSlip > 0 ? '#b91c1c' : '#94a3b8' }}>
-                      {p.worstSlip > 0 ? `${p.worstSlip}d` : '—'}
+                        style={{ color: p.paused ? '#6366f1' : p.worstSlip > 0 ? '#b91c1c' : '#94a3b8' }}>
+                      {p.paused ? 'On Hold' : p.worstSlip > 0 ? `${p.worstSlip}d` : '—'}
                     </td>
                     <td className="px-4 py-3">
                       <span className="flex items-center gap-1.5 flex-wrap">

@@ -56,7 +56,7 @@ export default async function HealthPage({
     await Promise.all([
       supabase
         .from('projects')
-        .select('id, project_number, name, stage, deal_health, deal_health_override, city, state, assignee_id, users!assignee_id(full_name, avatar_url)')
+        .select('id, project_number, name, stage, deal_health, deal_health_override, on_hold_at, city, state, assignee_id, users!assignee_id(full_name, avatar_url)')
         .neq('stage', 'Archived')
         .order('name') as unknown as Promise<{ data: any[] | null }>, // eslint-disable-line @typescript-eslint/no-explicit-any
       supabase.from('users').select('id, full_name, avatar_url') as unknown as Promise<{ data: any[] | null }>, // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -111,21 +111,36 @@ export default async function HealthPage({
   const defs = (wsDefs ?? []) as MajorDef[]
 
   // ── State: where every project stands right now ────────────────────
+  // A held project (migration 068, `projects.on_hold_at`) has nothing to say
+  // about schedule: rollUpMajor/suggestDealHealth already suppress variance and
+  // the traffic light while paused, so a hold reads as "no opinion" rather than
+  // bleeding red purely because time kept passing.
+  const heldProjectIds = new Set(
+    (projects ?? []).filter((p: { on_hold_at?: string | null }) => !!p.on_hold_at).map((p: { id: string }) => p.id),
+  )
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const rows: HealthProject[] = (projects ?? []).map((p: any) => {
     const mine = (milestonesByProject.get(p.id) ?? []) as Milestone[]
     const state = stateByProject.get(p.id) ?? []
+    const paused = !!p.on_hold_at
     const overrides = new Map<string, string | null>(state.map(s => [s.major_key, s.completed_at]))
     const rollups: MajorRollup[] = defs.map(d =>
-      rollUpMajor(d, mine, undefined, overrides.get(d.key) ?? null))
+      rollUpMajor(d, mine, undefined, overrides.get(d.key) ?? null, paused))
 
-    const suggestion = suggestDealHealth(rollups)
+    const suggestion = suggestDealHealth(rollups, paused)
+    // nextMilestone() doesn't take `paused` — it calls rollUpMajor internally
+    // without it, so the label/date it returns are still date-driven for a held
+    // project. That's a real gap in the shared helper (worth fixing there, not
+    // patched around per-caller); until then, the variance shown below is
+    // suppressed at this page regardless of what it computed.
     const next = nextMilestone(defs, mine, state)
 
     // The single worst slip across the project's majors — the headline number
     // for "how far off the original commitment are we", independent of which
-    // milestone happens to be next.
-    const slips = rollups.map(r => r.slipDays ?? 0).filter(d => d > 0)
+    // milestone happens to be next. Meaningless while paused, for the same
+    // reason variance is suppressed above.
+    const slips = paused ? [] : rollups.map(r => r.slipDays ?? 0).filter(d => d > 0)
     const worstSlip = slips.length ? Math.max(...slips) : 0
 
     return {
@@ -140,14 +155,15 @@ export default async function HealthPage({
       dealHealthOverride: p.deal_health_override === true,
       suggestedHealth: suggestion.value,
       suggestionReason: suggestion.reason,
+      paused,
       city: p.city,
       state: p.state,
       assigneeName: p.users?.full_name ?? null,
       nextMilestone: next?.label ?? null,
       nextMilestoneDate: next?.end ?? null,
-      nextMilestoneVariance: next?.variance ?? null,
+      nextMilestoneVariance: paused ? null : (next?.variance ?? null),
       worstSlip,
-      overdueCount: rollups.reduce((n, r) => n + r.overdueCount, 0),
+      overdueCount: paused ? 0 : rollups.reduce((n, r) => n + r.overdueCount, 0),
       blockedCount: mine.filter(m => m.status === 'blocked').length,
     }
   })
@@ -157,7 +173,13 @@ export default async function HealthPage({
   // would have no group header to sit under. Dropping them here keeps the feed
   // consistent with the table rather than half-rendering an unknown project.
   const known = new Set(rows.map(r => r.id))
-  const movements = toMovements((activity ?? []) as ActivityRow[]).filter(m => known.has(m.projectId))
+  const movements = toMovements((activity ?? []) as ActivityRow[])
+    .filter(m => known.has(m.projectId))
+    // A milestone's target date carries no schedule meaning while its project is
+    // paused — the state table already suppresses variance for the same reason
+    // (see `paused` above). A human-set signal (status, risk, a gate) still
+    // counts on a held project; only the date-derived movement is dropped.
+    .filter(m => !(m.kind === 'milestone_date' && heldProjectIds.has(m.projectId)))
   const groups = groupByProject(movements)
   const summary = summarize(groups)
 
