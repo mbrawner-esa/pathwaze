@@ -23,26 +23,45 @@
 // Nothing here writes.
 
 import {
-  rollUpMajor, WORKSTREAMS,
+  rollUpMajor, WORKSTREAMS, WORKSTREAM_LABELS,
   type MajorDef, type Milestone, type MajorRollup, type MajorState,
   type WorkstreamKey, type ScheduleHealth,
 } from './workstreams'
+import type { Momentum } from './momentum'
 
 /**
  * How far ahead the board looks.
  *
  * This is a LENS ON DETAIL, not a filter on projects: every active project
  * always has a row, and the horizon decides which of its sub-milestones are
- * worth showing when the row is expanded. A 1-month view is "what are we
- * actually touching now"; a 1-year view is the whole plan.
+ * worth showing when the row is expanded. "This Week" is what we are actually
+ * touching now; "Long Term" is the shape of the plan.
+ *
+ * Named rather than numeric because these are the words the meeting already
+ * uses. The spans behind them are an implementation detail, shown as a hint on
+ * the control so nobody has to guess what "Near Term" means.
  */
-export type Horizon = 1 | 3 | 6 | 12
+export type Horizon = 'week' | 'near' | 'long'
 
-export const HORIZONS: Horizon[] = [1, 3, 6, 12]
+export const HORIZONS: Horizon[] = ['week', 'near', 'long']
 
 export const HORIZON_LABEL: Record<Horizon, string> = {
-  1: '1 month', 3: '3 months', 6: '6 months', 12: '1 year',
+  week: 'This Week', near: 'Near Term', long: 'Long Term',
 }
+
+export const HORIZON_HINT: Record<Horizon, string> = {
+  week: 'next 7 days', near: '1 month', long: '6 months',
+}
+
+/** Days each horizon reaches forward. */
+const HORIZON_DAYS: Record<Horizon, number> = { week: 7, near: 30, long: 182 }
+
+/**
+ * Months of axis the Gantt draws for each horizon. "This Week" still gets a
+ * full month rather than a single column — an axis narrower than that has
+ * nowhere to put a marker.
+ */
+export const HORIZON_GANTT_MONTHS: Record<Horizon, number> = { week: 1, near: 2, long: 6 }
 
 /** A major milestone with the sub-milestones underneath it. */
 export interface MajorGroup {
@@ -79,6 +98,17 @@ export interface PriorityRow {
   groups: MajorGroup[]
   /** manual rank from `portfolio_priority`, or null when unranked */
   rank: number | null
+
+  // ── filter / group dimensions ──
+  tranche: string | null
+  /** project manager — `projects.assignee_id`, distinct from a major's owner */
+  pmId: string | null
+  pmName: string | null
+  /** disciplines this project has OPEN work in, for the workstream filter */
+  workstreams: WorkstreamKey[]
+
+  // ── scores ──
+  momentum: Momentum | null
 }
 
 // ── date helpers ──────────────────────────────────────────────────────
@@ -98,10 +128,8 @@ function todayNumber(): number {
 }
 
 /** Last day inside the horizon, as a day number. */
-export function horizonEnd(months: Horizon): number {
-  const now = new Date()
-  const end = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + months, now.getUTCDate()))
-  return end.getTime() / MS_PER_DAY
+export function horizonEnd(h: Horizon): number {
+  return todayNumber() + HORIZON_DAYS[h]
 }
 
 /**
@@ -112,10 +140,10 @@ export function horizonEnd(months: Horizon): number {
  * conceal exactly the work the meeting exists to schedule. Anything already
  * complete is dropped regardless — the card is a plan, not a record.
  */
-export function inHorizon(m: Milestone, months: Horizon): boolean {
+export function inHorizon(m: Milestone, h: Horizon): boolean {
   if (m.status === 'complete') return false
   if (!m.end_date) return true
-  return dayNumber(m.end_date) <= horizonEnd(months)
+  return dayNumber(m.end_date) <= horizonEnd(h)
 }
 
 // ── selection ─────────────────────────────────────────────────────────
@@ -173,6 +201,8 @@ export interface ProjectInput {
   stage: string
   deal_health: string | null
   on_hold_at: string | null
+  tranche: string | null
+  assignee_id: string | null
 }
 
 /**
@@ -188,6 +218,8 @@ export function buildRows(
   milestonesByProject: Map<string, Milestone[]>,
   stateByProject: Map<string, Pick<MajorState, 'major_key' | 'owner_id' | 'completed_at'>[]>,
   ranks: Map<string, number>,
+  pmNames: Map<string, string> = new Map(),
+  momentumByProject: Map<string, Momentum> = new Map(),
 ): PriorityRow[] {
   const rows: PriorityRow[] = []
 
@@ -255,6 +287,15 @@ export function buildRows(
       variance,
       groups,
       rank: ranks.get(p.id) ?? null,
+      tranche: p.tranche || null,
+      pmId: p.assignee_id,
+      pmName: p.assignee_id ? pmNames.get(p.assignee_id) ?? null : null,
+      // Disciplines with OPEN work, not merely with a seeded major — a project
+      // whose Approvals milestones are all done should not answer a filter for
+      // "show me what Approvals is carrying".
+      workstreams: WORKSTREAMS.filter(ws =>
+        open.some(m => defByKey.get(m.major_key)?.workstream === ws)),
+      momentum: momentumByProject.get(p.id) ?? null,
     })
   }
 
@@ -302,5 +343,102 @@ export function orderRows(rows: PriorityRow[], manual: boolean): PriorityRow[] {
     if (a.rank !== null) return -1
     if (b.rank !== null) return 1
     return byUrgency(a, b)
+  })
+}
+
+// ── filtering and grouping ────────────────────────────────────────────
+// The board reuses the vocabulary of the projects list — workstream, project
+// manager, tranche — so someone moving between the two pages does not have to
+// learn a second set of controls.
+
+export interface BoardFilters {
+  /** discipline; 'all' keeps every project */
+  workstream: WorkstreamKey | 'all'
+  /** project-manager user id, or 'all' */
+  pm: string | 'all'
+  /** tranche value, or 'all' */
+  tranche: string | 'all'
+}
+
+export type GroupBy = 'none' | 'workstream' | 'pm' | 'tranche'
+
+export const GROUP_LABEL: Record<GroupBy, string> = {
+  none: 'No grouping',
+  workstream: 'Workstream',
+  pm: 'Project manager',
+  tranche: 'Tranche',
+}
+
+export const EMPTY_FILTERS: BoardFilters = { workstream: 'all', pm: 'all', tranche: 'all' }
+
+/**
+ * Apply the header filters.
+ *
+ * The workstream filter genuinely removes projects, unlike the old lens tabs:
+ * a filter that left every row in place while emptying its contents would be a
+ * confusing thing to call a filter. Rows keep their relative order.
+ */
+export function filterRows(rows: PriorityRow[], f: BoardFilters): PriorityRow[] {
+  return rows.filter(r =>
+    (f.workstream === 'all' || r.workstreams.includes(f.workstream)) &&
+    (f.pm === 'all' || r.pmId === f.pm) &&
+    (f.tranche === 'all' || (r.tranche ?? '') === f.tranche))
+}
+
+/** Distinct values present in the data, for populating the selects. */
+export function filterOptions(rows: PriorityRow[]) {
+  const pms = new Map<string, string>()
+  const tranches = new Set<string>()
+  for (const r of rows) {
+    if (r.pmId) pms.set(r.pmId, r.pmName || 'Unnamed')
+    if (r.tranche) tranches.add(r.tranche)
+  }
+  return {
+    pms: Array.from(pms.entries()).sort((a, b) => a[1].localeCompare(b[1])),
+    tranches: Array.from(tranches).sort(),
+  }
+}
+
+export interface RowGroup {
+  key: string
+  label: string
+  rows: PriorityRow[]
+}
+
+/**
+ * Group for display, preserving the board's order inside each group.
+ *
+ * A project with work in two disciplines appears under BOTH when grouping by
+ * workstream. That is deliberate: the question "what is Technical carrying" has
+ * to include a project Technical shares, and forcing a single bucket would hide
+ * it from one of the teams that owns it. Every other dimension is single-valued
+ * and so appears once.
+ */
+export function groupRows(rows: PriorityRow[], by: GroupBy): RowGroup[] | null {
+  if (by === 'none') return null
+
+  const buckets = new Map<string, RowGroup>()
+  const push = (key: string, label: string, row: PriorityRow) => {
+    const g = buckets.get(key)
+    if (g) g.rows.push(row)
+    else buckets.set(key, { key, label, rows: [row] })
+  }
+
+  for (const r of rows) {
+    if (by === 'workstream') {
+      if (!r.workstreams.length) push('none', 'No open work', r)
+      else for (const ws of r.workstreams) push(ws, WORKSTREAM_LABELS[ws], r)
+    } else if (by === 'pm') {
+      push(r.pmId ?? 'none', r.pmName ?? 'Unassigned', r)
+    } else {
+      push(r.tranche ?? 'none', r.tranche ?? 'No tranche', r)
+    }
+  }
+
+  // Unassigned buckets sort last — they are a gap to fill, not a category.
+  return Array.from(buckets.values()).sort((a, b) => {
+    if (a.key === 'none') return 1
+    if (b.key === 'none') return -1
+    return a.label.localeCompare(b.label)
   })
 }

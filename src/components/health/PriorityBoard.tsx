@@ -7,31 +7,34 @@
 // while everyone is watching.
 //
 // Collapsed, a project is ONE row. Expanded, it is the whole plan — every
-// discipline at once, majors with their sub-milestones underneath, each date
-// editable in place. There is deliberately no per-workstream tab: in a planning
-// meeting you are asking "what is happening on this site", and answering that
-// behind three tabs makes the reader do the assembling.
+// discipline at once, majors with their sub-milestones underneath.
 //
-// The horizon control filters DETAIL, not projects. Every active project keeps
-// its row at every horizon; the horizon decides how much of its plan is worth
-// showing.
+// EDITING FOLLOWS SALESFORCE LIGHTNING. Nothing is an input until you say so: a
+// field renders as text with a pencil that appears on hover, clicking it turns
+// that one field into a control, and a Save / Cancel bar collects every pending
+// change until you commit them together. The alternative — live inputs that
+// save on blur — makes a read-only glance feel like a form, and turns a stray
+// click in a meeting into an unannounced write.
 
-import { useState, useTransition } from 'react'
+import { useState, useMemo, useTransition } from 'react'
 import Link from 'next/link'
 import { useRouter, usePathname, useSearchParams } from 'next/navigation'
-import { GripVertical, ChevronRight, ChevronDown, AlertTriangle, X, RotateCcw } from 'lucide-react'
+import {
+  GripVertical, ChevronRight, ChevronDown, AlertTriangle, X, RotateCcw, Pencil, Check,
+} from 'lucide-react'
 import { formatShortDate, formatDate } from '@/lib/utils'
 import { SELECTABLE_STAGES } from '@/lib/stages'
 import {
-  varianceLabel, HEALTH_LABEL, WORKSTREAM_LABELS,
-  type MilestoneStatus, type Milestone,
+  varianceLabel, HEALTH_LABEL, WORKSTREAM_LABELS, WORKSTREAMS,
+  type MilestoneStatus, type Milestone, type WorkstreamKey,
 } from '@/lib/workstreams'
 import {
-  inHorizon, HORIZONS, HORIZON_LABEL,
-  type PriorityRow, type Horizon, type MajorGroup,
+  inHorizon, filterRows, filterOptions, groupRows,
+  HORIZONS, HORIZON_LABEL, HORIZON_HINT, HORIZON_GANTT_MONTHS, GROUP_LABEL, EMPTY_FILTERS,
+  type PriorityRow, type Horizon, type MajorGroup, type BoardFilters, type GroupBy,
 } from '@/lib/portfolio-priority'
+import { BAND_COLOR, BAND_LABEL, momentumSummary } from '@/lib/momentum'
 
-/** Lane accent per workstream — same hues the project Overview uses. */
 const LANE_HUE: Record<string, string> = {
   commercial: '#6E879E',
   technical: '#C8963A',
@@ -39,9 +42,7 @@ const LANE_HUE: Record<string, string> = {
 }
 
 const HEALTH_DOT: Record<string, string> = {
-  delayed: '#ef4444',
-  at_risk: '#eab308',
-  on_track: '#22c55e',
+  delayed: '#ef4444', at_risk: '#eab308', on_track: '#22c55e',
 }
 
 const STATUS_STYLE: Record<MilestoneStatus, { bg: string; border: string; text: string; label: string }> = {
@@ -53,8 +54,12 @@ const STATUS_STYLE: Record<MilestoneStatus, { bg: string; border: string; text: 
 
 const STATUSES: MilestoneStatus[] = ['not_started', 'in_progress', 'blocked', 'complete']
 
+/** A staged, uncommitted change. Keyed `<kind>:<id>:<field>`. */
+type EditKey = string
+interface PendingEdit { kind: 'project' | 'milestone'; id: string; field: string; value: string }
+
 export function PriorityBoard({
-  rows, people, view, manual, setAt, heldCount,
+  rows, view, manual, setAt, heldCount,
 }: {
   rows: PriorityRow[]
   people: { id: string; name: string; avatarUrl: string | null }[]
@@ -68,19 +73,27 @@ export function PriorityBoard({
   const params = useSearchParams()
   const [, startTransition] = useTransition()
 
-  // Horizon is client state, not a URL param: it only changes how much of an
-  // expanded card is shown, so a server round-trip would be latency for nothing.
-  const [horizon, setHorizon] = useState<Horizon>(3)
+  const [horizon, setHorizon] = useState<Horizon>('near')
+  const [filters, setFilters] = useState<BoardFilters>(EMPTY_FILTERS)
+  const [groupBy, setGroupBy] = useState<GroupBy>('none')
   const [dragId, setDragId] = useState<string | null>(null)
   const [overId, setOverId] = useState<string | null>(null)
   const [openId, setOpenId] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  /** Local order while a drag is in flight, so the row moves before the server answers. */
   const [optimistic, setOptimistic] = useState<PriorityRow[] | null>(null)
 
-  const nameById = new Map(people.map(p => [p.id, p.name]))
+  // Lightning-style editing: which fields are open as controls, and what has
+  // been staged but not yet saved.
+  const [editingKeys, setEditingKeys] = useState<Set<EditKey>>(new Set())
+  const [edits, setEdits] = useState<Record<EditKey, PendingEdit>>({})
+  const pendingCount = Object.keys(edits).length
+
   const list = optimistic ?? rows
+  const opts = useMemo(() => filterOptions(list), [list])
+  const filtered = useMemo(() => filterRows(list, filters), [list, filters])
+  const groups = useMemo(() => groupRows(filtered, groupBy), [filtered, groupBy])
+  const filtersOn = filters.workstream !== 'all' || filters.pm !== 'all' || filters.tranche !== 'all'
 
   function withParam(key: string, value: string): string {
     const next = new URLSearchParams(params.toString())
@@ -89,8 +102,6 @@ export function PriorityBoard({
   }
 
   async function call(url: string, init: RequestInit): Promise<boolean> {
-    setBusy(true)
-    setError(null)
     try {
       const res = await fetch(url, init)
       if (!res.ok) {
@@ -98,67 +109,101 @@ export function PriorityBoard({
         setError(body.error || 'That did not save. Try again.')
         return false
       }
-      startTransition(() => router.refresh())
       return true
     } catch {
       setError('That did not save. Try again.')
       return false
-    } finally {
-      setBusy(false)
     }
   }
 
-  /**
-   * Drag-to-reprioritize. Same splice-then-PATCH shape the Workstreams plan
-   * uses, so both reorder gestures behave identically.
-   */
+  // ── editing ──
+  function openField(key: EditKey) {
+    setEditingKeys(prev => new Set(prev).add(key))
+  }
+  function stage(key: EditKey, edit: PendingEdit) {
+    setEdits(prev => ({ ...prev, [key]: edit }))
+  }
+  function cancelEdits() {
+    setEdits({})
+    setEditingKeys(new Set())
+    setError(null)
+  }
+  async function saveEdits() {
+    setBusy(true)
+    setError(null)
+    // Group by entity so two fields on one record are one request, and so a
+    // milestone's status and date never race each other.
+    const byEntity = new Map<string, { kind: string; id: string; patch: Record<string, unknown> }>()
+    for (const e of Object.values(edits)) {
+      const k = `${e.kind}:${e.id}`
+      const entry = byEntity.get(k) ?? { kind: e.kind, id: e.id, patch: {} }
+      entry.patch[e.field] = e.value === '' ? null : e.value
+      byEntity.set(k, entry)
+    }
+    let ok = true
+    for (const e of Array.from(byEntity.values())) {
+      const url = e.kind === 'project'
+        ? `/api/projects/${e.id}`
+        : `/api/workstreams/milestones/${e.id}`
+      // eslint-disable-next-line no-await-in-loop
+      const done = await call(url, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(e.patch),
+      })
+      if (!done) { ok = false; break }
+    }
+    setBusy(false)
+    if (ok) {
+      setEdits({})
+      setEditingKeys(new Set())
+      startTransition(() => router.refresh())
+    }
+  }
+
+  // ── drag ──
   async function dropOn(targetId: string) {
     const dragging = dragId
     setDragId(null)
     setOverId(null)
-    if (!dragging || dragging === targetId) return
+    if (!dragging || dragging === targetId || filtersOn || groupBy !== 'none') return
 
     const ids = list.map(r => r.projectId)
     const from = ids.indexOf(dragging)
     const to = ids.indexOf(targetId)
     if (from < 0 || to < 0) return
-
     ids.splice(to, 0, ...ids.splice(from, 1))
     const byId = new Map(list.map(r => [r.projectId, r]))
     setOptimistic(ids.map(id => byId.get(id) as PriorityRow))
 
+    setBusy(true)
     const ok = await call('/api/portfolio-priority', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ids }),
     })
-    // The refresh brings the server's order back; drop the local copy either
-    // way, so a failed save visibly snaps back rather than lying.
+    setBusy(false)
     setOptimistic(null)
+    startTransition(() => router.refresh())
     if (!ok) router.refresh()
   }
 
   async function resetOrder() {
     setOptimistic(null)
+    setBusy(true)
     await call('/api/portfolio-priority', { method: 'DELETE' })
+    setBusy(false)
+    startTransition(() => router.refresh())
   }
 
-  const patchMilestone = (id: string, patch: Record<string, unknown>) =>
-    call(`/api/workstreams/milestones/${id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(patch),
-    })
+  const dragEnabled = !filtersOn && groupBy === 'none'
 
-  const patchProject = (id: string, patch: Record<string, unknown>) =>
-    call(`/api/projects/${id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(patch),
-    })
+  const rowProps = {
+    horizon, busy, editingKeys, edits, openField, stage,
+    openId, setOpenId, dragId, overId, setDragId, setOverId, dropOn, dragEnabled,
+  }
 
   return (
-    <div className="px-8 py-9 max-w-[1440px] mx-auto">
+    <div className="px-8 py-9 max-w-[1440px] mx-auto pb-24">
       {/* ── Header + view switch ── */}
       <div className="mb-5 flex items-start justify-between gap-6 flex-wrap">
         <div>
@@ -169,36 +214,30 @@ export function PriorityBoard({
         </div>
         <div className="flex items-center gap-1 bg-white border border-[#D6DEE7] rounded-lg p-1">
           {(['table', 'gantt'] as const).map(v => (
-            <Link
-              key={v}
-              href={withParam('view', v)}
-              className={'px-3 py-1.5 rounded-md text-[12.5px] font-semibold transition-colors ' +
-                (view === v ? 'bg-[#2F3E50] text-white' : 'text-[#55677A] hover:bg-[#f8fafc]')}
-            >
+            <Link key={v} href={withParam('view', v)}
+                  className={'px-3 py-1.5 rounded-md text-[12.5px] font-semibold transition-colors ' +
+                    (view === v ? 'bg-[#2F3E50] text-white' : 'text-[#55677A] hover:bg-[#f8fafc]')}>
               {v === 'table' ? 'Table' : 'Gantt'}
             </Link>
           ))}
         </div>
       </div>
 
-      {/* ── Horizon + order state ── */}
-      <div className="flex items-center justify-between gap-5 flex-wrap mb-3.5">
+      {/* ── Horizon ── */}
+      <div className="flex items-center justify-between gap-5 flex-wrap mb-3">
         <div className="flex items-center gap-2">
-          <span className="text-[10px] uppercase tracking-[0.11em] text-[#706E6B]">Show milestones within</span>
+          <span className="text-[10px] uppercase tracking-[0.11em] text-[#706E6B]">Showing</span>
           <div className="flex items-center gap-1 bg-white border border-[#D6DEE7] rounded-lg p-[3px]">
             {HORIZONS.map(h => (
-              <button
-                key={h}
-                type="button"
-                onClick={() => setHorizon(h)}
-                aria-pressed={horizon === h}
-                className={'px-2.5 py-1 rounded-[5px] text-[11.5px] font-semibold transition-colors ' +
-                  (horizon === h ? 'bg-[#2F3E50] text-white' : 'text-[#55677A] hover:bg-[#f8fafc]')}
-              >
+              <button key={h} type="button" onClick={() => setHorizon(h)} aria-pressed={horizon === h}
+                      title={`Milestones landing in the ${HORIZON_HINT[h]}`}
+                      className={'px-3 py-1 rounded-[5px] text-[11.5px] font-semibold transition-colors ' +
+                        (horizon === h ? 'bg-[#2F3E50] text-white' : 'text-[#55677A] hover:bg-[#f8fafc]')}>
                 {HORIZON_LABEL[h]}
               </button>
             ))}
           </div>
+          <span className="text-[11px] text-[#94a3b8]">{HORIZON_HINT[horizon]}</span>
         </div>
         <div className="flex items-center gap-3">
           {manual && (
@@ -206,16 +245,38 @@ export function PriorityBoard({
               <RotateCcw size={11} />
               Manual order{setAt ? ` · set ${formatShortDate(setAt)}` : ''}
               <button type="button" onClick={resetOrder} disabled={busy}
-                      className="underline font-bold hover:text-[#5E4511]">
-                Reset to urgency
-              </button>
+                      className="underline font-bold hover:text-[#5E4511]">Reset to urgency</button>
             </span>
           )}
           <span className="text-[12px] text-[#55677A]">
-            <strong className="tabular-nums text-[#181818] font-bold">{list.length}</strong> active
+            <strong className="tabular-nums text-[#181818] font-bold">{filtered.length}</strong>
+            {filtered.length !== list.length && <span className="text-[#94a3b8]"> of {list.length}</span>} active
             {heldCount > 0 && <span className="text-[#94a3b8]"> · {heldCount} on hold, hidden</span>}
           </span>
         </div>
+      </div>
+
+      {/* ── Filters + group by ── */}
+      <div className="flex items-center gap-2 flex-wrap mb-3.5">
+        <Select label="Workstream" value={filters.workstream}
+                onChange={v => setFilters(f => ({ ...f, workstream: v as WorkstreamKey | 'all' }))}
+                options={[['all', 'All workstreams'], ...WORKSTREAMS.map(w => [w, WORKSTREAM_LABELS[w]] as [string, string])]} />
+        <Select label="Project manager" value={filters.pm}
+                onChange={v => setFilters(f => ({ ...f, pm: v }))}
+                options={[['all', 'All managers'], ...opts.pms.map(([id, name]) => [id, name] as [string, string])]} />
+        <Select label="Tranche" value={filters.tranche}
+                onChange={v => setFilters(f => ({ ...f, tranche: v }))}
+                options={[['all', 'All tranches'], ...opts.tranches.map(t => [t, t] as [string, string])]} />
+        <span className="w-px h-6 bg-[#E4EAF0] mx-1" />
+        <Select label="Group by" value={groupBy}
+                onChange={v => setGroupBy(v as GroupBy)}
+                options={(Object.keys(GROUP_LABEL) as GroupBy[]).map(k => [k, GROUP_LABEL[k]] as [string, string])} />
+        {(filtersOn || groupBy !== 'none') && (
+          <button type="button" onClick={() => { setFilters(EMPTY_FILTERS); setGroupBy('none') }}
+                  className="text-[11.5px] font-semibold text-[#2C5485] hover:underline ml-1">
+            Clear
+          </button>
+        )}
       </div>
 
       {error && (
@@ -226,112 +287,145 @@ export function PriorityBoard({
         </div>
       )}
 
-      {list.length === 0 ? (
+      {!dragEnabled && manual && (
+        <p className="m-0 mb-2 text-[11.5px] text-[#94a3b8]">
+          Reordering is off while filtering or grouping — the visible list is a subset, so a drop position would not
+          describe the rows you cannot see.
+        </p>
+      )}
+
+      {filtered.length === 0 ? (
         <div className="bg-white rounded-xl border border-[#e2e8f0] px-6 py-14 text-center">
-          <p className="m-0 text-[13.5px] text-[#3E3E3C]">No active projects. Everything is on hold or archived.</p>
+          <p className="m-0 text-[13.5px] text-[#3E3E3C]">
+            {list.length === 0 ? 'No active projects. Everything is on hold or archived.' : 'Nothing matches those filters.'}
+          </p>
         </div>
-      ) : view === 'table' ? (
-        <div className="bg-white rounded-xl border border-[#e2e8f0] overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full border-collapse">
-              <thead>
-                <tr className="bg-[#FAFBFC] border-b border-[#E4EAF0]">
-                  <Th className="w-[54px] pl-3" />
-                  <Th className="w-[26px]" />
-                  <Th>Project</Th>
-                  <Th>Stage</Th>
-                  <Th>Phase</Th>
-                  <Th>Current milestone</Th>
-                  <Th>Owner</Th>
-                  <Th align="right">Target</Th>
-                  <Th align="right">Variance</Th>
-                </tr>
-              </thead>
-              <tbody>
-                {list.map((r, i) => (
-                  <BoardRow
-                    key={r.projectId}
-                    row={r}
-                    index={i}
-                    horizon={horizon}
-                    open={openId === r.projectId}
-                    isOver={overId === r.projectId && dragId !== r.projectId}
-                    dragging={dragId === r.projectId}
-                    busy={busy}
-                    ownerName={r.ownerId ? nameById.get(r.ownerId) ?? null : null}
-                    onToggle={() => setOpenId(openId === r.projectId ? null : r.projectId)}
-                    onDragStart={() => setDragId(r.projectId)}
-                    onDragEnter={() => setOverId(r.projectId)}
-                    onDrop={() => dropOn(r.projectId)}
-                    onPatchMilestone={patchMilestone}
-                    onPatchProject={patchProject}
-                  />
-                ))}
-              </tbody>
-            </table>
-          </div>
+      ) : view === 'gantt' ? (
+        <PriorityGantt rows={filtered} horizon={horizon} />
+      ) : groups ? (
+        <div className="flex flex-col gap-4">
+          {groups.map(g => (
+            <section key={g.key}>
+              <h2 className="flex items-baseline gap-2 m-0 mb-1.5">
+                <span className="text-[12.5px] font-bold text-[#181818]">{g.label}</span>
+                <span className="text-[11px] tabular-nums text-[#94a3b8]">{g.rows.length}</span>
+              </h2>
+              <BoardTable rows={g.rows} {...rowProps} />
+            </section>
+          ))}
         </div>
       ) : (
-        <PriorityGantt rows={list} horizon={horizon} />
+        <BoardTable rows={filtered} {...rowProps} />
       )}
 
       <p className="mt-3 mb-0 mx-0.5 text-[11.5px] text-[#9AA7B4]">
         {view === 'table'
-          ? 'Drag a row by its handle to set the order the team works this week — it is shared, so everyone sees the same list. Open a row to see the full plan across every discipline and edit dates in place.'
+          ? 'Drag a row by its handle to set the order the team works this week. Click a pencil to edit a field; nothing saves until you press Save.'
           : 'Same rows, same order as the table. Hover a marker for its milestone and date.'}
       </p>
+
+      {/* ── Lightning-style save bar ── */}
+      {pendingCount > 0 && (
+        <div className="fixed bottom-0 left-0 right-0 z-40 border-t border-[#E4EAF0] bg-white/95 backdrop-blur px-8 py-3
+                        flex items-center justify-between gap-4 shadow-[0_-2px_10px_rgba(47,62,80,0.08)]">
+          <span className="text-[12.5px] text-[#3E3E3C]">
+            <strong className="tabular-nums">{pendingCount}</strong> unsaved change{pendingCount === 1 ? '' : 's'}
+          </span>
+          <span className="flex items-center gap-2">
+            <button type="button" onClick={cancelEdits} disabled={busy}
+                    className="px-3.5 py-1.5 rounded-md text-[12.5px] font-semibold bg-white border border-[#DDDBDA] text-[#3E3E3C] hover:bg-[#f8fafc]">
+              Cancel
+            </button>
+            <button type="button" onClick={saveEdits} disabled={busy}
+                    className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-md text-[12.5px] font-semibold bg-[#70A0D0] text-white hover:bg-[#2C5485] disabled:opacity-50">
+              <Check size={13} />{busy ? 'Saving…' : 'Save'}
+            </button>
+          </span>
+        </div>
+      )}
     </div>
   )
 }
 
-// ── one project ───────────────────────────────────────────────────────
+// ── shared row props ──────────────────────────────────────────────────
 
-function BoardRow({
-  row, index, horizon, open, isOver, dragging, busy, ownerName,
-  onToggle, onDragStart, onDragEnter, onDrop, onPatchMilestone, onPatchProject,
-}: {
-  row: PriorityRow
-  index: number
+interface RowShared {
   horizon: Horizon
-  open: boolean
-  isOver: boolean
-  dragging: boolean
   busy: boolean
-  ownerName: string | null
-  onToggle: () => void
-  onDragStart: () => void
-  onDragEnter: () => void
-  onDrop: () => void
-  onPatchMilestone: (id: string, patch: Record<string, unknown>) => Promise<boolean>
-  onPatchProject: (id: string, patch: Record<string, unknown>) => Promise<boolean>
-}) {
+  editingKeys: Set<EditKey>
+  edits: Record<EditKey, PendingEdit>
+  openField: (k: EditKey) => void
+  stage: (k: EditKey, e: PendingEdit) => void
+  openId: string | null
+  setOpenId: (id: string | null) => void
+  dragId: string | null
+  overId: string | null
+  setDragId: (id: string | null) => void
+  setOverId: (id: string | null) => void
+  dropOn: (id: string) => void
+  dragEnabled: boolean
+}
+
+function BoardTable({ rows, ...s }: { rows: PriorityRow[] } & RowShared) {
+  return (
+    <div className="bg-white rounded-xl border border-[#e2e8f0] overflow-hidden">
+      <div className="overflow-x-auto">
+        <table className="w-full border-collapse">
+          <thead>
+            <tr className="bg-[#FAFBFC] border-b border-[#E4EAF0]">
+              <Th className="w-[54px] pl-3" />
+              <Th className="w-[26px]" />
+              <Th>Project</Th>
+              <Th>Stage</Th>
+              <Th>Momentum</Th>
+              <Th>Phase</Th>
+              <Th>Current milestone</Th>
+              <Th align="right">Target</Th>
+              <Th align="right">Variance</Th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r, i) => (
+              <BoardRow key={r.projectId} row={r} index={i} {...s} />
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
+function BoardRow({ row, index, ...s }: { row: PriorityRow; index: number } & RowShared) {
   const m = row.current
-  const tint = row.health === 'delayed' ? '#FFFBF5' : undefined
+  const open = s.openId === row.projectId
+  const isOver = s.overId === row.projectId && s.dragId !== row.projectId
+  const stageKey = `project:${row.projectId}:stage`
 
   return (
     <>
       <tr
-        draggable
-        onDragStart={onDragStart}
-        onDragEnter={onDragEnter}
+        draggable={s.dragEnabled}
+        onDragStart={() => s.setDragId(row.projectId)}
+        onDragEnter={() => s.setOverId(row.projectId)}
         onDragOver={e => e.preventDefault()}
-        onDrop={onDrop}
-        className="border-b border-[#F1F5F9] hover:bg-[#fafbfc] transition-colors"
+        onDrop={() => s.dropOn(row.projectId)}
+        className="group border-b border-[#F1F5F9] hover:bg-[#fafbfc] transition-colors"
         style={{
-          background: open ? '#FFFBF5' : tint,
+          background: open ? '#FFFBF5' : row.health === 'delayed' ? '#FFFBF5' : undefined,
           boxShadow: isOver ? 'inset 0 2px 0 #C8963A' : undefined,
-          opacity: dragging ? 0.4 : 1,
+          opacity: s.dragId === row.projectId ? 0.4 : 1,
         }}
       >
         <td className="py-2.5 pl-3 align-middle">
           <span className="inline-flex items-center gap-1.5">
-            <GripVertical size={13} className="text-[#C6D0DA] cursor-grab" />
+            <GripVertical size={13} className={s.dragEnabled ? 'text-[#C6D0DA] cursor-grab' : 'text-[#EDF1F5]'} />
             <span className="text-[11px] font-bold text-[#A9B5C1] w-[16px] text-right tabular-nums">{index + 1}</span>
           </span>
         </td>
         <td className="py-2.5 align-middle">
-          <button type="button" onClick={onToggle} aria-label={open ? 'Collapse' : 'Expand'}
-                  aria-expanded={open} className="flex items-center text-[#8A6519]">
+          <button type="button" onClick={() => s.setOpenId(open ? null : row.projectId)}
+                  aria-label={open ? 'Collapse' : 'Expand'} aria-expanded={open}
+                  className="flex items-center text-[#8A6519]">
             {open ? <ChevronDown size={13} /> : <ChevronRight size={13} className="text-[#C6D0DA]" />}
           </button>
         </td>
@@ -339,8 +433,7 @@ function BoardRow({
           <span className="inline-flex items-center gap-2">
             {row.health && (
               <i className="block w-[7px] h-[7px] rounded-full shrink-0"
-                 style={{ background: HEALTH_DOT[row.health] }}
-                 title={HEALTH_LABEL[row.health]} />
+                 style={{ background: HEALTH_DOT[row.health] }} title={HEALTH_LABEL[row.health]} />
             )}
             <Link href={`/projects/${row.projectId}`}
                   className="text-[13px] font-semibold text-[#181818] hover:text-[#2C5485] hover:underline">
@@ -349,19 +442,40 @@ function BoardRow({
           </span>
         </Td>
         <Td>
-          {/* Inline stage edit. Choosing On Hold drops the project off this
-              board on the next refresh, which is correct — a held project is
-              not a priority — so the control says so rather than surprising. */}
-          <select
-            value={row.stage}
-            disabled={busy}
-            onClick={e => e.stopPropagation()}
-            onChange={e => onPatchProject(row.projectId, { stage: e.target.value })}
-            title={'Change the project stage. Setting On Hold removes it from this board.'}
-            className="px-2 py-1 rounded-md text-[11.5px] font-semibold border border-[#D6DEE7] bg-white text-[#3E3E3C] cursor-pointer hover:bg-[#f8fafc]"
+          <EditableField
+            editKey={stageKey}
+            editing={s.editingKeys.has(stageKey)}
+            onOpen={() => s.openField(stageKey)}
+            display={row.stage}
           >
-            {SELECTABLE_STAGES.map(s => <option key={s} value={s}>{s}</option>)}
-          </select>
+            <select
+              autoFocus
+              value={(s.edits[stageKey]?.value as string) ?? row.stage}
+              disabled={s.busy}
+              onChange={e => s.stage(stageKey, {
+                kind: 'project', id: row.projectId, field: 'stage', value: e.target.value,
+              })}
+              title="Setting On Hold removes this project from the board once saved."
+              className="px-2 py-1 rounded-md text-[11.5px] font-semibold border border-[#C8963A] bg-white text-[#3E3E3C]"
+            >
+              {SELECTABLE_STAGES.map(st => <option key={st} value={st}>{st}</option>)}
+            </select>
+          </EditableField>
+        </Td>
+        <Td>
+          {row.momentum ? (
+            <span
+              className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-bold"
+              style={{
+                background: BAND_COLOR[row.momentum.band].bg,
+                color: BAND_COLOR[row.momentum.band].fg,
+              }}
+              title={momentumSummary(row.momentum)}
+            >
+              {BAND_LABEL[row.momentum.band]}
+              <span className="tabular-nums opacity-70">{row.momentum.score}</span>
+            </span>
+          ) : <span className="text-[#C6D0DA]">—</span>}
         </Td>
         <Td>
           {row.phaseLabel ? (
@@ -378,14 +492,11 @@ function BoardRow({
         <Td>
           {m ? (
             <span className="inline-flex items-center gap-1.5">
-              {m.is_critical && (
-                <i className="block w-[7px] h-[7px] rotate-45 shrink-0 bg-[#5B21B6]" title="Critical path" />
-              )}
+              {m.is_critical && <i className="block w-[7px] h-[7px] rotate-45 shrink-0 bg-[#5B21B6]" title="Critical path" />}
               <span className="text-[#181818] font-medium">{m.label}</span>
             </span>
           ) : <span className="text-[#C6D0DA]">Nothing planned</span>}
         </Td>
-        <Td>{ownerName ?? <span className="text-[#C6D0DA]">—</span>}</Td>
         <Td align="right" className="tabular-nums">
           {m?.end_date ? formatShortDate(m.end_date) : <span className="text-[#C6D0DA]">—</span>}
         </Td>
@@ -397,10 +508,9 @@ function BoardRow({
 
       {open && (
         <tr className="border-b border-[#F1F5F9]" style={{ background: '#FFFBF5' }}>
-          <td />
-          <td />
+          <td /><td />
           <td colSpan={7} className="px-3.5 pb-4 pt-0">
-            <ProjectPlan row={row} horizon={horizon} busy={busy} onPatch={onPatchMilestone} />
+            <ProjectPlan row={row} {...s} />
           </td>
         </tr>
       )}
@@ -408,20 +518,40 @@ function BoardRow({
   )
 }
 
-/** The expanded card: the whole plan, every discipline, dates editable. */
-function ProjectPlan({
-  row, horizon, busy, onPatch,
+/**
+ * A Lightning-style editable field: text plus a hover pencil, becoming a
+ * control only once the pencil is clicked.
+ */
+function EditableField({
+  editing, onOpen, display, children,
 }: {
-  row: PriorityRow
-  horizon: Horizon
-  busy: boolean
-  onPatch: (id: string, patch: Record<string, unknown>) => Promise<boolean>
+  editKey: EditKey
+  editing: boolean
+  onOpen: () => void
+  display: React.ReactNode
+  children: React.ReactNode
 }) {
-  // Only majors with something to show at this horizon. The hidden count is
-  // reported rather than silently dropped, so the horizon control's effect is
-  // legible instead of looking like missing data.
+  if (editing) return <>{children}</>
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      <span>{display}</span>
+      <button
+        type="button"
+        onClick={e => { e.stopPropagation(); onOpen() }}
+        aria-label="Edit"
+        className="opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity text-[#94a3b8] hover:text-[#C8963A]"
+      >
+        <Pencil size={11} />
+      </button>
+    </span>
+  )
+}
+
+// ── expanded card ─────────────────────────────────────────────────────
+
+function ProjectPlan({ row, ...s }: { row: PriorityRow } & RowShared) {
   const shown = row.groups
-    .map(g => ({ group: g, milestones: g.milestones.filter(m => inHorizon(m, horizon)) }))
+    .map(g => ({ group: g, milestones: g.milestones.filter(m => inHorizon(m, s.horizon)) }))
     .filter(x => x.milestones.length > 0)
 
   const hidden = row.groups.reduce((n, g) => n + g.milestones.length, 0)
@@ -433,14 +563,12 @@ function ProjectPlan({
         <p className="m-0 text-[12.5px] text-[#706E6B]">
           {row.groups.length === 0
             ? 'No milestones on this project yet.'
-            : `Nothing lands within ${HORIZON_LABEL[horizon]}. Widen the horizon to see the rest of the plan.`}
+            : `Nothing lands in the ${HORIZON_HINT[s.horizon]}. Widen the horizon to see the rest of the plan.`}
         </p>
       </div>
     )
   }
 
-  // Group the majors by discipline so the card reads as three columns of one
-  // plan rather than a flat list whose headings happen to change colour.
   const byWorkstream = new Map<string, typeof shown>()
   for (const x of shown) {
     const list = byWorkstream.get(x.group.workstream)
@@ -450,29 +578,27 @@ function ProjectPlan({
 
   return (
     <div className="rounded-lg bg-white border border-[#EDF1F5] p-3.5">
-      <div className="grid gap-x-5 gap-y-4" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))' }}>
+      <div className="grid gap-x-5 gap-y-4" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))' }}>
         {Array.from(byWorkstream.entries()).map(([ws, entries]) => (
           <section key={ws}>
             <h3 className="flex items-center gap-2 m-0 mb-2 pb-1.5 border-b border-[#EDF1F5]">
               <i className="block rounded-sm w-[3px] h-[13px]" style={{ background: LANE_HUE[ws] }} />
               <span className="text-[10px] font-bold uppercase tracking-[0.1em] text-[#55677A]">
-                {WORKSTREAM_LABELS[ws as keyof typeof WORKSTREAM_LABELS]}
+                {WORKSTREAM_LABELS[ws as WorkstreamKey]}
               </span>
             </h3>
             <div className="flex flex-col gap-3">
               {entries.map(({ group, milestones }) => (
-                <MajorBlock key={group.majorKey} group={group} milestones={milestones}
-                            busy={busy} onPatch={onPatch} />
+                <MajorBlock key={group.majorKey} group={group} milestones={milestones} {...s} />
               ))}
             </div>
           </section>
         ))}
       </div>
-
       <div className="flex items-center justify-between gap-3 flex-wrap mt-3.5 pt-2.5 border-t border-[#EDF1F5]">
         <span className="text-[11px] text-[#94a3b8]">
           {hidden > 0
-            ? `${hidden} milestone${hidden === 1 ? '' : 's'} outside ${HORIZON_LABEL[horizon]} or already complete.`
+            ? `${hidden} milestone${hidden === 1 ? '' : 's'} outside the ${HORIZON_HINT[s.horizon]} or already complete.`
             : 'Showing the whole plan.'}
         </span>
         <Link href={`/projects/${row.projectId}?tab=workstreams`}
@@ -484,15 +610,9 @@ function ProjectPlan({
   )
 }
 
-/** One major milestone and the sub-milestones under it. */
 function MajorBlock({
-  group, milestones, busy, onPatch,
-}: {
-  group: MajorGroup
-  milestones: Milestone[]
-  busy: boolean
-  onPatch: (id: string, patch: Record<string, unknown>) => Promise<boolean>
-}) {
+  group, milestones, ...s
+}: { group: MajorGroup; milestones: Milestone[] } & RowShared) {
   return (
     <div>
       <div className="flex items-baseline gap-2 mb-1">
@@ -506,32 +626,22 @@ function MajorBlock({
         </span>
       </div>
       <ul className="list-none m-0 p-0 flex flex-col gap-1">
-        {milestones.map(m => (
-          <SubMilestone key={m.id} milestone={m} busy={busy} onPatch={onPatch} />
-        ))}
+        {milestones.map(m => <SubMilestone key={m.id} milestone={m} {...s} />)}
       </ul>
     </div>
   )
 }
 
-/** One editable sub-milestone: label, status, target date. */
-function SubMilestone({
-  milestone, busy, onPatch,
-}: {
-  milestone: Milestone
-  busy: boolean
-  onPatch: (id: string, patch: Record<string, unknown>) => Promise<boolean>
-}) {
-  const [date, setDate] = useState(milestone.end_date ?? '')
-  const s = STATUS_STYLE[milestone.status]
+function SubMilestone({ milestone, ...s }: { milestone: Milestone } & RowShared) {
+  const statusKey = `milestone:${milestone.id}:status`
+  const dateKey = `milestone:${milestone.id}:end_date`
+  const st = STATUS_STYLE[milestone.status]
 
-  // Slip is shown per sub-milestone because that is where a date actually
-  // moved; the major's own variance is a roll-up of these.
   const slipped = milestone.end_date && milestone.baseline_date
     && milestone.end_date.slice(0, 10) > milestone.baseline_date.slice(0, 10)
 
   return (
-    <li className="flex items-center gap-2 py-1 pl-2 border-l-2 border-[#EDF1F5]">
+    <li className="group/ms flex items-center gap-2 py-1 pl-2 border-l-2 border-[#EDF1F5]">
       {milestone.is_critical && (
         <i className="block w-[6px] h-[6px] rotate-45 shrink-0 bg-[#5B21B6]" title="Critical path" />
       )}
@@ -541,32 +651,62 @@ function SubMilestone({
 
       {slipped && (
         <span className="text-[10px] font-bold text-[#b91c1c] shrink-0"
-              title={`Baseline ${formatDate(milestone.baseline_date)} — admin-locked`}>
-          slipped
-        </span>
+              title={`Baseline ${formatDate(milestone.baseline_date)} — admin-locked`}>slipped</span>
       )}
 
-      <select
-        value={milestone.status}
-        disabled={busy}
-        onChange={e => onPatch(milestone.id, { status: e.target.value })}
-        className="px-1.5 py-0.5 rounded text-[10.5px] font-semibold border cursor-pointer shrink-0"
-        style={{ background: s.bg, borderColor: s.border, color: s.text }}
-      >
-        {STATUSES.map(k => <option key={k} value={k}>{STATUS_STYLE[k].label}</option>)}
-      </select>
+      {/* status */}
+      <span className="shrink-0">
+        {s.editingKeys.has(statusKey) ? (
+          <select
+            autoFocus
+            value={(s.edits[statusKey]?.value as string) ?? milestone.status}
+            disabled={s.busy}
+            onChange={e => s.stage(statusKey, {
+              kind: 'milestone', id: milestone.id, field: 'status', value: e.target.value,
+            })}
+            className="px-1.5 py-0.5 rounded text-[10.5px] font-semibold border border-[#C8963A] bg-white"
+          >
+            {STATUSES.map(k => <option key={k} value={k}>{STATUS_STYLE[k].label}</option>)}
+          </select>
+        ) : (
+          <span className="inline-flex items-center gap-1">
+            <span className="px-1.5 py-0.5 rounded text-[10.5px] font-semibold border"
+                  style={{ background: st.bg, borderColor: st.border, color: st.text }}>
+              {st.label}
+            </span>
+            <button type="button" onClick={() => s.openField(statusKey)} aria-label="Edit status"
+                    className="opacity-0 group-hover/ms:opacity-100 focus:opacity-100 transition-opacity text-[#94a3b8] hover:text-[#C8963A]">
+              <Pencil size={10} />
+            </button>
+          </span>
+        )}
+      </span>
 
-      <input
-        type="date"
-        value={date}
-        disabled={busy}
-        onChange={e => setDate(e.target.value)}
-        onBlur={() => {
-          const next = date || null
-          if ((next ?? '') !== (milestone.end_date ?? '')) onPatch(milestone.id, { end_date: next })
-        }}
-        className="w-[122px] shrink-0 px-1.5 py-0.5 rounded text-[10.5px] text-[#181818] border border-[#D6DEE7] bg-white outline-none focus:border-[#C8963A]"
-      />
+      {/* target date */}
+      <span className="shrink-0 w-[132px] text-right">
+        {s.editingKeys.has(dateKey) ? (
+          <input
+            autoFocus
+            type="date"
+            value={(s.edits[dateKey]?.value as string) ?? milestone.end_date ?? ''}
+            disabled={s.busy}
+            onChange={e => s.stage(dateKey, {
+              kind: 'milestone', id: milestone.id, field: 'end_date', value: e.target.value,
+            })}
+            className="w-[122px] px-1.5 py-0.5 rounded text-[10.5px] text-[#181818] border border-[#C8963A] bg-white outline-none"
+          />
+        ) : (
+          <span className="inline-flex items-center gap-1">
+            <span className="text-[11px] tabular-nums text-[#3E3E3C]">
+              {milestone.end_date ? formatShortDate(milestone.end_date) : <span className="text-[#C6D0DA]">No date</span>}
+            </span>
+            <button type="button" onClick={() => s.openField(dateKey)} aria-label="Edit target date"
+                    className="opacity-0 group-hover/ms:opacity-100 focus:opacity-100 transition-opacity text-[#94a3b8] hover:text-[#C8963A]">
+              <Pencil size={10} />
+            </button>
+          </span>
+        )}
+      </span>
     </li>
   )
 }
@@ -576,17 +716,12 @@ function SubMilestone({
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 const LANE_LABEL_PX = 210
 
-/**
- * The same rows on a shared time axis.
- *
- * Markers, not bars: a project row here is a set of milestone dates rather than
- * one continuous span, so a bar would imply a duration no field describes.
- */
 function PriorityGantt({ rows, horizon }: { rows: PriorityRow[]; horizon: Horizon }) {
+  const span = HORIZON_GANTT_MONTHS[horizon]
   const now = new Date()
   const originY = now.getUTCFullYear()
   const originM = now.getUTCMonth()
-  const months = Array.from({ length: horizon }, (_, i) => {
+  const months = Array.from({ length: span }, (_, i) => {
     const k = originM + i
     return { y: originY + Math.floor(k / 12), m: ((k % 12) + 12) % 12 }
   })
@@ -595,45 +730,37 @@ function PriorityGantt({ rows, horizon }: { rows: PriorityRow[]; horizon: Horizo
     const [y, m, d] = iso.slice(0, 10).split('-').map(Number)
     const idx = (y - originY) * 12 + (m - 1) - originM
     const dim = new Date(Date.UTC(y, m, 0)).getUTCDate()
-    const f = (idx + (d - 1) / dim) / horizon
+    const f = (idx + (d - 1) / dim) / span
     return f >= 0 && f <= 1 ? f : null
   }
 
-  const colPx = horizon > 6 ? 48 : 64
-  const cols = `${LANE_LABEL_PX}px repeat(${horizon}, minmax(${colPx}px, 1fr))`
+  const colPx = span > 3 ? 56 : 120
+  const cols = `${LANE_LABEL_PX}px repeat(${span}, minmax(${colPx}px, 1fr))`
 
   return (
     <div className="bg-white rounded-xl border border-[#e2e8f0] px-4 pt-3.5 pb-3">
       <div className="overflow-x-auto">
-        <div className="relative" style={{ minWidth: LANE_LABEL_PX + horizon * colPx }}>
+        <div className="relative" style={{ minWidth: LANE_LABEL_PX + span * colPx }}>
           <div className="grid border-b border-[#E4EAF0]" style={{ gridTemplateColumns: cols }}>
             <span />
             {months.map((mo, i) => (
               <span key={`${mo.y}-${mo.m}`} className="flex items-baseline gap-1 pb-1.5 pl-2"
                     style={{ borderLeft: i === 0 ? undefined : '1px solid #F0F4F8' }}>
                 <span className="text-[9.5px] font-bold uppercase tracking-[0.07em] text-[#6E7E8E]">{MONTHS[mo.m]}</span>
-                {(mo.m === 0 || i === 0) && (
-                  <span className="text-[8.5px] text-[#A9B5C1]">&apos;{String(mo.y).slice(2)}</span>
-                )}
+                {(mo.m === 0 || i === 0) && <span className="text-[8.5px] text-[#A9B5C1]">&apos;{String(mo.y).slice(2)}</span>}
               </span>
             ))}
           </div>
 
           {rows.map((r, i) => {
-            // Every open milestone inside the window, across all disciplines —
-            // the Gantt is the same plan the expanded card shows, drawn on time.
-            const marks = r.groups
-              .flatMap(g => g.milestones)
+            const marks = r.groups.flatMap(g => g.milestones)
               .filter(m => m.status !== 'complete' && m.end_date && fraction(m.end_date) !== null)
             return (
-              <div key={r.projectId}
-                   className="grid items-center relative border-b border-[#F4F7FA] last:border-0"
+              <div key={r.projectId} className="grid items-center relative border-b border-[#F4F7FA] last:border-0"
                    style={{ gridTemplateColumns: cols, minHeight: 36, background: r.health === 'delayed' ? '#FFFBF5' : undefined }}>
                 <span className="flex items-center gap-2 pl-3 pr-2.5">
                   <span className="text-[11px] font-bold text-[#A9B5C1] w-[16px] tabular-nums">{i + 1}</span>
-                  {r.health && (
-                    <i className="block w-[7px] h-[7px] rounded-full shrink-0" style={{ background: HEALTH_DOT[r.health] }} />
-                  )}
+                  {r.health && <i className="block w-[7px] h-[7px] rounded-full shrink-0" style={{ background: HEALTH_DOT[r.health] }} />}
                   <Link href={`/projects/${r.projectId}`}
                         className="text-[12.5px] font-semibold text-[#181818] truncate hover:text-[#2C5485] hover:underline">
                     {r.name}
@@ -643,19 +770,16 @@ function PriorityGantt({ rows, horizon }: { rows: PriorityRow[]; horizon: Horizo
                   <span key={`${r.projectId}-${mo.y}-${mo.m}`} className="h-full"
                         style={{ borderLeft: c === 0 ? undefined : '1px solid #F0F4F8' }} />
                 ))}
-
                 {marks.map(m => (
-                  <span
-                    key={m.id}
-                    title={`${m.label} · ${formatShortDate(m.end_date)} · ${STATUS_STYLE[m.status].label}`}
-                    className="absolute top-1/2 w-[9px] h-[9px] -ml-[4.5px] -mt-[4.5px] rotate-45"
-                    style={{
-                      left: `calc(${LANE_LABEL_PX}px + (100% - ${LANE_LABEL_PX}px) * ${fraction(m.end_date as string)})`,
-                      background: m.is_critical ? '#5B21B6' : m.status === 'blocked' ? '#92400E' : '#E6C87A',
-                      opacity: m.status === 'not_started' && !m.is_critical ? 0.5 : 1,
-                      zIndex: 2,
-                    }}
-                  />
+                  <span key={m.id}
+                        title={`${m.label} · ${formatShortDate(m.end_date)} · ${STATUS_STYLE[m.status].label}`}
+                        className="absolute top-1/2 w-[9px] h-[9px] -ml-[4.5px] -mt-[4.5px] rotate-45"
+                        style={{
+                          left: `calc(${LANE_LABEL_PX}px + (100% - ${LANE_LABEL_PX}px) * ${fraction(m.end_date as string)})`,
+                          background: m.is_critical ? '#5B21B6' : m.status === 'blocked' ? '#92400E' : '#E6C87A',
+                          opacity: m.status === 'not_started' && !m.is_critical ? 0.5 : 1,
+                          zIndex: 2,
+                        }} />
                 ))}
               </div>
             )
@@ -669,7 +793,6 @@ function PriorityGantt({ rows, horizon }: { rows: PriorityRow[]; horizon: Horizo
           </div>
         </div>
       </div>
-
       <div className="flex flex-wrap gap-4 mt-3 pt-2.5 border-t border-[#E4EAF0] text-[11.5px] text-[#706E6B]">
         <span className="flex items-center gap-1.5"><i className="block w-2 h-2 rotate-45 bg-[#5B21B6]" />Critical path</span>
         <span className="flex items-center gap-1.5"><i className="block w-2 h-2 rotate-45 bg-[#E6C87A]" />In progress</span>
@@ -680,16 +803,37 @@ function PriorityGantt({ rows, horizon }: { rows: PriorityRow[]; horizon: Horizo
   )
 }
 
-// ── table primitives ──────────────────────────────────────────────────
+// ── primitives ────────────────────────────────────────────────────────
+
+function Select({
+  label, value, onChange, options,
+}: {
+  label: string
+  value: string
+  onChange: (v: string) => void
+  options: [string, string][]
+}) {
+  return (
+    <label className="inline-flex items-center gap-1.5">
+      <span className="sr-only">{label}</span>
+      <select
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        aria-label={label}
+        className="px-2.5 py-1.5 rounded-md text-[12px] font-medium border border-[#D6DEE7] bg-white text-[#3E3E3C] cursor-pointer hover:bg-[#f8fafc]"
+      >
+        {options.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+      </select>
+    </label>
+  )
+}
 
 function Th({ children, align = 'left', className = '' }: {
   children?: React.ReactNode; align?: 'left' | 'right'; className?: string
 }) {
   return (
     <th className={`px-3.5 py-2.5 text-[10px] font-bold uppercase tracking-[0.07em] text-[#706E6B] ${className}`}
-        style={{ textAlign: align }}>
-      {children}
-    </th>
+        style={{ textAlign: align }}>{children}</th>
   )
 }
 
@@ -698,8 +842,6 @@ function Td({ children, align = 'left', className = '', style }: {
 }) {
   return (
     <td className={`px-3.5 py-2.5 text-[12.5px] text-[#3E3E3C] align-middle ${className}`}
-        style={{ textAlign: align, ...style }}>
-      {children}
-    </td>
+        style={{ textAlign: align, ...style }}>{children}</td>
   )
 }

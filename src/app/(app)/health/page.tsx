@@ -15,6 +15,7 @@ import { redirect } from 'next/navigation'
 import { isManagerOrAbove } from '@/lib/permissions'
 import { type MajorDef, type Milestone } from '@/lib/workstreams'
 import { buildRows, orderRows } from '@/lib/portfolio-priority'
+import { scoreMomentum, WINDOW_DAYS, type ActivityEvent, type Momentum } from '@/lib/momentum'
 import { PriorityBoard } from '@/components/health/PriorityBoard'
 
 export const dynamic = 'force-dynamic'
@@ -42,7 +43,7 @@ export default async function HealthPage({
     await Promise.all([
       supabase
         .from('projects')
-        .select('id, name, project_number, stage, deal_health, on_hold_at')
+        .select('id, name, project_number, stage, deal_health, on_hold_at, tranche, assignee_id')
         // Archived is excluded here; On Hold is excluded in buildRows, which
         // also owns the reason why. Both are absent by default, not styled
         // differently — see the module header.
@@ -89,6 +90,61 @@ export default async function HealthPage({
     else stateByProject.set(s.project_id, [s])
   }
 
+  // ── Momentum inputs ────────────────────────────────────────────────
+  // Activity is fetched a little wider than the scoring window so "days since
+  // last activity" can report a real gap rather than saturating at the window
+  // edge — a project silent for seven weeks should say so, not ">30 days".
+  const since = new Date(Date.now() - WINDOW_DAYS * 3 * 86_400_000).toISOString()
+  const [{ data: activity }, { data: doneTasks }] = await Promise.all([
+    supabase
+      .from('activity_log')
+      .select('entity_type, entity_id, action, created_at, metadata')
+      .in('entity_type', ['project', 'workstream_milestone'])
+      .gte('created_at', since)
+      .order('created_at', { ascending: false })
+      .limit(4000) as unknown as Promise<{ data: any[] | null }>, // eslint-disable-line @typescript-eslint/no-explicit-any
+    supabase
+      .from('tasks')
+      .select('project_id, completed_at, workstream_milestone_id')
+      .not('completed_at', 'is', null)
+      .gte('completed_at', since) as unknown as Promise<{ data: any[] | null }>, // eslint-disable-line @typescript-eslint/no-explicit-any
+  ])
+
+  // activity_log rows carry their project in metadata for sub-entities, and ARE
+  // the project id for entity_type='project' — the same resolution the
+  // dashboard does.
+  const activityByProject = new Map<string, ActivityEvent[]>()
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  for (const e of ((activity ?? []) as any[])) {
+    const pid: string | undefined = e.entity_type === 'project' ? e.entity_id : e.metadata?.project_id
+    if (!pid) continue
+    const list = activityByProject.get(pid)
+    if (list) list.push(e as ActivityEvent)
+    else activityByProject.set(pid, [e as ActivityEvent])
+  }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const tasksByProject = new Map<string, any[]>()
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  for (const t of ((doneTasks ?? []) as any[])) {
+    if (!t.project_id) continue
+    const list = tasksByProject.get(t.project_id)
+    if (list) list.push(t)
+    else tasksByProject.set(t.project_id, [t])
+  }
+
+  const momentumByProject = new Map<string, Momentum>()
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  for (const p of ((projects ?? []) as any[])) {
+    momentumByProject.set(p.id, scoreMomentum(
+      activityByProject.get(p.id) ?? [],
+      tasksByProject.get(p.id) ?? [],
+      (milestonesByProject.get(p.id) ?? []) as Milestone[],
+    ))
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const pmNames = new Map<string, string>(((users ?? []) as any[]).map(u => [u.id, u.full_name ?? '']))
+
   const ranks = new Map<string, number>((priority ?? []).map(r => [r.project_id, r.rank]))
   // An empty table means nobody has overridden the automatic sort — that is the
   // difference between "manual order" and "urgency order", and it is the whole
@@ -102,6 +158,8 @@ export default async function HealthPage({
       milestonesByProject as Map<string, Milestone[]>,
       stateByProject,
       ranks,
+      pmNames,
+      momentumByProject,
     ),
     manual,
   )
