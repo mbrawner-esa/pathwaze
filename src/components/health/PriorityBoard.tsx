@@ -25,7 +25,7 @@ import {
 import { formatShortDate, formatDate } from '@/lib/utils'
 import { SELECTABLE_STAGES } from '@/lib/stages'
 import {
-  varianceLabel, HEALTH_LABEL, WORKSTREAM_LABELS, WORKSTREAMS,
+  HEALTH_LABEL, WORKSTREAM_LABELS, WORKSTREAMS,
   type MilestoneStatus, type Milestone, type WorkstreamKey,
 } from '@/lib/workstreams'
 import {
@@ -457,7 +457,6 @@ function BoardTable({ rows, ...s }: { rows: PriorityRow[] } & RowShared) {
               <Th>Phase</Th>
               <Th>Current milestone</Th>
               <Th align="right">Target</Th>
-              <Th align="right">Variance</Th>
             </tr>
           </thead>
           <tbody>
@@ -573,38 +572,29 @@ function BoardRow({ row, index, ...s }: { row: PriorityRow; index: number } & Ro
           ) : <span className="text-[#C6D0DA]" title="Not scored yet">—</span>}
         </Td>
         <Td>
-          {row.phaseLabel ? (
-            <span className="inline-flex items-center gap-1.5">
-              {row.phaseWorkstream && (
-                <i className="block rounded-sm w-[3px] h-[11px] shrink-0"
-                   style={{ background: LANE_HUE[row.phaseWorkstream] }}
-                   title={WORKSTREAM_LABELS[row.phaseWorkstream]} />
-              )}
-              {row.phaseLabel}
-            </span>
-          ) : <span className="text-[#C6D0DA]">—</span>}
+          {row.phaseLabel && row.phaseWorkstream
+            ? <MajorPill label={row.phaseLabel} workstream={row.phaseWorkstream} />
+            : <span className="text-[#C6D0DA]">—</span>}
         </Td>
         <Td>
           {m ? (
-            <span className="inline-flex items-center gap-1.5">
-              {m.is_critical && <i className="block w-[7px] h-[7px] rotate-45 shrink-0 bg-[#5B21B6]" title="Critical path" />}
-              <span className="text-[#181818] font-medium">{m.label}</span>
+            // Plain text, truncated. The critical-path marker moved to a border
+            // on the expanded card's rows: a symbol here competed with the label
+            // for a column that was already the tightest on the board.
+            <span className="block max-w-[210px] truncate text-[#181818] font-medium" title={m.label}>
+              {m.label}
             </span>
           ) : <span className="text-[#C6D0DA]">Nothing planned</span>}
         </Td>
         <Td align="right" className="tabular-nums">
           {m?.end_date ? formatShortDate(m.end_date) : <span className="text-[#C6D0DA]">—</span>}
         </Td>
-        <Td align="right" className="tabular-nums font-bold"
-            style={{ color: (row.variance ?? 0) < 0 ? '#b91c1c' : row.health === 'at_risk' ? '#92400E' : '#3E3E3C' }}>
-          {varianceLabel(row.variance) ?? <span className="text-[#C6D0DA] font-normal">—</span>}
-        </Td>
       </tr>
 
       {open && (
         <tr className="border-b border-[#F1F5F9]" style={{ background: '#FFFBF5' }}>
           <td /><td />
-          <td colSpan={8} className="px-3.5 pb-4 pt-0">
+          <td colSpan={7} className="px-3.5 pb-4 pt-0">
             <ProjectPlan row={row} onReorder={s.reorderMilestones} {...s} />
           </td>
         </tr>
@@ -706,10 +696,11 @@ function ProjectPlan({
   return (
     <div className="rounded-lg bg-white border border-[#EDF1F5]">
       <div className="flex items-center gap-2 px-3 py-1.5 border-b border-[#F1F5F9] bg-[#FAFBFC]">
-        <span className="w-[18px]" />
+        <span className="w-[13px]" />
         <span className="flex-1 text-[9.5px] font-bold uppercase tracking-[0.08em] text-[#94a3b8]">Milestone</span>
-        <span className="w-[150px] text-[9.5px] font-bold uppercase tracking-[0.08em] text-[#94a3b8]">Major milestone</span>
-        <span className="w-[96px] text-[9.5px] font-bold uppercase tracking-[0.08em] text-[#94a3b8]">Status</span>
+        <span className="w-[168px] text-[9.5px] font-bold uppercase tracking-[0.08em] text-[#94a3b8]">Major milestone</span>
+        <span className="w-[64px] text-center text-[9.5px] font-bold uppercase tracking-[0.08em] text-[#94a3b8]">Critical</span>
+        <span className="w-[86px] text-[9.5px] font-bold uppercase tracking-[0.08em] text-[#94a3b8]">Status</span>
         <span className="w-[104px] text-right text-[9.5px] font-bold uppercase tracking-[0.08em] text-[#94a3b8]">Due</span>
       </div>
 
@@ -760,8 +751,6 @@ function SubMilestone({
 } & RowShared) {
   const statusKey = `milestone:${milestone.id}:status`
   const dateKey = `milestone:${milestone.id}:end_date`
-  const st = STATUS_STYLE[milestone.status]
-
   const slipped = milestone.end_date && milestone.baseline_date
     && milestone.end_date.slice(0, 10) > milestone.baseline_date.slice(0, 10)
 
@@ -783,22 +772,26 @@ function SubMilestone({
     >
       <GripVertical size={11} className="text-[#D7E0E8] group-hover/ms:text-[#A9B5C1] cursor-grab shrink-0" />
 
-      {milestone.is_critical
-        ? <i className="block w-[6px] h-[6px] rotate-45 shrink-0 bg-[#5B21B6]" title="Critical path" />
-        : <i className="block w-[6px] shrink-0" />}
-
       <span className="flex-1 min-w-0 text-[12px] text-[#181818] truncate" title={milestone.label}>
         {milestone.label}
       </span>
 
-      <span className="w-[150px] shrink-0 flex items-center gap-1.5 min-w-0">
-        <i className="block rounded-sm w-[2px] h-[10px] shrink-0" style={{ background: LANE_HUE[workstream] }} />
-        <span className="text-[11px] text-[#706E6B] truncate" title={`${WORKSTREAM_LABELS[workstream]} · ${majorLabel}`}>
-          {majorLabel}
-        </span>
+      <span className="w-[168px] shrink-0 min-w-0">
+        <MajorPill label={majorLabel} workstream={workstream} />
       </span>
 
-      <span className="w-[96px] shrink-0">
+      {/* Critical path as its own column rather than a marker beside the name —
+          it is a property worth scanning down, which a symbol inline with the
+          label cannot support. */}
+      <span className="w-[64px] shrink-0 text-center">
+        {milestone.is_critical
+          ? <span className="inline-block px-1.5 py-0.5 rounded text-[9.5px] font-bold uppercase tracking-[0.05em] bg-[#F3EEFC] text-[#5B21B6] border border-[#DDD0F2]">
+              Critical
+            </span>
+          : <span className="text-[#D7E0E8]">—</span>}
+      </span>
+
+      <span className="w-[86px] shrink-0">
         {s.editingKeys.has(statusKey) ? (
           <select
             autoFocus
@@ -813,10 +806,9 @@ function SubMilestone({
           </select>
         ) : (
           <span className="inline-flex items-center gap-1">
-            <span className="px-1.5 py-0.5 rounded text-[10.5px] font-semibold border"
-                  style={{ background: st.bg, borderColor: st.border, color: st.text }}>
-              {st.label}
-            </span>
+            {/* Fixed width: status pills that size to their text make every row
+                a different shape and the column impossible to scan. */}
+            <StatusPill status={milestone.status} />
             <button type="button" onClick={() => s.openField(statusKey)} aria-label="Edit status"
                     className="opacity-0 group-hover/ms:opacity-100 focus:opacity-100 transition-opacity text-[#94a3b8] hover:text-[#C8963A]">
               <Pencil size={9} />
@@ -971,6 +963,40 @@ function Select({
         {options.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
       </select>
     </label>
+  )
+}
+
+/**
+ * A major milestone as a pill, tinted by its discipline.
+ *
+ * Replaces the thin colour bar that used to sit beside the name: the bar was a
+ * second element competing for a cramped cell, and the tint carries the same
+ * information with none of the extra geometry.
+ */
+function MajorPill({ label, workstream }: { label: string; workstream: WorkstreamKey }) {
+  const hue = LANE_HUE[workstream]
+  return (
+    <span
+      className="inline-block max-w-full truncate px-2 py-0.5 rounded-full text-[10.5px] font-semibold border"
+      style={{ background: `${hue}14`, borderColor: `${hue}40`, color: hue }}
+      title={`${WORKSTREAM_LABELS[workstream]} · ${label}`}
+    >
+      {label}
+    </span>
+  )
+}
+
+/** Status as a fixed-width pill, so the column reads as one straight edge. */
+function StatusPill({ status }: { status: MilestoneStatus }) {
+  const st = STATUS_STYLE[status]
+  return (
+    <span
+      className="inline-block w-[64px] text-center px-1 py-0.5 rounded text-[10px] font-semibold border truncate"
+      style={{ background: st.bg, borderColor: st.border, color: st.text }}
+      title={st.label}
+    >
+      {st.label}
+    </span>
   )
 }
 
