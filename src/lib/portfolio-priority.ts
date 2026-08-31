@@ -28,6 +28,7 @@ import {
   type WorkstreamKey, type ScheduleHealth,
 } from './workstreams'
 import type { Momentum } from './momentum'
+import type { ComplexityBand } from './complexity'
 
 /**
  * How far ahead the board looks.
@@ -109,6 +110,19 @@ export interface PriorityRow {
 
   // ── scores ──
   momentum: Momentum | null
+  /** last cached LLM judgement; null until the project has been scored */
+  complexity: ProjectComplexity | null
+}
+
+/** The cached row from `project_complexity` (migration 070). */
+export interface ProjectComplexity {
+  score: number
+  band: ComplexityBand
+  drivers: string[]
+  summary: string | null
+  scoredAt: string
+  /** true when the inputs have changed since this score was computed */
+  stale: boolean
 }
 
 // ── date helpers ──────────────────────────────────────────────────────
@@ -220,6 +234,7 @@ export function buildRows(
   ranks: Map<string, number>,
   pmNames: Map<string, string> = new Map(),
   momentumByProject: Map<string, Momentum> = new Map(),
+  complexityByProject: Map<string, ProjectComplexity> = new Map(),
 ): PriorityRow[] {
   const rows: PriorityRow[] = []
 
@@ -296,6 +311,7 @@ export function buildRows(
       workstreams: WORKSTREAMS.filter(ws =>
         open.some(m => defByKey.get(m.major_key)?.workstream === ws)),
       momentum: momentumByProject.get(p.id) ?? null,
+      complexity: complexityByProject.get(p.id) ?? null,
     })
   }
 

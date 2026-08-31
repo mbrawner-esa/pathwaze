@@ -14,7 +14,7 @@ import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import { isManagerOrAbove } from '@/lib/permissions'
 import { type MajorDef, type Milestone } from '@/lib/workstreams'
-import { buildRows, orderRows } from '@/lib/portfolio-priority'
+import { buildRows, orderRows, type ProjectComplexity } from '@/lib/portfolio-priority'
 import { scoreMomentum, WINDOW_DAYS, type ActivityEvent, type Momentum } from '@/lib/momentum'
 import { PriorityBoard } from '@/components/health/PriorityBoard'
 
@@ -54,6 +54,14 @@ export default async function HealthPage({
       supabase.from('workstream_major_state').select('project_id, major_key, owner_id, completed_at') as unknown as Promise<{ data: any[] | null }>, // eslint-disable-line @typescript-eslint/no-explicit-any
       supabase.from('portfolio_priority').select('project_id, rank, set_at, set_by').order('rank') as unknown as Promise<{ data: any[] | null }>, // eslint-disable-line @typescript-eslint/no-explicit-any
     ])
+
+  // Cached LLM complexity (migration 070). Read separately and defensively:
+  // scoring is optional, so a missing table or an unscored portfolio must leave
+  // the board fully working rather than taking the page down.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: complexityRows } = await supabase
+    .from('project_complexity')
+    .select('project_id, score, band, drivers, summary, scored_at, input_fingerprint') as unknown as { data: any[] | null }
 
   // Milestones for the whole portfolio, paged.
   //
@@ -145,6 +153,23 @@ export default async function HealthPage({
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const pmNames = new Map<string, string>(((users ?? []) as any[]).map(u => [u.id, u.full_name ?? '']))
 
+  const complexityByProject = new Map<string, ProjectComplexity>()
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  for (const c of ((complexityRows ?? []) as any[])) {
+    complexityByProject.set(c.project_id, {
+      score: c.score,
+      band: c.band,
+      drivers: Array.isArray(c.drivers) ? c.drivers : [],
+      summary: c.summary ?? null,
+      scoredAt: c.scored_at,
+      // Whether the inputs have moved on is only knowable by recomputing the
+      // fingerprint, which needs the notes and threads the scoring route
+      // fetches. The board does not pay for that on every render; the route
+      // decides staleness when it runs.
+      stale: false,
+    })
+  }
+
   const ranks = new Map<string, number>((priority ?? []).map(r => [r.project_id, r.rank]))
   // An empty table means nobody has overridden the automatic sort — that is the
   // difference between "manual order" and "urgency order", and it is the whole
@@ -160,6 +185,7 @@ export default async function HealthPage({
       ranks,
       pmNames,
       momentumByProject,
+      complexityByProject,
     ),
     manual,
   )
@@ -180,6 +206,7 @@ export default async function HealthPage({
       manual={manual}
       setAt={(priority ?? [])[0]?.set_at ?? null}
       heldCount={heldCount}
+      complexityScored={complexityByProject.size}
     />
   )
 }

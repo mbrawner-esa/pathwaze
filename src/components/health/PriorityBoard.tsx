@@ -20,7 +20,7 @@ import { useState, useMemo, useTransition } from 'react'
 import Link from 'next/link'
 import { useRouter, usePathname, useSearchParams } from 'next/navigation'
 import {
-  GripVertical, ChevronRight, ChevronDown, AlertTriangle, X, RotateCcw, Pencil, Check,
+  GripVertical, ChevronRight, ChevronDown, AlertTriangle, X, RotateCcw, Pencil, Check, Sparkles,
 } from 'lucide-react'
 import { formatShortDate, formatDate } from '@/lib/utils'
 import { SELECTABLE_STAGES } from '@/lib/stages'
@@ -34,6 +34,7 @@ import {
   type PriorityRow, type Horizon, type MajorGroup, type BoardFilters, type GroupBy,
 } from '@/lib/portfolio-priority'
 import { BAND_COLOR, BAND_LABEL, momentumSummary } from '@/lib/momentum'
+import { COMPLEXITY_BAND_COLOR, COMPLEXITY_BAND_LABEL } from '@/lib/complexity'
 
 const LANE_HUE: Record<string, string> = {
   commercial: '#6E879E',
@@ -59,7 +60,7 @@ type EditKey = string
 interface PendingEdit { kind: 'project' | 'milestone'; id: string; field: string; value: string }
 
 export function PriorityBoard({
-  rows, view, manual, setAt, heldCount,
+  rows, view, manual, setAt, heldCount, complexityScored,
 }: {
   rows: PriorityRow[]
   people: { id: string; name: string; avatarUrl: string | null }[]
@@ -67,6 +68,8 @@ export function PriorityBoard({
   manual: boolean
   setAt: string | null
   heldCount: number
+  /** how many projects already carry a cached complexity score */
+  complexityScored: number
 }) {
   const router = useRouter()
   const pathname = usePathname()
@@ -195,6 +198,35 @@ export function PriorityBoard({
     startTransition(() => router.refresh())
   }
 
+  /**
+   * Complexity scoring is an explicit action, never something a render triggers:
+   * it calls a third-party model and costs money per project. Unchanged
+   * projects are skipped server-side on their fingerprint, so pressing this
+   * twice does not bill twice.
+   */
+  const [scoring, setScoring] = useState(false)
+  const [scoreNote, setScoreNote] = useState<string | null>(null)
+  async function rescoreComplexity() {
+    setScoring(true)
+    setScoreNote(null)
+    setError(null)
+    try {
+      const res = await fetch('/api/complexity', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
+      })
+      const body = await res.json().catch(() => ({}))
+      if (!res.ok) setError(body.error || 'Complexity scoring failed.')
+      else {
+        setScoreNote(`Scored ${body.scored}${body.skipped ? `, ${body.skipped} unchanged` : ''}.`)
+        startTransition(() => router.refresh())
+      }
+    } catch {
+      setError('Complexity scoring failed.')
+    } finally {
+      setScoring(false)
+    }
+  }
+
   const dragEnabled = !filtersOn && groupBy === 'none'
 
   const rowProps = {
@@ -248,6 +280,18 @@ export function PriorityBoard({
                       className="underline font-bold hover:text-[#5E4511]">Reset to urgency</button>
             </span>
           )}
+          <button
+            type="button"
+            onClick={rescoreComplexity}
+            disabled={scoring || busy}
+            title={complexityScored === 0
+              ? 'Score project complexity from weekly notes and threads. Sends that text to the Gemini API.'
+              : 'Re-score complexity. Projects whose notes and counts have not changed are skipped.'}
+            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-[11.5px] font-semibold border border-[#D6DEE7] bg-white text-[#55677A] hover:bg-[#f8fafc] disabled:opacity-50"
+          >
+            <Sparkles size={11} />
+            {scoring ? 'Scoring…' : complexityScored === 0 ? 'Score complexity' : 'Re-score'}
+          </button>
           <span className="text-[12px] text-[#55677A]">
             <strong className="tabular-nums text-[#181818] font-bold">{filtered.length}</strong>
             {filtered.length !== list.length && <span className="text-[#94a3b8]"> of {list.length}</span>} active
@@ -278,6 +322,14 @@ export function PriorityBoard({
           </button>
         )}
       </div>
+
+      {scoreNote && (
+        <div className="flex items-start gap-2 mb-3 px-3 py-2 rounded text-[12.5px] bg-[#F0FDF4] text-[#166534]">
+          <Check size={13} className="mt-0.5 shrink-0" />
+          <span className="flex-1">{scoreNote}</span>
+          <button type="button" onClick={() => setScoreNote(null)} aria-label="Dismiss"><X size={13} /></button>
+        </div>
+      )}
 
       {error && (
         <div className="flex items-start gap-2 mb-3 px-3 py-2 rounded text-[12.5px] bg-[#FEF2F2] text-[#991B1B]">
@@ -378,6 +430,7 @@ function BoardTable({ rows, ...s }: { rows: PriorityRow[] } & RowShared) {
               <Th>Project</Th>
               <Th>Stage</Th>
               <Th>Momentum</Th>
+              <Th>Complexity</Th>
               <Th>Phase</Th>
               <Th>Current milestone</Th>
               <Th align="right">Target</Th>
@@ -478,6 +531,25 @@ function BoardRow({ row, index, ...s }: { row: PriorityRow; index: number } & Ro
           ) : <span className="text-[#C6D0DA]">—</span>}
         </Td>
         <Td>
+          {row.complexity ? (
+            <span
+              className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-bold"
+              style={{
+                background: COMPLEXITY_BAND_COLOR[row.complexity.band].bg,
+                color: COMPLEXITY_BAND_COLOR[row.complexity.band].fg,
+              }}
+              title={[
+                row.complexity.summary,
+                row.complexity.drivers.length ? `Drivers: ${row.complexity.drivers.join(' · ')}` : '',
+                `Scored ${formatShortDate(row.complexity.scoredAt)}`,
+              ].filter(Boolean).join('\n')}
+            >
+              {COMPLEXITY_BAND_LABEL[row.complexity.band]}
+              <span className="tabular-nums opacity-70">{row.complexity.score}</span>
+            </span>
+          ) : <span className="text-[#C6D0DA]" title="Not scored yet">—</span>}
+        </Td>
+        <Td>
           {row.phaseLabel ? (
             <span className="inline-flex items-center gap-1.5">
               {row.phaseWorkstream && (
@@ -509,7 +581,7 @@ function BoardRow({ row, index, ...s }: { row: PriorityRow; index: number } & Ro
       {open && (
         <tr className="border-b border-[#F1F5F9]" style={{ background: '#FFFBF5' }}>
           <td /><td />
-          <td colSpan={7} className="px-3.5 pb-4 pt-0">
+          <td colSpan={8} className="px-3.5 pb-4 pt-0">
             <ProjectPlan row={row} {...s} />
           </td>
         </tr>
