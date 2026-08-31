@@ -35,6 +35,7 @@ import {
 } from '@/lib/portfolio-priority'
 import { BAND_COLOR, BAND_LABEL, momentumSummary } from '@/lib/momentum'
 import { COMPLEXITY_BAND_COLOR, COMPLEXITY_BAND_LABEL } from '@/lib/complexity'
+import { MomentumChart } from './MomentumChart'
 
 const LANE_HUE: Record<string, string> = {
   commercial: '#6E879E',
@@ -368,6 +369,8 @@ export function PriorityBoard({
         </p>
       )}
 
+      {filtered.length > 0 && view === 'table' && <MomentumChart rows={filtered} />}
+
       {filtered.length === 0 ? (
         <div className="bg-white rounded-xl border border-[#e2e8f0] px-6 py-14 text-center">
           <p className="m-0 text-[13.5px] text-[#3E3E3C]">
@@ -455,7 +458,6 @@ function BoardTable({ rows, ...s }: { rows: PriorityRow[] } & RowShared) {
               <Th>Momentum</Th>
               <Th>Complexity</Th>
               <Th>Phase</Th>
-              <Th>Current milestone</Th>
               <Th align="right">Target</Th>
             </tr>
           </thead>
@@ -576,16 +578,6 @@ function BoardRow({ row, index, ...s }: { row: PriorityRow; index: number } & Ro
             ? <MajorPill label={row.phaseLabel} workstream={row.phaseWorkstream} />
             : <span className="text-[#C6D0DA]">—</span>}
         </Td>
-        <Td>
-          {m ? (
-            // Plain text, truncated. The critical-path marker moved to a border
-            // on the expanded card's rows: a symbol here competed with the label
-            // for a column that was already the tightest on the board.
-            <span className="block max-w-[210px] truncate text-[#181818] font-medium" title={m.label}>
-              {m.label}
-            </span>
-          ) : <span className="text-[#C6D0DA]">Nothing planned</span>}
-        </Td>
         <Td align="right" className="tabular-nums">
           {m?.end_date ? formatShortDate(m.end_date) : <span className="text-[#C6D0DA]">—</span>}
         </Td>
@@ -594,7 +586,7 @@ function BoardRow({ row, index, ...s }: { row: PriorityRow; index: number } & Ro
       {open && (
         <tr className="border-b border-[#F1F5F9]" style={{ background: '#FFFBF5' }}>
           <td /><td />
-          <td colSpan={7} className="px-3.5 pb-4 pt-0">
+          <td colSpan={6} className="px-3.5 pb-4 pt-0">
             <ProjectPlan row={row} onReorder={s.reorderMilestones} {...s} />
           </td>
         </tr>
@@ -657,7 +649,6 @@ function ProjectPlan({
     [row.groups])
 
   const visible = all.filter(x => inHorizon(x.milestone, s.horizon))
-  const hidden = all.length - visible.length
 
   /**
    * Reorder against the FULL list, not the visible subset.
@@ -721,11 +712,7 @@ function ProjectPlan({
         ))}
       </ul>
 
-      <div className="flex items-center justify-between gap-3 flex-wrap px-3 py-1.5 border-t border-[#F1F5F9]">
-        <span className="text-[11px] text-[#94a3b8]">
-          Drag to set this week&apos;s order
-          {hidden > 0 && ` · ${hidden} outside the ${HORIZON_HINT[s.horizon]} or complete`}
-        </span>
+      <div className="flex items-center justify-end px-3 py-1.5 border-t border-[#F1F5F9]">
         <Link href={`/projects/${row.projectId}?tab=workstreams`}
               className="text-[11.5px] font-semibold text-[#2C5485] hover:underline">
           Open Workstreams →
@@ -831,13 +818,11 @@ function SubMilestone({
           />
         ) : (
           <span className="inline-flex items-center gap-1 justify-end">
-            {slipped && (
-              <span className="text-[9.5px] font-bold text-[#b91c1c]"
-                    title={`Baseline ${formatDate(milestone.baseline_date)} — admin-locked`}>SLIP</span>
-            )}
-            <span className="text-[11px] tabular-nums text-[#3E3E3C]">
-              {milestone.end_date ? formatShortDate(milestone.end_date) : <span className="text-[#C6D0DA]">No date</span>}
-            </span>
+            <DatePill
+              date={milestone.end_date}
+              slipped={!!slipped}
+              baseline={milestone.baseline_date}
+            />
             <button type="button" onClick={() => s.openField(dateKey)} aria-label="Edit due date"
                     className="opacity-0 group-hover/ms:opacity-100 focus:opacity-100 transition-opacity text-[#94a3b8] hover:text-[#C8963A]">
               <Pencil size={9} />
@@ -974,14 +959,14 @@ function Select({
  * information with none of the extra geometry.
  */
 function MajorPill({ label, workstream }: { label: string; workstream: WorkstreamKey }) {
-  const hue = LANE_HUE[workstream]
   return (
     <span
-      className="inline-block max-w-full truncate px-2 py-0.5 rounded-full text-[10.5px] font-semibold border"
-      style={{ background: `${hue}14`, borderColor: `${hue}40`, color: hue }}
+      className="inline-flex items-center gap-1.5 max-w-full px-2 py-0.5 rounded-full text-[10.5px] font-semibold
+                 bg-[#F4F6F8] border border-[#E4EAF0] text-[#55677A]"
       title={`${WORKSTREAM_LABELS[workstream]} · ${label}`}
     >
-      {label}
+      <i className="block w-[5px] h-[5px] rounded-full shrink-0" style={{ background: LANE_HUE[workstream] }} />
+      <span className="truncate">{label}</span>
     </span>
   )
 }
@@ -991,11 +976,47 @@ function StatusPill({ status }: { status: MilestoneStatus }) {
   const st = STATUS_STYLE[status]
   return (
     <span
-      className="inline-block w-[64px] text-center px-1 py-0.5 rounded text-[10px] font-semibold border truncate"
+      className="inline-block w-[68px] text-center px-1 py-0.5 rounded-full text-[10px] font-semibold border truncate"
       style={{ background: st.bg, borderColor: st.border, color: st.text }}
       title={st.label}
     >
       {st.label}
+    </span>
+  )
+}
+
+/**
+ * Due date as a pill. Neutral normally; red when the target has moved past its
+ * baseline.
+ *
+ * This replaces a separate "SLIP" tag sitting beside the date. Two elements
+ * were saying one thing — that the date has moved — and the date is the thing
+ * that moved, so it should be what turns red.
+ */
+function DatePill({ date, slipped, baseline }: {
+  date: string | null
+  slipped: boolean
+  baseline: string | null
+}) {
+  if (!date) {
+    return (
+      <span className="inline-block w-[74px] text-center px-1.5 py-0.5 rounded-full text-[10px] font-semibold
+                       bg-[#F8FAFC] border border-[#EDF1F5] text-[#C6D0DA]">
+        No date
+      </span>
+    )
+  }
+  return (
+    <span
+      className="inline-block w-[74px] text-center px-1.5 py-0.5 rounded-full text-[10px] font-semibold tabular-nums border"
+      style={slipped
+        ? { background: '#FEF2F2', borderColor: '#F0B4B4', color: '#b91c1c' }
+        : { background: '#F4F6F8', borderColor: '#E4EAF0', color: '#3E3E3C' }}
+      title={slipped && baseline
+        ? `Slipped from its baseline of ${formatDate(baseline)} — the baseline is admin-locked`
+        : formatDate(date)}
+    >
+      {formatShortDate(date)}
     </span>
   )
 }
