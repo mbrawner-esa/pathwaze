@@ -4,30 +4,25 @@
 // put its effort this week", across every actively-worked project, for the
 // Director of Project Delivery and the PMs in the room with them.
 //
-// It is a MEETING surface, not a report: the order is draggable, dates and
-// statuses are editable in place, and held projects are absent entirely. What
-// it deliberately does NOT do is narrate history — /projects already carries
-// current status, and a "what changed" feed answers a question nobody asks
-// while planning the week ahead.
+// It is a MEETING surface, not a report: the order is draggable, stages and
+// milestone dates are editable in place, and held or archived projects are
+// absent entirely. What it deliberately does NOT do is narrate history —
+// /projects already carries current status, and a "what changed" feed answers
+// a question nobody asks while planning the week ahead.
 
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import { isManagerOrAbove } from '@/lib/permissions'
 import { type MajorDef, type Milestone } from '@/lib/workstreams'
-import {
-  buildRows, orderRows, HORIZONS,
-  type Horizon, type Lens,
-} from '@/lib/portfolio-priority'
+import { buildRows, orderRows } from '@/lib/portfolio-priority'
 import { PriorityBoard } from '@/components/health/PriorityBoard'
 
 export const dynamic = 'force-dynamic'
 
-const LENS_KEYS = ['overview', 'commercial', 'technical', 'approvals']
-
 export default async function HealthPage({
   searchParams,
 }: {
-  searchParams: Promise<{ lens?: string; horizon?: string; view?: string }>
+  searchParams: Promise<{ view?: string }>
 }) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -40,9 +35,6 @@ export default async function HealthPage({
   if (!isManagerOrAbove(profile?.role)) redirect('/dashboard')
 
   const sp = await searchParams
-  const lens = (LENS_KEYS.includes(sp.lens ?? '') ? sp.lens : 'overview') as Lens
-  const horizon = (HORIZONS.includes(Number(sp.horizon) as Horizon)
-    ? Number(sp.horizon) : 3) as Horizon
   const view = sp.view === 'gantt' ? 'gantt' : 'table'
 
   // ── Portfolio fetch ────────────────────────────────────────────────
@@ -51,6 +43,9 @@ export default async function HealthPage({
       supabase
         .from('projects')
         .select('id, name, project_number, stage, deal_health, on_hold_at')
+        // Archived is excluded here; On Hold is excluded in buildRows, which
+        // also owns the reason why. Both are absent by default, not styled
+        // differently — see the module header.
         .neq('stage', 'Archived')
         .order('name') as unknown as Promise<{ data: any[] | null }>, // eslint-disable-line @typescript-eslint/no-explicit-any
       supabase.from('users').select('id, full_name, avatar_url') as unknown as Promise<{ data: any[] | null }>, // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -64,7 +59,7 @@ export default async function HealthPage({
   // PostgREST caps a response at 1000 rows and 19 projects x ~48 milestones is
   // already ~900. Left unpaged this would start truncating silently as projects
   // are added, and the projects whose rows fell off the end would quietly lose
-  // their current milestone rather than erroring.
+  // their plan rather than erroring.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const wsMilestones: any[] = []
   const PAGE = 1000
@@ -107,8 +102,6 @@ export default async function HealthPage({
       milestonesByProject as Map<string, Milestone[]>,
       stateByProject,
       ranks,
-      lens,
-      horizon,
     ),
     manual,
   )
@@ -121,17 +114,13 @@ export default async function HealthPage({
   const heldCount = ((projects ?? []) as { on_hold_at: string | null }[])
     .filter(p => !!p.on_hold_at).length
 
-  const setAt = (priority ?? [])[0]?.set_at ?? null
-
   return (
     <PriorityBoard
       rows={rows}
       people={people}
-      lens={lens}
-      horizon={horizon}
       view={view}
       manual={manual}
-      setAt={setAt}
+      setAt={(priority ?? [])[0]?.set_at ?? null}
       heldCount={heldCount}
     />
   )

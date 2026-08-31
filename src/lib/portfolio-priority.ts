@@ -8,14 +8,14 @@
 // and re-orders it or moves a date while everyone is looking at it.
 //
 // Three rules shape this file:
-//   1. ONE ROW PER PROJECT. A project with four things in flight still reads as
-//      one line, because the unit of a portfolio conversation is the project.
-//      The row names the single most pressing milestone (see pickCurrent) and
-//      the project page carries the rest.
-//   2. HELD PROJECTS ARE NOT HERE AT ALL. Not greyed, not sorted last —
-//      excluded. A paused project has no schedule opinion (migration 068) and
-//      putting it on a priority list invites work on something deliberately
-//      parked.
+//   1. ONE ROW PER PROJECT, collapsed. A project with four things in flight
+//      still reads as one line; the row names the single most pressing
+//      milestone (see pickCurrent) and EXPANDING it shows the full plan across
+//      all three disciplines at once.
+//   2. HELD AND ARCHIVED PROJECTS ARE NOT HERE AT ALL. Not greyed, not sorted
+//      last — excluded. A paused project has no schedule opinion (migration
+//      068) and putting it on a priority list invites work on something
+//      deliberately parked.
 //   3. NOTHING IS RE-DERIVED. Variance, health and status come from
 //      `rollUpMajor` in `workstreams.ts`, which is the one place those rules
 //      live. This file selects and ranks; it does not recompute.
@@ -28,20 +28,35 @@ import {
   type WorkstreamKey, type ScheduleHealth,
 } from './workstreams'
 
-/** How far ahead the board is looking. Mirrors the horizon control in the UI. */
+/**
+ * How far ahead the board looks.
+ *
+ * This is a LENS ON DETAIL, not a filter on projects: every active project
+ * always has a row, and the horizon decides which of its sub-milestones are
+ * worth showing when the row is expanded. A 1-month view is "what are we
+ * actually touching now"; a 1-year view is the whole plan.
+ */
 export type Horizon = 1 | 3 | 6 | 12
 
 export const HORIZONS: Horizon[] = [1, 3, 6, 12]
 
 export const HORIZON_LABEL: Record<Horizon, string> = {
-  1: '1M', 3: '3M', 6: '6M', 12: '1Y',
+  1: '1 month', 3: '3 months', 6: '6 months', 12: '1 year',
 }
 
-/** Which lens the board is under. 'overview' spans all three workstreams. */
-export type Lens = 'overview' | WorkstreamKey
-
-/** The filter chips. A row must match EVERY active chip to survive. */
-export type PriorityFilter = 'delayed' | 'at_risk' | 'critical'
+/** A major milestone with the sub-milestones underneath it. */
+export interface MajorGroup {
+  majorKey: string
+  majorLabel: string
+  workstream: WorkstreamKey
+  /** every sub-milestone under this major, in its own sort order */
+  milestones: Milestone[]
+  /** the major's own derived state, so the group header can show a light */
+  health: ScheduleHealth | null
+  variance: number | null
+  doneCount: number
+  totalCount: number
+}
 
 export interface PriorityRow {
   projectId: string
@@ -60,10 +75,8 @@ export interface PriorityRow {
   health: ScheduleHealth | null
   /** signed days: positive is room before the target, negative is behind */
   variance: number | null
-  /** soonest future critical-path milestone inside the horizon */
-  nextCritical: { label: string; date: string } | null
-  /** true when any open milestone under this project is flagged critical */
-  hasCritical: boolean
+  /** the whole plan, every discipline, for the expanded card */
+  groups: MajorGroup[]
   /** manual rank from `portfolio_priority`, or null when unranked */
   rank: number | null
 }
@@ -91,10 +104,24 @@ export function horizonEnd(months: Horizon): number {
   return end.getTime() / MS_PER_DAY
 }
 
+/**
+ * Is this sub-milestone worth showing at the chosen horizon?
+ *
+ * Undated milestones always pass. They are the ones most likely to NEED a date,
+ * and hiding them behind a date filter would make the horizon control quietly
+ * conceal exactly the work the meeting exists to schedule. Anything already
+ * complete is dropped regardless — the card is a plan, not a record.
+ */
+export function inHorizon(m: Milestone, months: Horizon): boolean {
+  if (m.status === 'complete') return false
+  if (!m.end_date) return true
+  return dayNumber(m.end_date) <= horizonEnd(months)
+}
+
 // ── selection ─────────────────────────────────────────────────────────
 
 /**
- * The one milestone a project row should name.
+ * The one milestone a collapsed project row should name.
  *
  * Preference order, and the reasoning for it:
  *   1. BLOCKED — someone has said out loud that this is stuck. That outranks
@@ -137,31 +164,6 @@ export function pickCurrent(open: Milestone[]): Milestone | null {
   return (dated.length ? dated : open).sort(byDate)[0]
 }
 
-/**
- * The soonest critical-path milestone still ahead of us, inside the horizon.
- *
- * Deliberately excludes the current milestone: the row already names that one,
- * and repeating it in the "next critical" column would waste the column on
- * every row whose current work happens to be critical.
- */
-function pickNextCritical(
-  open: Milestone[],
-  currentId: string | null,
-  endOfHorizon: number,
-): { label: string; date: string } | null {
-  const today = todayNumber()
-  const candidates = open
-    .filter(m => m.is_critical && m.id !== currentId && m.end_date)
-    .filter(m => {
-      const d = dayNumber(m.end_date as string)
-      return d >= today && d <= endOfHorizon
-    })
-    .sort((a, b) => dayNumber(a.end_date as string) - dayNumber(b.end_date as string))
-
-  const pick = candidates[0]
-  return pick ? { label: pick.label, date: pick.end_date as string } : null
-}
-
 // ── the row build ─────────────────────────────────────────────────────
 
 export interface ProjectInput {
@@ -174,8 +176,11 @@ export interface ProjectInput {
 }
 
 /**
- * Build one row per project. Held projects are dropped here rather than
- * filtered downstream, so no later stage can accidentally reintroduce them.
+ * Build one row per project, each carrying its whole plan.
+ *
+ * Held projects are dropped here rather than filtered downstream, so no later
+ * stage can accidentally reintroduce them. Archived ones never reach this
+ * function — the query excludes them, the same way every other list does.
  */
 export function buildRows(
   projects: ProjectInput[],
@@ -183,11 +188,7 @@ export function buildRows(
   milestonesByProject: Map<string, Milestone[]>,
   stateByProject: Map<string, Pick<MajorState, 'major_key' | 'owner_id' | 'completed_at'>[]>,
   ranks: Map<string, number>,
-  lens: Lens,
-  horizon: Horizon,
 ): PriorityRow[] {
-  const endOfHorizon = horizonEnd(horizon)
-  const defByKey = new Map(defs.map(d => [d.key, d]))
   const rows: PriorityRow[] = []
 
   for (const p of projects) {
@@ -203,15 +204,8 @@ export function buildRows(
     const open = all.filter(m =>
       m.status !== 'complete' && !completedByKey.get(m.major_key))
 
-    // The lens narrows which milestones can drive the row, but never which
-    // projects appear: a project with no Commercial work still gets a lane, it
-    // just reads empty. Dropping it instead would make the row set jump around
-    // as you switch tabs, which is the one thing a comparison view must not do.
-    const inLens = lens === 'overview'
-      ? open
-      : open.filter(m => defByKey.get(m.major_key)?.workstream === lens)
-
-    const current = pickCurrent(inLens)
+    const current = pickCurrent(open)
+    const defByKey = new Map(defs.map(d => [d.key, d]))
     const phase = current ? defByKey.get(current.major_key) ?? null : null
 
     // Health and variance come from the current milestone's own major, so the
@@ -223,6 +217,28 @@ export function buildRows(
         phase, all, undefined, completedByKey.get(phase.key) ?? null, false)
       health = rollup.health
       variance = rollup.variance
+    }
+
+    // The full plan, every discipline in catalog order. Majors with no
+    // sub-milestones at all are omitted: an empty group is a row of chrome
+    // around nothing, and there are 18 majors on every project.
+    const groups: MajorGroup[] = []
+    for (const ws of WORKSTREAMS) {
+      for (const def of defs.filter(d => d.workstream === ws).sort((a, b) => a.sort_order - b.sort_order)) {
+        const mine = all.filter(m => m.major_key === def.key)
+        if (!mine.length) continue
+        const rollup = rollUpMajor(def, all, undefined, completedByKey.get(def.key) ?? null, false)
+        groups.push({
+          majorKey: def.key,
+          majorLabel: def.label,
+          workstream: ws,
+          milestones: [...mine].sort((a, b) => a.sort_order - b.sort_order),
+          health: rollup.health,
+          variance: rollup.variance,
+          doneCount: rollup.doneCount,
+          totalCount: rollup.milestoneCount,
+        })
+      }
     }
 
     rows.push({
@@ -237,8 +253,7 @@ export function buildRows(
       ownerId: current ? ownerByKey.get(current.major_key) ?? null : null,
       health,
       variance,
-      nextCritical: pickNextCritical(inLens, current?.id ?? null, endOfHorizon),
-      hasCritical: inLens.some(m => m.is_critical),
+      groups,
       rank: ranks.get(p.id) ?? null,
     })
   }
@@ -289,44 +304,3 @@ export function orderRows(rows: PriorityRow[], manual: boolean): PriorityRow[] {
     return byUrgency(a, b)
   })
 }
-
-// ── filtering ─────────────────────────────────────────────────────────
-
-/** Does a row satisfy one chip? */
-function matches(row: PriorityRow, f: PriorityFilter): boolean {
-  switch (f) {
-    case 'delayed':  return row.health === 'delayed'
-    case 'at_risk':  return row.health === 'at_risk'
-    case 'critical': return row.hasCritical
-  }
-}
-
-/**
- * Chips are AND-ed, not OR-ed.
- *
- * "Delayed + Critical path" means the delayed things that are ALSO on the
- * critical path — the shortest, most useful list in a planning meeting. OR-ing
- * them would grow the list as you add filters, which reads as broken.
- */
-export function applyFilters(rows: PriorityRow[], active: PriorityFilter[]): PriorityRow[] {
-  if (!active.length) return rows
-  return rows.filter(row => active.every(f => matches(row, f)))
-}
-
-/** Counts for the chip labels — always over the unfiltered set. */
-export function filterCounts(rows: PriorityRow[]): Record<PriorityFilter, number> {
-  return {
-    delayed: rows.filter(r => matches(r, 'delayed')).length,
-    at_risk: rows.filter(r => matches(r, 'at_risk')).length,
-    critical: rows.filter(r => matches(r, 'critical')).length,
-  }
-}
-
-/** Lens tabs, in the order the project tab already shows them. */
-export const LENSES: { key: Lens; label: string }[] = [
-  { key: 'overview', label: 'Overview' },
-  ...WORKSTREAMS.map(w => ({
-    key: w as Lens,
-    label: w.charAt(0).toUpperCase() + w.slice(1),
-  })),
-]

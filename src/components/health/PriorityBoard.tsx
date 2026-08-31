@@ -3,24 +3,32 @@
 // The portfolio priority board.
 //
 // A planning surface for a weekly meeting: the team looks at one list, drags it
-// into the order they intend to work, and moves a status or a date while
-// everyone is watching. Two views over the same rows in the same order — a
-// table (default) and a Gantt — because the same conversation needs both "what
-// are we doing" and "when does it land".
+// into the order they intend to work, and changes a stage, a status or a date
+// while everyone is watching.
 //
-// Density is deliberate. This is an operations tool, so the table is tight and
-// the controls sit on one line; the restraint is in WHAT is shown (one row per
-// project, one milestone per row), not in spacing it out.
+// Collapsed, a project is ONE row. Expanded, it is the whole plan — every
+// discipline at once, majors with their sub-milestones underneath, each date
+// editable in place. There is deliberately no per-workstream tab: in a planning
+// meeting you are asking "what is happening on this site", and answering that
+// behind three tabs makes the reader do the assembling.
+//
+// The horizon control filters DETAIL, not projects. Every active project keeps
+// its row at every horizon; the horizon decides how much of its plan is worth
+// showing.
 
 import { useState, useTransition } from 'react'
 import Link from 'next/link'
 import { useRouter, usePathname, useSearchParams } from 'next/navigation'
-import { GripVertical, ChevronRight, ChevronDown, AlertTriangle, X, RotateCcw, Calendar } from 'lucide-react'
+import { GripVertical, ChevronRight, ChevronDown, AlertTriangle, X, RotateCcw } from 'lucide-react'
 import { formatShortDate, formatDate } from '@/lib/utils'
-import { varianceLabel, HEALTH_LABEL, WORKSTREAM_LABELS, type MilestoneStatus } from '@/lib/workstreams'
+import { SELECTABLE_STAGES } from '@/lib/stages'
 import {
-  applyFilters, filterCounts, LENSES, HORIZONS, HORIZON_LABEL,
-  type PriorityRow, type PriorityFilter, type Horizon, type Lens,
+  varianceLabel, HEALTH_LABEL, WORKSTREAM_LABELS,
+  type MilestoneStatus, type Milestone,
+} from '@/lib/workstreams'
+import {
+  inHorizon, HORIZONS, HORIZON_LABEL,
+  type PriorityRow, type Horizon, type MajorGroup,
 } from '@/lib/portfolio-priority'
 
 /** Lane accent per workstream — same hues the project Overview uses. */
@@ -45,19 +53,11 @@ const STATUS_STYLE: Record<MilestoneStatus, { bg: string; border: string; text: 
 
 const STATUSES: MilestoneStatus[] = ['not_started', 'in_progress', 'blocked', 'complete']
 
-const CHIPS: { key: PriorityFilter; label: string; dot: string; border: string; text: string }[] = [
-  { key: 'delayed',  label: 'Delayed',       dot: '#ef4444', border: '#F0B4B4', text: '#b91c1c' },
-  { key: 'at_risk',  label: 'At risk',       dot: '#eab308', border: '#EFD79B', text: '#92400E' },
-  { key: 'critical', label: 'Critical path', dot: '#5B21B6', border: '#CBB6E8', text: '#5B21B6' },
-]
-
 export function PriorityBoard({
-  rows, people, lens, horizon, view, manual, setAt, heldCount,
+  rows, people, view, manual, setAt, heldCount,
 }: {
   rows: PriorityRow[]
   people: { id: string; name: string; avatarUrl: string | null }[]
-  lens: Lens
-  horizon: Horizon
   view: 'table' | 'gantt'
   manual: boolean
   setAt: string | null
@@ -68,7 +68,9 @@ export function PriorityBoard({
   const params = useSearchParams()
   const [, startTransition] = useTransition()
 
-  const [filters, setFilters] = useState<PriorityFilter[]>([])
+  // Horizon is client state, not a URL param: it only changes how much of an
+  // expanded card is shown, so a server round-trip would be latency for nothing.
+  const [horizon, setHorizon] = useState<Horizon>(3)
   const [dragId, setDragId] = useState<string | null>(null)
   const [overId, setOverId] = useState<string | null>(null)
   const [openId, setOpenId] = useState<string | null>(null)
@@ -78,19 +80,12 @@ export function PriorityBoard({
   const [optimistic, setOptimistic] = useState<PriorityRow[] | null>(null)
 
   const nameById = new Map(people.map(p => [p.id, p.name]))
-  const base = optimistic ?? rows
-  const counts = filterCounts(base)
-  const visible = applyFilters(base, filters)
+  const list = optimistic ?? rows
 
-  /** Build a URL with one param changed — the view/lens/horizon controls are links. */
   function withParam(key: string, value: string): string {
     const next = new URLSearchParams(params.toString())
     next.set(key, value)
     return `${pathname}?${next.toString()}`
-  }
-
-  function toggleFilter(f: PriorityFilter) {
-    setFilters(prev => prev.includes(f) ? prev.filter(x => x !== f) : [...prev, f])
   }
 
   async function call(url: string, init: RequestInit): Promise<boolean> {
@@ -116,24 +111,20 @@ export function PriorityBoard({
   /**
    * Drag-to-reprioritize. Same splice-then-PATCH shape the Workstreams plan
    * uses, so both reorder gestures behave identically.
-   *
-   * Reordering is disabled while a filter is on: the visible list is then a
-   * subset, and dropping row 2 onto row 5 of a filtered view says nothing about
-   * where it belongs among the rows you cannot see.
    */
   async function dropOn(targetId: string) {
     const dragging = dragId
     setDragId(null)
     setOverId(null)
-    if (!dragging || dragging === targetId || filters.length) return
+    if (!dragging || dragging === targetId) return
 
-    const ids = base.map(r => r.projectId)
+    const ids = list.map(r => r.projectId)
     const from = ids.indexOf(dragging)
     const to = ids.indexOf(targetId)
     if (from < 0 || to < 0) return
 
     ids.splice(to, 0, ...ids.splice(from, 1))
-    const byId = new Map(base.map(r => [r.projectId, r]))
+    const byId = new Map(list.map(r => [r.projectId, r]))
     setOptimistic(ids.map(id => byId.get(id) as PriorityRow))
 
     const ok = await call('/api/portfolio-priority', {
@@ -152,23 +143,28 @@ export function PriorityBoard({
     await call('/api/portfolio-priority', { method: 'DELETE' })
   }
 
-  /** Inline edit of the current milestone. */
-  async function patchMilestone(id: string, patch: Record<string, unknown>) {
-    await call(`/api/workstreams/milestones/${id}`, {
+  const patchMilestone = (id: string, patch: Record<string, unknown>) =>
+    call(`/api/workstreams/milestones/${id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(patch),
     })
-  }
+
+  const patchProject = (id: string, patch: Record<string, unknown>) =>
+    call(`/api/projects/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(patch),
+    })
 
   return (
-    <div className="px-8 py-9 max-w-[1400px] mx-auto">
+    <div className="px-8 py-9 max-w-[1440px] mx-auto">
       {/* ── Header + view switch ── */}
       <div className="mb-5 flex items-start justify-between gap-6 flex-wrap">
         <div>
           <h1 className="m-0 text-[26px] font-bold tracking-tight text-[#181818] leading-tight">Portfolio priority</h1>
           <p className="mt-1.5 mb-0 text-[13.5px] text-[#3E3E3C]">
-            Active projects only{manual ? '. Drag to set this week’s priority order.' : ', ordered by what needs attention first.'}
+            Active projects only{manual ? '. Drag to set this week’s order.' : ', ordered by what needs attention first.'}
           </p>
         </div>
         <div className="flex items-center gap-1 bg-white border border-[#D6DEE7] rounded-lg p-1">
@@ -185,63 +181,24 @@ export function PriorityBoard({
         </div>
       </div>
 
-      {/* ── Lens + horizon ── */}
-      <div className="flex items-center justify-between gap-5 flex-wrap mb-3">
-        <div className="flex items-center gap-1.5">
-          {LENSES.map(l => (
-            <Link
-              key={l.key}
-              href={withParam('lens', l.key)}
-              className={'inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-md text-[12.5px] font-semibold border transition-colors ' +
-                (lens === l.key
-                  ? 'bg-[#2F3E50] text-white border-[#2F3E50]'
-                  : 'bg-white text-[#55677A] border-[#D6DEE7] hover:bg-[#f8fafc]')}
-            >
-              {l.key !== 'overview' && (
-                <i className="block rounded-sm w-[3px] h-[12px]" style={{ background: LANE_HUE[l.key] }} />
-              )}
-              {l.label}
-            </Link>
-          ))}
-        </div>
-        <div className="flex items-center gap-1 bg-white border border-[#D6DEE7] rounded-lg p-[3px]">
-          {HORIZONS.map(h => (
-            <Link
-              key={h}
-              href={withParam('horizon', String(h))}
-              className={'px-2.5 py-1 rounded-[5px] text-[11.5px] font-semibold transition-colors ' +
-                (horizon === h ? 'bg-[#2F3E50] text-white' : 'text-[#55677A] hover:bg-[#f8fafc]')}
-            >
-              {HORIZON_LABEL[h]}
-            </Link>
-          ))}
-        </div>
-      </div>
-
-      {/* ── Filters + scope ── */}
+      {/* ── Horizon + order state ── */}
       <div className="flex items-center justify-between gap-5 flex-wrap mb-3.5">
-        <div className="flex items-center gap-1.5">
-          {CHIPS.map(c => {
-            const on = filters.includes(c.key)
-            return (
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] uppercase tracking-[0.11em] text-[#706E6B]">Show milestones within</span>
+          <div className="flex items-center gap-1 bg-white border border-[#D6DEE7] rounded-lg p-[3px]">
+            {HORIZONS.map(h => (
               <button
-                key={c.key}
+                key={h}
                 type="button"
-                onClick={() => toggleFilter(c.key)}
-                aria-pressed={on}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[12px] font-semibold border transition-colors"
-                style={on
-                  ? { background: c.text, borderColor: c.text, color: '#fff' }
-                  : { background: '#fff', borderColor: c.border, color: c.text }}
+                onClick={() => setHorizon(h)}
+                aria-pressed={horizon === h}
+                className={'px-2.5 py-1 rounded-[5px] text-[11.5px] font-semibold transition-colors ' +
+                  (horizon === h ? 'bg-[#2F3E50] text-white' : 'text-[#55677A] hover:bg-[#f8fafc]')}
               >
-                {c.key === 'critical'
-                  ? <i className="block w-[7px] h-[7px] rotate-45" style={{ background: on ? '#fff' : c.dot }} />
-                  : <i className="block w-[7px] h-[7px] rounded-full" style={{ background: on ? '#fff' : c.dot }} />}
-                {c.label}
-                <span className="tabular-nums opacity-60">{counts[c.key]}</span>
+                {HORIZON_LABEL[h]}
               </button>
-            )
-          })}
+            ))}
+          </div>
         </div>
         <div className="flex items-center gap-3">
           {manual && (
@@ -255,8 +212,8 @@ export function PriorityBoard({
             </span>
           )}
           <span className="text-[12px] text-[#55677A]">
-            <strong className="tabular-nums text-[#181818] font-bold">{base.length}</strong> active
-            {heldCount > 0 && <span className="text-[#94a3b8]"> · {heldCount} on hold, excluded</span>}
+            <strong className="tabular-nums text-[#181818] font-bold">{list.length}</strong> active
+            {heldCount > 0 && <span className="text-[#94a3b8]"> · {heldCount} on hold, hidden</span>}
           </span>
         </div>
       </div>
@@ -269,131 +226,84 @@ export function PriorityBoard({
         </div>
       )}
 
-      {filters.length > 0 && (
-        <p className="m-0 mb-2 text-[11.5px] text-[#94a3b8]">
-          Reordering is off while a filter is on — clear the filters to drag.
-        </p>
-      )}
-
-      {visible.length === 0 ? (
+      {list.length === 0 ? (
         <div className="bg-white rounded-xl border border-[#e2e8f0] px-6 py-14 text-center">
-          <p className="m-0 text-[13.5px] text-[#3E3E3C]">
-            {base.length === 0
-              ? 'No active projects. Everything is on hold or archived.'
-              : 'Nothing matches those filters.'}
-          </p>
+          <p className="m-0 text-[13.5px] text-[#3E3E3C]">No active projects. Everything is on hold or archived.</p>
         </div>
       ) : view === 'table' ? (
-        <PriorityTable
-          rows={visible}
-          nameById={nameById}
-          openId={openId}
-          setOpenId={setOpenId}
-          dragId={dragId}
-          overId={overId}
-          setDragId={setDragId}
-          setOverId={setOverId}
-          dropOn={dropOn}
-          dragEnabled={filters.length === 0}
-          busy={busy}
-          onPatch={patchMilestone}
-        />
+        <div className="bg-white rounded-xl border border-[#e2e8f0] overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse">
+              <thead>
+                <tr className="bg-[#FAFBFC] border-b border-[#E4EAF0]">
+                  <Th className="w-[54px] pl-3" />
+                  <Th className="w-[26px]" />
+                  <Th>Project</Th>
+                  <Th>Stage</Th>
+                  <Th>Phase</Th>
+                  <Th>Current milestone</Th>
+                  <Th>Owner</Th>
+                  <Th align="right">Target</Th>
+                  <Th align="right">Variance</Th>
+                </tr>
+              </thead>
+              <tbody>
+                {list.map((r, i) => (
+                  <BoardRow
+                    key={r.projectId}
+                    row={r}
+                    index={i}
+                    horizon={horizon}
+                    open={openId === r.projectId}
+                    isOver={overId === r.projectId && dragId !== r.projectId}
+                    dragging={dragId === r.projectId}
+                    busy={busy}
+                    ownerName={r.ownerId ? nameById.get(r.ownerId) ?? null : null}
+                    onToggle={() => setOpenId(openId === r.projectId ? null : r.projectId)}
+                    onDragStart={() => setDragId(r.projectId)}
+                    onDragEnter={() => setOverId(r.projectId)}
+                    onDrop={() => dropOn(r.projectId)}
+                    onPatchMilestone={patchMilestone}
+                    onPatchProject={patchProject}
+                  />
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
       ) : (
-        <PriorityGantt rows={visible} horizon={horizon} />
+        <PriorityGantt rows={list} horizon={horizon} />
       )}
 
       <p className="mt-3 mb-0 mx-0.5 text-[11.5px] text-[#9AA7B4]">
         {view === 'table'
-          ? 'Drag a row by its handle to set the order the team works this week — it is shared, so everyone sees the same list. Click a row to read its latest note and change status or target date.'
+          ? 'Drag a row by its handle to set the order the team works this week — it is shared, so everyone sees the same list. Open a row to see the full plan across every discipline and edit dates in place.'
           : 'Same rows, same order as the table. Hover a marker for its milestone and date.'}
       </p>
     </div>
   )
 }
 
-// ── table ─────────────────────────────────────────────────────────────
+// ── one project ───────────────────────────────────────────────────────
 
-function PriorityTable({
-  rows, nameById, openId, setOpenId, dragId, overId, setDragId, setOverId,
-  dropOn, dragEnabled, busy, onPatch,
-}: {
-  rows: PriorityRow[]
-  nameById: Map<string, string>
-  openId: string | null
-  setOpenId: (id: string | null) => void
-  dragId: string | null
-  overId: string | null
-  setDragId: (id: string | null) => void
-  setOverId: (id: string | null) => void
-  dropOn: (id: string) => void
-  dragEnabled: boolean
-  busy: boolean
-  onPatch: (id: string, patch: Record<string, unknown>) => Promise<void>
-}) {
-  return (
-    <div className="bg-white rounded-xl border border-[#e2e8f0] overflow-hidden">
-      <div className="overflow-x-auto">
-        <table className="w-full border-collapse">
-          <thead>
-            <tr className="bg-[#FAFBFC] border-b border-[#E4EAF0]">
-              <Th className="w-[52px] pl-3" />
-              <Th className="w-[28px]" />
-              <Th>Project</Th>
-              <Th>Phase</Th>
-              <Th>Current milestone</Th>
-              <Th>Owner</Th>
-              <Th align="right">Target</Th>
-              <Th align="right">Variance</Th>
-              <Th>Next critical</Th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((r, i) => {
-              const open = openId === r.projectId
-              const isOver = overId === r.projectId && dragId !== r.projectId
-              return (
-                <PriorityRowPair
-                  key={r.projectId}
-                  row={r}
-                  index={i}
-                  open={open}
-                  isOver={isOver}
-                  dragging={dragId === r.projectId}
-                  dragEnabled={dragEnabled}
-                  busy={busy}
-                  ownerName={r.ownerId ? nameById.get(r.ownerId) ?? null : null}
-                  onToggle={() => setOpenId(open ? null : r.projectId)}
-                  onDragStart={() => setDragId(r.projectId)}
-                  onDragEnter={() => setOverId(r.projectId)}
-                  onDrop={() => dropOn(r.projectId)}
-                  onPatch={onPatch}
-                />
-              )
-            })}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  )
-}
-
-function PriorityRowPair({
-  row, index, open, isOver, dragging, dragEnabled, busy, ownerName,
-  onToggle, onDragStart, onDragEnter, onDrop, onPatch,
+function BoardRow({
+  row, index, horizon, open, isOver, dragging, busy, ownerName,
+  onToggle, onDragStart, onDragEnter, onDrop, onPatchMilestone, onPatchProject,
 }: {
   row: PriorityRow
   index: number
+  horizon: Horizon
   open: boolean
   isOver: boolean
   dragging: boolean
-  dragEnabled: boolean
   busy: boolean
   ownerName: string | null
   onToggle: () => void
   onDragStart: () => void
   onDragEnter: () => void
   onDrop: () => void
-  onPatch: (id: string, patch: Record<string, unknown>) => Promise<void>
+  onPatchMilestone: (id: string, patch: Record<string, unknown>) => Promise<boolean>
+  onPatchProject: (id: string, patch: Record<string, unknown>) => Promise<boolean>
 }) {
   const m = row.current
   const tint = row.health === 'delayed' ? '#FFFBF5' : undefined
@@ -401,7 +311,7 @@ function PriorityRowPair({
   return (
     <>
       <tr
-        draggable={dragEnabled}
+        draggable
         onDragStart={onDragStart}
         onDragEnter={onDragEnter}
         onDragOver={e => e.preventDefault()}
@@ -415,16 +325,13 @@ function PriorityRowPair({
       >
         <td className="py-2.5 pl-3 align-middle">
           <span className="inline-flex items-center gap-1.5">
-            <GripVertical
-              size={13}
-              className={dragEnabled ? 'text-[#C6D0DA] cursor-grab' : 'text-[#EDF1F5]'}
-            />
+            <GripVertical size={13} className="text-[#C6D0DA] cursor-grab" />
             <span className="text-[11px] font-bold text-[#A9B5C1] w-[16px] text-right tabular-nums">{index + 1}</span>
           </span>
         </td>
         <td className="py-2.5 align-middle">
           <button type="button" onClick={onToggle} aria-label={open ? 'Collapse' : 'Expand'}
-                  className="flex items-center text-[#8A6519]">
+                  aria-expanded={open} className="flex items-center text-[#8A6519]">
             {open ? <ChevronDown size={13} /> : <ChevronRight size={13} className="text-[#C6D0DA]" />}
           </button>
         </td>
@@ -440,6 +347,21 @@ function PriorityRowPair({
               {row.name}
             </Link>
           </span>
+        </Td>
+        <Td>
+          {/* Inline stage edit. Choosing On Hold drops the project off this
+              board on the next refresh, which is correct — a held project is
+              not a priority — so the control says so rather than surprising. */}
+          <select
+            value={row.stage}
+            disabled={busy}
+            onClick={e => e.stopPropagation()}
+            onChange={e => onPatchProject(row.projectId, { stage: e.target.value })}
+            title={'Change the project stage. Setting On Hold removes it from this board.'}
+            className="px-2 py-1 rounded-md text-[11.5px] font-semibold border border-[#D6DEE7] bg-white text-[#3E3E3C] cursor-pointer hover:bg-[#f8fafc]"
+          >
+            {SELECTABLE_STAGES.map(s => <option key={s} value={s}>{s}</option>)}
+          </select>
         </Td>
         <Td>
           {row.phaseLabel ? (
@@ -471,19 +393,14 @@ function PriorityRowPair({
             style={{ color: (row.variance ?? 0) < 0 ? '#b91c1c' : row.health === 'at_risk' ? '#92400E' : '#3E3E3C' }}>
           {varianceLabel(row.variance) ?? <span className="text-[#C6D0DA] font-normal">—</span>}
         </Td>
-        <Td className="text-[#706E6B]">
-          {row.nextCritical
-            ? `${row.nextCritical.label} · ${formatShortDate(row.nextCritical.date)}`
-            : <span className="text-[#C6D0DA]">None in window</span>}
-        </Td>
       </tr>
 
-      {open && m && (
+      {open && (
         <tr className="border-b border-[#F1F5F9]" style={{ background: '#FFFBF5' }}>
           <td />
           <td />
-          <td colSpan={7} className="px-3.5 pb-3.5 pt-0">
-            <MilestoneDetail row={row} milestone={m} busy={busy} onPatch={onPatch} />
+          <td colSpan={7} className="px-3.5 pb-4 pt-0">
+            <ProjectPlan row={row} horizon={horizon} busy={busy} onPatch={onPatchMilestone} />
           </td>
         </tr>
       )}
@@ -491,77 +408,166 @@ function PriorityRowPair({
   )
 }
 
-/** The expanded row: latest note plus the two fields worth changing in a meeting. */
-function MilestoneDetail({
-  row, milestone, busy, onPatch,
+/** The expanded card: the whole plan, every discipline, dates editable. */
+function ProjectPlan({
+  row, horizon, busy, onPatch,
 }: {
   row: PriorityRow
-  milestone: NonNullable<PriorityRow['current']>
+  horizon: Horizon
   busy: boolean
-  onPatch: (id: string, patch: Record<string, unknown>) => Promise<void>
+  onPatch: (id: string, patch: Record<string, unknown>) => Promise<boolean>
+}) {
+  // Only majors with something to show at this horizon. The hidden count is
+  // reported rather than silently dropped, so the horizon control's effect is
+  // legible instead of looking like missing data.
+  const shown = row.groups
+    .map(g => ({ group: g, milestones: g.milestones.filter(m => inHorizon(m, horizon)) }))
+    .filter(x => x.milestones.length > 0)
+
+  const hidden = row.groups.reduce((n, g) => n + g.milestones.length, 0)
+    - shown.reduce((n, x) => n + x.milestones.length, 0)
+
+  if (!shown.length) {
+    return (
+      <div className="rounded-lg bg-white border border-[#EDF1F5] px-4 py-6 text-center">
+        <p className="m-0 text-[12.5px] text-[#706E6B]">
+          {row.groups.length === 0
+            ? 'No milestones on this project yet.'
+            : `Nothing lands within ${HORIZON_LABEL[horizon]}. Widen the horizon to see the rest of the plan.`}
+        </p>
+      </div>
+    )
+  }
+
+  // Group the majors by discipline so the card reads as three columns of one
+  // plan rather than a flat list whose headings happen to change colour.
+  const byWorkstream = new Map<string, typeof shown>()
+  for (const x of shown) {
+    const list = byWorkstream.get(x.group.workstream)
+    if (list) list.push(x)
+    else byWorkstream.set(x.group.workstream, [x])
+  }
+
+  return (
+    <div className="rounded-lg bg-white border border-[#EDF1F5] p-3.5">
+      <div className="grid gap-x-5 gap-y-4" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))' }}>
+        {Array.from(byWorkstream.entries()).map(([ws, entries]) => (
+          <section key={ws}>
+            <h3 className="flex items-center gap-2 m-0 mb-2 pb-1.5 border-b border-[#EDF1F5]">
+              <i className="block rounded-sm w-[3px] h-[13px]" style={{ background: LANE_HUE[ws] }} />
+              <span className="text-[10px] font-bold uppercase tracking-[0.1em] text-[#55677A]">
+                {WORKSTREAM_LABELS[ws as keyof typeof WORKSTREAM_LABELS]}
+              </span>
+            </h3>
+            <div className="flex flex-col gap-3">
+              {entries.map(({ group, milestones }) => (
+                <MajorBlock key={group.majorKey} group={group} milestones={milestones}
+                            busy={busy} onPatch={onPatch} />
+              ))}
+            </div>
+          </section>
+        ))}
+      </div>
+
+      <div className="flex items-center justify-between gap-3 flex-wrap mt-3.5 pt-2.5 border-t border-[#EDF1F5]">
+        <span className="text-[11px] text-[#94a3b8]">
+          {hidden > 0
+            ? `${hidden} milestone${hidden === 1 ? '' : 's'} outside ${HORIZON_LABEL[horizon]} or already complete.`
+            : 'Showing the whole plan.'}
+        </span>
+        <Link href={`/projects/${row.projectId}?tab=workstreams`}
+              className="text-[12px] font-semibold text-[#2C5485] hover:underline">
+          Open Workstreams →
+        </Link>
+      </div>
+    </div>
+  )
+}
+
+/** One major milestone and the sub-milestones under it. */
+function MajorBlock({
+  group, milestones, busy, onPatch,
+}: {
+  group: MajorGroup
+  milestones: Milestone[]
+  busy: boolean
+  onPatch: (id: string, patch: Record<string, unknown>) => Promise<boolean>
+}) {
+  return (
+    <div>
+      <div className="flex items-baseline gap-2 mb-1">
+        <span className="text-[12.5px] font-semibold text-[#181818]">{group.majorLabel}</span>
+        {group.health && (
+          <i className="block w-[6px] h-[6px] rounded-full shrink-0"
+             style={{ background: HEALTH_DOT[group.health] }} title={HEALTH_LABEL[group.health]} />
+        )}
+        <span className="ml-auto text-[10.5px] tabular-nums text-[#94a3b8]">
+          {group.doneCount}/{group.totalCount}
+        </span>
+      </div>
+      <ul className="list-none m-0 p-0 flex flex-col gap-1">
+        {milestones.map(m => (
+          <SubMilestone key={m.id} milestone={m} busy={busy} onPatch={onPatch} />
+        ))}
+      </ul>
+    </div>
+  )
+}
+
+/** One editable sub-milestone: label, status, target date. */
+function SubMilestone({
+  milestone, busy, onPatch,
+}: {
+  milestone: Milestone
+  busy: boolean
+  onPatch: (id: string, patch: Record<string, unknown>) => Promise<boolean>
 }) {
   const [date, setDate] = useState(milestone.end_date ?? '')
   const s = STATUS_STYLE[milestone.status]
 
+  // Slip is shown per sub-milestone because that is where a date actually
+  // moved; the major's own variance is a roll-up of these.
+  const slipped = milestone.end_date && milestone.baseline_date
+    && milestone.end_date.slice(0, 10) > milestone.baseline_date.slice(0, 10)
+
   return (
-    <div className="flex gap-3.5 flex-wrap items-stretch">
-      <div className="flex-1 min-w-[320px] px-3.5 py-3 rounded-lg bg-white border border-[#EDF1F5]">
-        <p className="m-0 mb-1 text-[9.5px] font-bold uppercase tracking-[0.07em] text-[#94a3b8]">
-          {milestone.risk ? 'Risk' : 'Notes'}
-        </p>
-        {milestone.risk || milestone.notes ? (
-          <div className="text-[12.5px] text-[#3E3E3C] leading-snug [&_p]:m-0 [&_ul]:my-1 [&_ul]:pl-4"
-               dangerouslySetInnerHTML={{ __html: milestone.risk || milestone.notes || '' }} />
-        ) : (
-          <p className="m-0 text-[12.5px] text-[#94a3b8]">
-            No note yet. Add one on the project&apos;s Workstreams tab.
-          </p>
-        )}
-      </div>
-
-      <div className="flex items-end gap-2 flex-wrap">
-        <label className="block">
-          <span className="block mb-1 text-[9.5px] font-bold uppercase tracking-[0.06em] text-[#706E6B]">Status</span>
-          <select
-            value={milestone.status}
-            disabled={busy}
-            onChange={e => onPatch(milestone.id, { status: e.target.value })}
-            className="px-2.5 py-1.5 rounded-md text-[12px] font-semibold border cursor-pointer"
-            style={{ background: s.bg, borderColor: s.border, color: s.text }}
-          >
-            {STATUSES.map(k => <option key={k} value={k}>{STATUS_STYLE[k].label}</option>)}
-          </select>
-        </label>
-
-        <label className="block">
-          <span className="block mb-1 text-[9.5px] font-bold uppercase tracking-[0.06em] text-[#706E6B]">Target</span>
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-[#D6DEE7] bg-white">
-            <Calendar size={11} className="text-[#6E879E]" />
-            <input
-              type="date"
-              value={date}
-              disabled={busy}
-              onChange={e => setDate(e.target.value)}
-              onBlur={() => {
-                if (date && date !== milestone.end_date) onPatch(milestone.id, { end_date: date })
-              }}
-              className="text-[12px] text-[#181818] outline-none bg-transparent"
-            />
-          </span>
-        </label>
-
-        <Link href={`/projects/${row.projectId}?tab=workstreams`}
-              className="px-1 py-2 text-[12px] font-semibold text-[#2C5485] hover:underline">
-          Open →
-        </Link>
-      </div>
-
-      {milestone.baseline_date && (
-        <p className="basis-full m-0 text-[11px] text-[#94a3b8]">
-          Baseline {formatDate(milestone.baseline_date)} — locked. Only an admin can re-baseline, so slip stays measurable.
-        </p>
+    <li className="flex items-center gap-2 py-1 pl-2 border-l-2 border-[#EDF1F5]">
+      {milestone.is_critical && (
+        <i className="block w-[6px] h-[6px] rotate-45 shrink-0 bg-[#5B21B6]" title="Critical path" />
       )}
-    </div>
+      <span className="flex-1 min-w-0 text-[12px] text-[#3E3E3C] truncate" title={milestone.label}>
+        {milestone.label}
+      </span>
+
+      {slipped && (
+        <span className="text-[10px] font-bold text-[#b91c1c] shrink-0"
+              title={`Baseline ${formatDate(milestone.baseline_date)} — admin-locked`}>
+          slipped
+        </span>
+      )}
+
+      <select
+        value={milestone.status}
+        disabled={busy}
+        onChange={e => onPatch(milestone.id, { status: e.target.value })}
+        className="px-1.5 py-0.5 rounded text-[10.5px] font-semibold border cursor-pointer shrink-0"
+        style={{ background: s.bg, borderColor: s.border, color: s.text }}
+      >
+        {STATUSES.map(k => <option key={k} value={k}>{STATUS_STYLE[k].label}</option>)}
+      </select>
+
+      <input
+        type="date"
+        value={date}
+        disabled={busy}
+        onChange={e => setDate(e.target.value)}
+        onBlur={() => {
+          const next = date || null
+          if ((next ?? '') !== (milestone.end_date ?? '')) onPatch(milestone.id, { end_date: next })
+        }}
+        className="w-[122px] shrink-0 px-1.5 py-0.5 rounded text-[10.5px] text-[#181818] border border-[#D6DEE7] bg-white outline-none focus:border-[#C8963A]"
+      />
+    </li>
   )
 }
 
@@ -573,9 +579,8 @@ const LANE_LABEL_PX = 210
 /**
  * The same rows on a shared time axis.
  *
- * Deliberately markers-only, not bars: a project row here is a selection of its
- * milestones rather than one continuous span, so a bar would imply a duration
- * that no field in the data actually describes.
+ * Markers, not bars: a project row here is a set of milestone dates rather than
+ * one continuous span, so a bar would imply a duration no field describes.
  */
 function PriorityGantt({ rows, horizon }: { rows: PriorityRow[]; horizon: Horizon }) {
   const now = new Date()
@@ -586,7 +591,6 @@ function PriorityGantt({ rows, horizon }: { rows: PriorityRow[]; horizon: Horizo
     return { y: originY + Math.floor(k / 12), m: ((k % 12) + 12) % 12 }
   })
 
-  /** Position as a fraction of the axis, month-proportional like the project Overview. */
   function fraction(iso: string): number | null {
     const [y, m, d] = iso.slice(0, 10).split('-').map(Number)
     const idx = (y - originY) * 12 + (m - 1) - originM
@@ -595,32 +599,13 @@ function PriorityGantt({ rows, horizon }: { rows: PriorityRow[]; horizon: Horizo
     return f >= 0 && f <= 1 ? f : null
   }
 
-  const cols = `${LANE_LABEL_PX}px repeat(${horizon}, minmax(${horizon > 6 ? 48 : 64}px, 1fr))`
-
-  function Marker({ iso, critical, dim, title }: {
-    iso: string; critical: boolean; dim: boolean; title: string
-  }) {
-    const f = fraction(iso)
-    if (f === null) return null
-    return (
-      <span
-        title={title}
-        className="absolute top-1/2 w-[9px] h-[9px] -ml-[4.5px] -mt-[4.5px] rotate-45"
-        style={{
-          left: `calc(${LANE_LABEL_PX}px + (100% - ${LANE_LABEL_PX}px) * ${f})`,
-          background: critical ? '#5B21B6' : dim ? '#61758A' : '#E6C87A',
-          opacity: dim ? 0.45 : 1,
-          zIndex: 2,
-        }}
-      />
-    )
-  }
+  const colPx = horizon > 6 ? 48 : 64
+  const cols = `${LANE_LABEL_PX}px repeat(${horizon}, minmax(${colPx}px, 1fr))`
 
   return (
     <div className="bg-white rounded-xl border border-[#e2e8f0] px-4 pt-3.5 pb-3">
       <div className="overflow-x-auto">
-        <div className="relative" style={{ minWidth: LANE_LABEL_PX + horizon * (horizon > 6 ? 48 : 64) }}>
-          {/* axis */}
+        <div className="relative" style={{ minWidth: LANE_LABEL_PX + horizon * colPx }}>
           <div className="grid border-b border-[#E4EAF0]" style={{ gridTemplateColumns: cols }}>
             <span />
             {months.map((mo, i) => (
@@ -634,45 +619,48 @@ function PriorityGantt({ rows, horizon }: { rows: PriorityRow[]; horizon: Horizo
             ))}
           </div>
 
-          {rows.map((r, i) => (
-            <div key={r.projectId}
-                 className="grid items-center relative border-b border-[#F4F7FA] last:border-0"
-                 style={{ gridTemplateColumns: cols, minHeight: 36, background: r.health === 'delayed' ? '#FFFBF5' : undefined }}>
-              <span className="flex items-center gap-2 pl-3 pr-2.5">
-                <span className="text-[11px] font-bold text-[#A9B5C1] w-[16px] tabular-nums">{i + 1}</span>
-                {r.health && (
-                  <i className="block w-[7px] h-[7px] rounded-full shrink-0" style={{ background: HEALTH_DOT[r.health] }} />
-                )}
-                <Link href={`/projects/${r.projectId}`}
-                      className="text-[12.5px] font-semibold text-[#181818] truncate hover:text-[#2C5485] hover:underline">
-                  {r.name}
-                </Link>
-              </span>
-              {months.map((mo, c) => (
-                <span key={`${r.projectId}-${mo.y}-${mo.m}`} className="h-full"
-                      style={{ borderLeft: c === 0 ? undefined : '1px solid #F0F4F8' }} />
-              ))}
+          {rows.map((r, i) => {
+            // Every open milestone inside the window, across all disciplines —
+            // the Gantt is the same plan the expanded card shows, drawn on time.
+            const marks = r.groups
+              .flatMap(g => g.milestones)
+              .filter(m => m.status !== 'complete' && m.end_date && fraction(m.end_date) !== null)
+            return (
+              <div key={r.projectId}
+                   className="grid items-center relative border-b border-[#F4F7FA] last:border-0"
+                   style={{ gridTemplateColumns: cols, minHeight: 36, background: r.health === 'delayed' ? '#FFFBF5' : undefined }}>
+                <span className="flex items-center gap-2 pl-3 pr-2.5">
+                  <span className="text-[11px] font-bold text-[#A9B5C1] w-[16px] tabular-nums">{i + 1}</span>
+                  {r.health && (
+                    <i className="block w-[7px] h-[7px] rounded-full shrink-0" style={{ background: HEALTH_DOT[r.health] }} />
+                  )}
+                  <Link href={`/projects/${r.projectId}`}
+                        className="text-[12.5px] font-semibold text-[#181818] truncate hover:text-[#2C5485] hover:underline">
+                    {r.name}
+                  </Link>
+                </span>
+                {months.map((mo, c) => (
+                  <span key={`${r.projectId}-${mo.y}-${mo.m}`} className="h-full"
+                        style={{ borderLeft: c === 0 ? undefined : '1px solid #F0F4F8' }} />
+                ))}
 
-              {r.current?.end_date && (
-                <Marker
-                  iso={r.current.end_date}
-                  critical={r.current.is_critical}
-                  dim={false}
-                  title={`${r.current.label} · ${formatShortDate(r.current.end_date)} · ${STATUS_STYLE[r.current.status].label}`}
-                />
-              )}
-              {r.nextCritical && (
-                <Marker
-                  iso={r.nextCritical.date}
-                  critical
-                  dim
-                  title={`${r.nextCritical.label} · ${formatShortDate(r.nextCritical.date)} · upcoming`}
-                />
-              )}
-            </div>
-          ))}
+                {marks.map(m => (
+                  <span
+                    key={m.id}
+                    title={`${m.label} · ${formatShortDate(m.end_date)} · ${STATUS_STYLE[m.status].label}`}
+                    className="absolute top-1/2 w-[9px] h-[9px] -ml-[4.5px] -mt-[4.5px] rotate-45"
+                    style={{
+                      left: `calc(${LANE_LABEL_PX}px + (100% - ${LANE_LABEL_PX}px) * ${fraction(m.end_date as string)})`,
+                      background: m.is_critical ? '#5B21B6' : m.status === 'blocked' ? '#92400E' : '#E6C87A',
+                      opacity: m.status === 'not_started' && !m.is_critical ? 0.5 : 1,
+                      zIndex: 2,
+                    }}
+                  />
+                ))}
+              </div>
+            )
+          })}
 
-          {/* today — always the left edge, since the window opens now */}
           <div aria-hidden className="absolute top-0 bottom-0 w-px z-[3] pointer-events-none"
                style={{ left: LANE_LABEL_PX, background: '#EF4444' }}>
             <span className="absolute -top-0.5 left-[3px] text-[8.5px] font-bold tracking-[0.1em] px-[3px] rounded-sm bg-white text-[#991B1B]">
@@ -684,8 +672,9 @@ function PriorityGantt({ rows, horizon }: { rows: PriorityRow[]; horizon: Horizo
 
       <div className="flex flex-wrap gap-4 mt-3 pt-2.5 border-t border-[#E4EAF0] text-[11.5px] text-[#706E6B]">
         <span className="flex items-center gap-1.5"><i className="block w-2 h-2 rotate-45 bg-[#5B21B6]" />Critical path</span>
-        <span className="flex items-center gap-1.5"><i className="block w-2 h-2 rotate-45 bg-[#E6C87A]" />Current milestone</span>
-        <span className="flex items-center gap-1.5"><i className="block w-2 h-2 rotate-45 bg-[#61758A] opacity-45" />Next critical</span>
+        <span className="flex items-center gap-1.5"><i className="block w-2 h-2 rotate-45 bg-[#E6C87A]" />In progress</span>
+        <span className="flex items-center gap-1.5"><i className="block w-2 h-2 rotate-45 bg-[#92400E]" />Blocked</span>
+        <span className="flex items-center gap-1.5"><i className="block w-2 h-2 rotate-45 bg-[#E6C87A] opacity-50" />Not started</span>
       </div>
     </div>
   )
