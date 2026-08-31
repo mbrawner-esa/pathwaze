@@ -31,7 +31,7 @@ import {
 import {
   inHorizon, filterRows, filterOptions, groupRows,
   HORIZONS, HORIZON_LABEL, HORIZON_HINT, HORIZON_GANTT_MONTHS, GROUP_LABEL, EMPTY_FILTERS,
-  type PriorityRow, type Horizon, type MajorGroup, type BoardFilters, type GroupBy,
+  type PriorityRow, type Horizon, type BoardFilters, type GroupBy,
 } from '@/lib/portfolio-priority'
 import { BAND_COLOR, BAND_LABEL, momentumSummary } from '@/lib/momentum'
 import { COMPLEXITY_BAND_COLOR, COMPLEXITY_BAND_LABEL } from '@/lib/complexity'
@@ -190,6 +190,27 @@ export function PriorityBoard({
     if (!ok) router.refresh()
   }
 
+  /**
+   * Reorder a project's milestones. Reuses the batch endpoint the Workstreams
+   * plan already uses, which rewrites sort_order from the given id order.
+   *
+   * sort_order is documented as position WITHIN a major, and the ids sent here
+   * span the whole project — that is safe and deliberate. Rewriting them
+   * project-wide keeps every milestone's order relative to its siblings intact,
+   * so the Workstreams tab still reads correctly; it simply also gives the flat
+   * card a stable cross-major order to render.
+   */
+  async function reorderMilestones(ids: string[]): Promise<boolean> {
+    setBusy(true)
+    const ok = await call('/api/workstreams/milestones', {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids }),
+    })
+    setBusy(false)
+    startTransition(() => router.refresh())
+    return ok
+  }
+
   async function resetOrder() {
     setOptimistic(null)
     setBusy(true)
@@ -232,6 +253,7 @@ export function PriorityBoard({
   const rowProps = {
     horizon, busy, editingKeys, edits, openField, stage,
     openId, setOpenId, dragId, overId, setDragId, setOverId, dropOn, dragEnabled,
+    reorderMilestones,
   }
 
   return (
@@ -416,6 +438,7 @@ interface RowShared {
   setOverId: (id: string | null) => void
   dropOn: (id: string) => void
   dragEnabled: boolean
+  reorderMilestones: (ids: string[]) => Promise<boolean>
 }
 
 function BoardTable({ rows, ...s }: { rows: PriorityRow[] } & RowShared) {
@@ -582,7 +605,7 @@ function BoardRow({ row, index, ...s }: { row: PriorityRow; index: number } & Ro
         <tr className="border-b border-[#F1F5F9]" style={{ background: '#FFFBF5' }}>
           <td /><td />
           <td colSpan={8} className="px-3.5 pb-4 pt-0">
-            <ProjectPlan row={row} {...s} />
+            <ProjectPlan row={row} onReorder={s.reorderMilestones} {...s} />
           </td>
         </tr>
       )}
@@ -621,19 +644,58 @@ function EditableField({
 
 // ── expanded card ─────────────────────────────────────────────────────
 
-function ProjectPlan({ row, ...s }: { row: PriorityRow } & RowShared) {
-  const shown = row.groups
-    .map(g => ({ group: g, milestones: g.milestones.filter(m => inHorizon(m, s.horizon)) }))
-    .filter(x => x.milestones.length > 0)
+/**
+ * The project's plan as ONE flat, single-column list.
+ *
+ * Deliberately not grouped into per-discipline columns any more. Grouping made
+ * the card read as three separate lists that happened to share a box, and it
+ * made the one thing this card is for — putting the week's work in the order
+ * you intend to do it — impossible, because you cannot drag across columns.
+ * Flat and single-column, the major each item belongs to becomes a label on the
+ * row rather than a heading above it, and the whole plan is one orderable list.
+ */
+function ProjectPlan({
+  row, onReorder, ...s
+}: { row: PriorityRow; onReorder: (ids: string[]) => Promise<boolean> } & RowShared) {
+  const [dragId, setDragId] = useState<string | null>(null)
+  const [overId, setOverId] = useState<string | null>(null)
 
-  const hidden = row.groups.reduce((n, g) => n + g.milestones.length, 0)
-    - shown.reduce((n, x) => n + x.milestones.length, 0)
+  // Every milestone on the project, in stored order — the list a drop is
+  // resolved against.
+  const all = useMemo(() => row.groups.flatMap(g =>
+    g.milestones.map(m => ({ milestone: m, majorLabel: g.majorLabel, workstream: g.workstream }))),
+    [row.groups])
 
-  if (!shown.length) {
+  const visible = all.filter(x => inHorizon(x.milestone, s.horizon))
+  const hidden = all.length - visible.length
+
+  /**
+   * Reorder against the FULL list, not the visible subset.
+   *
+   * The horizon hides rows, so the visible list is a subsequence. Splicing
+   * inside it would silently reshuffle the hidden ones; resolving the drop by
+   * the target's index in the full list keeps everything not being dragged
+   * exactly where it was.
+   */
+  async function dropOn(targetId: string) {
+    const dragging = dragId
+    setDragId(null)
+    setOverId(null)
+    if (!dragging || dragging === targetId) return
+
+    const ids = all.map(x => x.milestone.id)
+    const from = ids.indexOf(dragging)
+    const to = ids.indexOf(targetId)
+    if (from < 0 || to < 0) return
+    ids.splice(to, 0, ...ids.splice(from, 1))
+    await onReorder(ids)
+  }
+
+  if (!visible.length) {
     return (
-      <div className="rounded-lg bg-white border border-[#EDF1F5] px-4 py-6 text-center">
+      <div className="rounded-lg bg-white border border-[#EDF1F5] px-4 py-5 text-center">
         <p className="m-0 text-[12.5px] text-[#706E6B]">
-          {row.groups.length === 0
+          {all.length === 0
             ? 'No milestones on this project yet.'
             : `Nothing lands in the ${HORIZON_HINT[s.horizon]}. Widen the horizon to see the rest of the plan.`}
         </p>
@@ -641,40 +703,40 @@ function ProjectPlan({ row, ...s }: { row: PriorityRow } & RowShared) {
     )
   }
 
-  const byWorkstream = new Map<string, typeof shown>()
-  for (const x of shown) {
-    const list = byWorkstream.get(x.group.workstream)
-    if (list) list.push(x)
-    else byWorkstream.set(x.group.workstream, [x])
-  }
-
   return (
-    <div className="rounded-lg bg-white border border-[#EDF1F5] p-3.5">
-      <div className="grid gap-x-5 gap-y-4" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))' }}>
-        {Array.from(byWorkstream.entries()).map(([ws, entries]) => (
-          <section key={ws}>
-            <h3 className="flex items-center gap-2 m-0 mb-2 pb-1.5 border-b border-[#EDF1F5]">
-              <i className="block rounded-sm w-[3px] h-[13px]" style={{ background: LANE_HUE[ws] }} />
-              <span className="text-[10px] font-bold uppercase tracking-[0.1em] text-[#55677A]">
-                {WORKSTREAM_LABELS[ws as WorkstreamKey]}
-              </span>
-            </h3>
-            <div className="flex flex-col gap-3">
-              {entries.map(({ group, milestones }) => (
-                <MajorBlock key={group.majorKey} group={group} milestones={milestones} {...s} />
-              ))}
-            </div>
-          </section>
-        ))}
+    <div className="rounded-lg bg-white border border-[#EDF1F5]">
+      <div className="flex items-center gap-2 px-3 py-1.5 border-b border-[#F1F5F9] bg-[#FAFBFC]">
+        <span className="w-[18px]" />
+        <span className="flex-1 text-[9.5px] font-bold uppercase tracking-[0.08em] text-[#94a3b8]">Milestone</span>
+        <span className="w-[150px] text-[9.5px] font-bold uppercase tracking-[0.08em] text-[#94a3b8]">Major milestone</span>
+        <span className="w-[96px] text-[9.5px] font-bold uppercase tracking-[0.08em] text-[#94a3b8]">Status</span>
+        <span className="w-[104px] text-right text-[9.5px] font-bold uppercase tracking-[0.08em] text-[#94a3b8]">Due</span>
       </div>
-      <div className="flex items-center justify-between gap-3 flex-wrap mt-3.5 pt-2.5 border-t border-[#EDF1F5]">
+
+      <ul className="list-none m-0 p-0">
+        {visible.map(({ milestone, majorLabel, workstream }) => (
+          <SubMilestone
+            key={milestone.id}
+            milestone={milestone}
+            majorLabel={majorLabel}
+            workstream={workstream}
+            dragging={dragId === milestone.id}
+            isOver={overId === milestone.id && dragId !== milestone.id}
+            onDragStart={() => setDragId(milestone.id)}
+            onDragEnter={() => setOverId(milestone.id)}
+            onDrop={() => dropOn(milestone.id)}
+            {...s}
+          />
+        ))}
+      </ul>
+
+      <div className="flex items-center justify-between gap-3 flex-wrap px-3 py-1.5 border-t border-[#F1F5F9]">
         <span className="text-[11px] text-[#94a3b8]">
-          {hidden > 0
-            ? `${hidden} milestone${hidden === 1 ? '' : 's'} outside the ${HORIZON_HINT[s.horizon]} or already complete.`
-            : 'Showing the whole plan.'}
+          Drag to set this week&apos;s order
+          {hidden > 0 && ` · ${hidden} outside the ${HORIZON_HINT[s.horizon]} or complete`}
         </span>
         <Link href={`/projects/${row.projectId}?tab=workstreams`}
-              className="text-[12px] font-semibold text-[#2C5485] hover:underline">
+              className="text-[11.5px] font-semibold text-[#2C5485] hover:underline">
           Open Workstreams →
         </Link>
       </div>
@@ -682,29 +744,20 @@ function ProjectPlan({ row, ...s }: { row: PriorityRow } & RowShared) {
   )
 }
 
-function MajorBlock({
-  group, milestones, ...s
-}: { group: MajorGroup; milestones: Milestone[] } & RowShared) {
-  return (
-    <div>
-      <div className="flex items-baseline gap-2 mb-1">
-        <span className="text-[12.5px] font-semibold text-[#181818]">{group.majorLabel}</span>
-        {group.health && (
-          <i className="block w-[6px] h-[6px] rounded-full shrink-0"
-             style={{ background: HEALTH_DOT[group.health] }} title={HEALTH_LABEL[group.health]} />
-        )}
-        <span className="ml-auto text-[10.5px] tabular-nums text-[#94a3b8]">
-          {group.doneCount}/{group.totalCount}
-        </span>
-      </div>
-      <ul className="list-none m-0 p-0 flex flex-col gap-1">
-        {milestones.map(m => <SubMilestone key={m.id} milestone={m} {...s} />)}
-      </ul>
-    </div>
-  )
-}
-
-function SubMilestone({ milestone, ...s }: { milestone: Milestone } & RowShared) {
+/** One compact, draggable sub-milestone row. */
+function SubMilestone({
+  milestone, majorLabel, workstream, dragging, isOver,
+  onDragStart, onDragEnter, onDrop, ...s
+}: {
+  milestone: Milestone
+  majorLabel: string
+  workstream: WorkstreamKey
+  dragging: boolean
+  isOver: boolean
+  onDragStart: () => void
+  onDragEnter: () => void
+  onDrop: () => void
+} & RowShared) {
   const statusKey = `milestone:${milestone.id}:status`
   const dateKey = `milestone:${milestone.id}:end_date`
   const st = STATUS_STYLE[milestone.status]
@@ -713,21 +766,39 @@ function SubMilestone({ milestone, ...s }: { milestone: Milestone } & RowShared)
     && milestone.end_date.slice(0, 10) > milestone.baseline_date.slice(0, 10)
 
   return (
-    <li className="group/ms flex items-center gap-2 py-1 pl-2 border-l-2 border-[#EDF1F5]">
-      {milestone.is_critical && (
-        <i className="block w-[6px] h-[6px] rotate-45 shrink-0 bg-[#5B21B6]" title="Critical path" />
-      )}
-      <span className="flex-1 min-w-0 text-[12px] text-[#3E3E3C] truncate" title={milestone.label}>
+    <li
+      draggable
+      // The project row is itself draggable, so every drag event here must stop
+      // before it reaches the table row — otherwise reordering one milestone
+      // would also start reordering its project.
+      onDragStart={e => { e.stopPropagation(); onDragStart() }}
+      onDragEnter={e => { e.stopPropagation(); onDragEnter() }}
+      onDragOver={e => { e.preventDefault(); e.stopPropagation() }}
+      onDrop={e => { e.stopPropagation(); onDrop() }}
+      className="group/ms flex items-center gap-2 px-3 py-[5px] border-b border-[#F8FAFC] last:border-0 hover:bg-[#FAFBFC]"
+      style={{
+        boxShadow: isOver ? 'inset 0 2px 0 #C8963A' : undefined,
+        opacity: dragging ? 0.4 : 1,
+      }}
+    >
+      <GripVertical size={11} className="text-[#D7E0E8] group-hover/ms:text-[#A9B5C1] cursor-grab shrink-0" />
+
+      {milestone.is_critical
+        ? <i className="block w-[6px] h-[6px] rotate-45 shrink-0 bg-[#5B21B6]" title="Critical path" />
+        : <i className="block w-[6px] shrink-0" />}
+
+      <span className="flex-1 min-w-0 text-[12px] text-[#181818] truncate" title={milestone.label}>
         {milestone.label}
       </span>
 
-      {slipped && (
-        <span className="text-[10px] font-bold text-[#b91c1c] shrink-0"
-              title={`Baseline ${formatDate(milestone.baseline_date)} — admin-locked`}>slipped</span>
-      )}
+      <span className="w-[150px] shrink-0 flex items-center gap-1.5 min-w-0">
+        <i className="block rounded-sm w-[2px] h-[10px] shrink-0" style={{ background: LANE_HUE[workstream] }} />
+        <span className="text-[11px] text-[#706E6B] truncate" title={`${WORKSTREAM_LABELS[workstream]} · ${majorLabel}`}>
+          {majorLabel}
+        </span>
+      </span>
 
-      {/* status */}
-      <span className="shrink-0">
+      <span className="w-[96px] shrink-0">
         {s.editingKeys.has(statusKey) ? (
           <select
             autoFocus
@@ -736,7 +807,7 @@ function SubMilestone({ milestone, ...s }: { milestone: Milestone } & RowShared)
             onChange={e => s.stage(statusKey, {
               kind: 'milestone', id: milestone.id, field: 'status', value: e.target.value,
             })}
-            className="px-1.5 py-0.5 rounded text-[10.5px] font-semibold border border-[#C8963A] bg-white"
+            className="w-full px-1 py-0.5 rounded text-[10.5px] font-semibold border border-[#C8963A] bg-white"
           >
             {STATUSES.map(k => <option key={k} value={k}>{STATUS_STYLE[k].label}</option>)}
           </select>
@@ -748,14 +819,13 @@ function SubMilestone({ milestone, ...s }: { milestone: Milestone } & RowShared)
             </span>
             <button type="button" onClick={() => s.openField(statusKey)} aria-label="Edit status"
                     className="opacity-0 group-hover/ms:opacity-100 focus:opacity-100 transition-opacity text-[#94a3b8] hover:text-[#C8963A]">
-              <Pencil size={10} />
+              <Pencil size={9} />
             </button>
           </span>
         )}
       </span>
 
-      {/* target date */}
-      <span className="shrink-0 w-[132px] text-right">
+      <span className="w-[104px] shrink-0 text-right">
         {s.editingKeys.has(dateKey) ? (
           <input
             autoFocus
@@ -765,16 +835,20 @@ function SubMilestone({ milestone, ...s }: { milestone: Milestone } & RowShared)
             onChange={e => s.stage(dateKey, {
               kind: 'milestone', id: milestone.id, field: 'end_date', value: e.target.value,
             })}
-            className="w-[122px] px-1.5 py-0.5 rounded text-[10.5px] text-[#181818] border border-[#C8963A] bg-white outline-none"
+            className="w-[100px] px-1 py-0.5 rounded text-[10.5px] text-[#181818] border border-[#C8963A] bg-white outline-none"
           />
         ) : (
-          <span className="inline-flex items-center gap-1">
+          <span className="inline-flex items-center gap-1 justify-end">
+            {slipped && (
+              <span className="text-[9.5px] font-bold text-[#b91c1c]"
+                    title={`Baseline ${formatDate(milestone.baseline_date)} — admin-locked`}>SLIP</span>
+            )}
             <span className="text-[11px] tabular-nums text-[#3E3E3C]">
               {milestone.end_date ? formatShortDate(milestone.end_date) : <span className="text-[#C6D0DA]">No date</span>}
             </span>
-            <button type="button" onClick={() => s.openField(dateKey)} aria-label="Edit target date"
+            <button type="button" onClick={() => s.openField(dateKey)} aria-label="Edit due date"
                     className="opacity-0 group-hover/ms:opacity-100 focus:opacity-100 transition-opacity text-[#94a3b8] hover:text-[#C8963A]">
-              <Pencil size={10} />
+              <Pencil size={9} />
             </button>
           </span>
         )}
