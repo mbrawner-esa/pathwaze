@@ -248,6 +248,7 @@ export default async function HealthPage({
       view={view}
       manual={manual}
       heldCount={heldCount}
+      currentUserId={user.id}
       riskScored={riskByProject.size}
     />
   )

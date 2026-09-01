@@ -67,10 +67,11 @@ type EditKey = string
 interface PendingEdit { kind: 'project' | 'milestone'; id: string; field: string; value: string }
 
 export function PriorityBoard({
-  rows, view, manual, heldCount, riskScored,
+  rows, view, manual, heldCount, riskScored, people, currentUserId,
 }: {
   rows: PriorityRow[]
   people: { id: string; name: string; avatarUrl: string | null }[]
+  currentUserId: string
   view: 'table' | 'graph' | 'gantt'
   manual: boolean
   heldCount: number
@@ -98,6 +99,11 @@ export function PriorityBoard({
   const [editingKeys, setEditingKeys] = useState<Set<EditKey>>(new Set())
   const [edits, setEdits] = useState<Record<EditKey, PendingEdit>>({})
   const pendingCount = Object.keys(edits).length
+
+  // MentionInput wants {id, full_name}; the board is handed {id, name}.
+  const threadUsers = useMemo(
+    () => people.map(p => ({ id: p.id, full_name: p.name, avatar_url: p.avatarUrl })),
+    [people])
 
   const list = optimistic ?? rows
   const opts = useMemo(() => filterOptions(list), [list])
@@ -299,7 +305,7 @@ export function PriorityBoard({
   const rowProps = {
     horizon, busy, editingKeys, edits, openFields, cancelRecord, stage,
     openId, setOpenId, dragId, overId, setDragId, setOverId, dropOn, dragEnabled,
-    reorderMilestones, onFocus, focusOnly,
+    reorderMilestones, onFocus, focusOnly, threadUsers, currentUserId,
   }
 
   return (
@@ -507,6 +513,8 @@ interface RowShared {
   reorderMilestones: (ids: string[]) => Promise<boolean>
   onFocus: (id: string, next: boolean) => Promise<boolean>
   focusOnly: boolean
+  threadUsers: { id: string; full_name: string; avatar_url?: string | null }[]
+  currentUserId: string
 }
 
 function BoardTable({ rows, ...s }: { rows: PriorityRow[] } & RowShared) {
@@ -741,6 +749,7 @@ function ProjectPlan({ row, ...s }: { row: PriorityRow } & RowShared) {
   // handful of things actually in flight. The toggle says how many are hidden
   // rather than hiding the fact that anything is.
   const [showNotStarted, setShowNotStarted] = useState(false)
+  const [showOthers, setShowOthers] = useState(false)
 
   const inWindow = row.cardMilestones.filter(x => inHorizon(x.milestone, s.horizon))
   const notStartedCount = inWindow.filter(x => x.milestone.status === 'not_started').length
@@ -756,6 +765,14 @@ function ProjectPlan({ row, ...s }: { row: PriorityRow } & RowShared) {
   // header so the reader always knows which list they are looking at.
   const anyFocus = visible.some(x => x.focus)
   const ordered = [...visible].sort(anyFocus ? byFocus : byDueDate)
+
+  // Once anything is focused the card splits in two and the rest collapses.
+  // Highlighting alone left the week's work buried in a list of twenty; folding
+  // the remainder away makes the card answer "what are we doing" directly, and
+  // the group header still says how much is hidden so nothing feels lost.
+  const focused = ordered.filter(x => x.focus)
+  const others = ordered.filter(x => !x.focus)
+  const split = anyFocus && others.length > 0
 
   if (!inWindow.length) {
     return (
@@ -785,7 +802,7 @@ function ProjectPlan({ row, ...s }: { row: PriorityRow } & RowShared) {
       </div>
 
       <div className="flex items-center gap-3 px-4 py-1.5 border-b border-[#F1F5F9] bg-[#FAFBFC]">
-        <span className="w-[30px] text-[9.5px] font-bold uppercase tracking-[0.08em] text-[#94a3b8]">Focus</span>
+        <span className="w-[34px] text-[9.5px] font-bold uppercase tracking-[0.08em] text-[#94a3b8]">Focus</span>
         <span className="flex-1 min-w-0 text-[9.5px] font-bold uppercase tracking-[0.08em] text-[#94a3b8]">Milestone</span>
         <span className="w-[186px] text-[9.5px] font-bold uppercase tracking-[0.08em] text-[#94a3b8]">Major Milestone</span>
         <span className="w-[150px] text-[9.5px] font-bold uppercase tracking-[0.08em] text-[#94a3b8]">Team</span>
@@ -794,11 +811,43 @@ function ProjectPlan({ row, ...s }: { row: PriorityRow } & RowShared) {
         <span className="w-[108px] text-right text-[9.5px] font-bold uppercase tracking-[0.08em] text-[#94a3b8]">Due</span>
       </div>
 
-      <ul className="list-none m-0 p-0">
-        {ordered.map(item => (
-          <SubMilestone key={item.milestone.id} item={item} projectId={row.projectId} {...s} />
-        ))}
-      </ul>
+      {split ? (
+        <>
+          <GroupHeader label="Focus Milestones" count={focused.length} tone="focus" />
+          <ul className="list-none m-0 p-0">
+            {focused.map(item => (
+              <SubMilestone key={item.milestone.id} item={item} projectId={row.projectId} {...s} />
+            ))}
+          </ul>
+          <button
+            type="button"
+            onClick={() => setShowOthers(v => !v)}
+            aria-expanded={showOthers}
+            className="w-full flex items-center gap-2 px-4 py-1.5 border-t border-[#F1F5F9] bg-[#FAFBFC] hover:bg-[#F4F6F8] transition-colors"
+          >
+            {showOthers
+              ? <ChevronDown size={12} className="text-[#8A6519]" />
+              : <ChevronRight size={12} className="text-[#C6D0DA]" />}
+            <span className="text-[9.5px] font-bold uppercase tracking-[0.08em] text-[#94a3b8]">
+              Other Milestones
+            </span>
+            <span className="text-[10px] tabular-nums text-[#C6D0DA]">{others.length}</span>
+          </button>
+          {showOthers && (
+            <ul className="list-none m-0 p-0">
+              {others.map(item => (
+                <SubMilestone key={item.milestone.id} item={item} projectId={row.projectId} {...s} />
+              ))}
+            </ul>
+          )}
+        </>
+      ) : (
+        <ul className="list-none m-0 p-0">
+          {ordered.map(item => (
+            <SubMilestone key={item.milestone.id} item={item} projectId={row.projectId} {...s} />
+          ))}
+        </ul>
+      )}
 
       {ordered.length === 0 && (
         <p className="m-0 px-4 py-4 text-center text-[12px] text-[#94a3b8]">
@@ -828,17 +877,13 @@ function SubMilestone({
     <>
       <li
         className="group/ms flex items-center gap-3 px-4 py-[7px] border-b border-[#F8FAFC] last:border-0 transition-colors"
-        style={focus
-          // Focused rows carry a gold left edge and a warm tint. The tint alone
-          // was too quiet to scan for; the edge is what makes the week's list
-          // findable in a long card.
-          ? { background: '#FFFDF6', boxShadow: 'inset 3px 0 0 #E6C87A' }
-          : undefined}
+        // No per-row highlight: the card now GROUPS focus items under their own
+        // heading, which separates them better than a tint ever did.
       >
-        <span className="w-[30px] shrink-0">
-          <FocusCheckbox
+        <span className="w-[34px] shrink-0">
+          <FocusToggle
             milestoneId={milestone.id}
-            checked={focus}
+            on={focus}
             busy={s.busy}
             onToggle={s.onFocus}
           />
@@ -937,7 +982,7 @@ function SubMilestone({
 
       {threadOpen && (
         <li className="px-4 py-3 border-b border-[#F8FAFC] bg-[#FCFDFE]">
-          <CommentThread milestoneId={milestone.id} label={milestone.label} />
+          <CommentThread milestoneId={milestone.id} users={s.threadUsers} currentUserId={s.currentUserId} />
         </li>
       )}
     </>
@@ -947,35 +992,58 @@ function SubMilestone({
 /**
  * Mark a milestone as this week's focus.
  *
- * A checkbox rather than a vote tally: the question in a delivery meeting is
- * "are we doing this", which is binary and decided out loud. A count answers
- * "how much do we collectively want it", which nobody asks.
+ * A switch rather than a checkbox: this turns something on for the whole team
+ * and visibly restructures the card, which is a heavier act than ticking a box
+ * on a form. A switch reads as a state you are setting, not a value you are
+ * filling in.
  */
-function FocusCheckbox({
-  milestoneId, checked, busy, onToggle,
+function FocusToggle({
+  milestoneId, on, busy, onToggle,
 }: {
   milestoneId: string
-  checked: boolean
+  on: boolean
   busy: boolean
   onToggle: (id: string, next: boolean) => Promise<boolean>
 }) {
   return (
     <button
       type="button"
-      role="checkbox"
-      aria-checked={checked}
+      role="switch"
+      aria-checked={on}
+      aria-label={on ? 'Remove from this week’s focus' : 'Mark as this week’s focus'}
       disabled={busy}
-      onClick={() => onToggle(milestoneId, !checked)}
-      title={checked ? 'Remove from this week’s focus' : 'Mark as this week’s focus'}
-      className="w-[18px] h-[18px] rounded-[5px] border flex items-center justify-center transition-colors disabled:opacity-50"
-      style={checked
-        ? { background: '#E6C87A', borderColor: '#C8963A', color: '#5E4511' }
-        : { background: '#fff', borderColor: '#D6DEE7' }}
+      onClick={() => onToggle(milestoneId, !on)}
+      title={on ? 'In focus — click to remove' : 'Mark as this week’s focus'}
+      className="relative w-[30px] h-[17px] rounded-full border transition-colors disabled:opacity-50"
+      style={on
+        ? { background: '#E6C87A', borderColor: '#C8963A' }
+        : { background: '#EEF2F6', borderColor: '#D6DEE7' }}
     >
-      {checked && <Check size={12} strokeWidth={3} />}
+      <span
+        className="absolute top-[1px] w-[13px] h-[13px] rounded-full bg-white transition-all"
+        style={{ left: on ? 14 : 1, boxShadow: '0 1px 2px rgba(47,62,80,0.25)' }}
+      />
     </button>
   )
 }
+
+/** Section heading inside a project card. */
+function GroupHeader({ label, count, tone }: {
+  label: string; count: number; tone: 'focus' | 'other'
+}) {
+  return (
+    <div className="flex items-center gap-2 px-4 py-1.5 border-b border-[#F1F5F9]"
+         style={{ background: tone === 'focus' ? '#FFFDF6' : '#FAFBFC' }}>
+      {tone === 'focus' && <Target size={11} className="text-[#C8963A]" />}
+      <span className="text-[9.5px] font-bold uppercase tracking-[0.08em]"
+            style={{ color: tone === 'focus' ? '#8A6519' : '#94a3b8' }}>
+        {label}
+      </span>
+      <span className="text-[10px] tabular-nums text-[#C6D0DA]">{count}</span>
+    </div>
+  )
+}
+
 
 
 // ── gantt ─────────────────────────────────────────────────────────────

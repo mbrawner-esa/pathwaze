@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { logActivity } from '@/lib/activity'
-import { parseMentions, emailUser } from '@/lib/rfi-notify'
+import { parseTokenMentions, emailUser } from '@/lib/rfi-notify'
 import { appUrl } from '@/lib/slack'
 
 /**
@@ -45,10 +45,8 @@ export async function POST(request: NextRequest) {
   const { milestone_id, body } = await request.json() as {
     milestone_id?: string; body?: string
   }
-  // Strip tags before checking for content: the editor leaves `<p></p>` behind
-  // when you clear it, which is not an empty string but is an empty comment.
-  const hasText = !!body && body.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').trim().length > 0
-  if (!milestone_id || !hasText) {
+  // Plain text with <@USERID> tokens, so a trim is the whole check.
+  if (!milestone_id || !body?.trim()) {
     return NextResponse.json({ error: 'milestone_id and a non-empty body are required' }, { status: 400 })
   }
 
@@ -75,9 +73,9 @@ export async function POST(request: NextRequest) {
         metadata: { label: ms.label, major_key: ms.major_key },
       })
 
-      // The composer is RichTextEditor, so mentions arrive as data-uid spans —
-      // parseMentions, not the Slack-token parser.
-      const mentioned = parseMentions(body).filter(id => id !== user.id)
+      // The composer is MentionInput, matching task threads, so mentions arrive
+      // as <@USERID> tokens — parseTokenMentions, not the rich-text parser.
+      const mentioned = parseTokenMentions(body).filter(id => id !== user.id)
       for (const id of mentioned) {
         // eslint-disable-next-line no-await-in-loop
         await emailUser(supabase, id, {
@@ -111,4 +109,28 @@ export async function DELETE(request: NextRequest) {
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
   return NextResponse.json({ ok: true })
+}
+
+/** PATCH — edit my own comment. RLS refuses anyone else's. */
+export async function PATCH(request: NextRequest) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  const { id, body } = await request.json() as { id?: string; body?: string }
+  if (!id || !body?.trim()) {
+    return NextResponse.json({ error: 'id and a non-empty body are required' }, { status: 400 })
+  }
+
+  // edited_at is stamped server-side so the marker cannot be spoofed or omitted
+  // by a client that forgets to send it.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (supabase.from('workstream_milestone_comments') as any)
+    .update({ body, edited_at: new Date().toISOString() })
+    .eq('id', id).eq('user_id', user.id)
+    .select('id, milestone_id, body, created_at, edited_at, user_id, users:user_id(full_name, avatar_url)')
+    .single()
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+  return NextResponse.json(data)
 }
