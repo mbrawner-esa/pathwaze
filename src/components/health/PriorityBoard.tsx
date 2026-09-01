@@ -124,9 +124,6 @@ export function PriorityBoard({
   }
 
   // ── editing ──
-  function openField(key: EditKey) {
-    setEditingKeys(prev => new Set(prev).add(key))
-  }
   /**
    * Put a whole record into edit mode.
    *
@@ -141,6 +138,18 @@ export function PriorityBoard({
       for (const k of keys) next.add(k)
       return next
     })
+  }
+  /**
+   * Close one record's fields again, discarding anything staged on them.
+   *
+   * Scoped rather than global: cancelling the project you opened by mistake
+   * must not throw away edits you already made to a different one.
+   */
+  function cancelRecord(keys: EditKey[]) {
+    const drop = new Set(keys)
+    setEditingKeys(prev => new Set(Array.from(prev).filter(k => !drop.has(k))))
+    setEdits(prev => Object.fromEntries(
+      Object.entries(prev).filter(([k]) => !drop.has(k))))
   }
   function stage(key: EditKey, edit: PendingEdit) {
     setEdits(prev => ({ ...prev, [key]: edit }))
@@ -285,7 +294,7 @@ export function PriorityBoard({
   const dragEnabled = !filtersOn && groupBy === 'none'
 
   const rowProps = {
-    horizon, busy, editingKeys, edits, openField, openFields, stage,
+    horizon, busy, editingKeys, edits, openFields, cancelRecord, stage,
     openId, setOpenId, dragId, overId, setDragId, setOverId, dropOn, dragEnabled,
     reorderMilestones, onVote,
   }
@@ -464,8 +473,8 @@ interface RowShared {
   busy: boolean
   editingKeys: Set<EditKey>
   edits: Record<EditKey, PendingEdit>
-  openField: (k: EditKey) => void
   openFields: (keys: EditKey[]) => void
+  cancelRecord: (keys: EditKey[]) => void
   stage: (k: EditKey, e: PendingEdit) => void
   openId: string | null
   setOpenId: (id: string | null) => void
@@ -515,7 +524,26 @@ function BoardRow({ row, index, ...s }: { row: PriorityRow; index: number } & Ro
   // Target belongs to the current milestone, not the project, but it is on this
   // row so the record pencil opens it too — the pencil edits what you can see.
   const targetKey = m ? `milestone:${m.id}:end_date` : null
-  const recordKeys = [stageKey, ...(targetKey ? [targetKey] : [])]
+
+  /**
+   * ONE edit control per project, covering everything that project shows.
+   *
+   * Every milestone row used to carry its own pencil, which put seven of them
+   * in a single open card and made "edit" a hunt rather than an action. This
+   * opens the row's own fields plus every milestone in the current horizon, so
+   * one click makes the whole record editable and Save closes all of it.
+   *
+   * Milestones hidden by the Not Started toggle are included deliberately: they
+   * render as inputs the moment they are revealed, rather than being stuck
+   * read-only inside an otherwise-editable card.
+   */
+  const recordKeys = [
+    stageKey,
+    ...(targetKey ? [targetKey] : []),
+    ...row.cardMilestones
+      .filter(x => inHorizon(x.milestone, s.horizon))
+      .flatMap(x => [`milestone:${x.milestone.id}:status`, `milestone:${x.milestone.id}:end_date`]),
+  ]
   const rowEditing = recordKeys.some(k => s.editingKeys.has(k))
 
   return (
@@ -560,23 +588,23 @@ function BoardRow({ row, index, ...s }: { row: PriorityRow; index: number } & Ro
                 once, rather than making you find each pencil in turn. */}
             <button
               type="button"
-              onClick={() => s.openFields(recordKeys)}
-              aria-label={`Edit ${row.name}`}
-              title="Edit this site record"
-              className="shrink-0 transition-colors"
-              style={{ color: rowEditing ? '#C8963A' : '#C6D0DA' }}
+              onClick={() => rowEditing ? s.cancelRecord(recordKeys) : s.openFields(recordKeys)}
+              aria-label={rowEditing ? `Stop editing ${row.name}` : `Edit ${row.name}`}
+              title={rowEditing
+                ? 'Editing this project — Save or Cancel below'
+                : 'Edit this project and its milestones'}
+              className="shrink-0 inline-flex items-center gap-1 px-1.5 py-0.5 rounded border transition-colors"
+              style={rowEditing
+                ? { background: '#FDF0D5', borderColor: '#E6C87A', color: '#8A6519' }
+                : { background: 'transparent', borderColor: 'transparent', color: '#C6D0DA' }}
             >
               <Pencil size={11} />
+              {rowEditing && <span className="text-[10px] font-bold">Editing</span>}
             </button>
           </span>
         </Td>
         <Td>
-          <EditableField
-            editKey={stageKey}
-            editing={s.editingKeys.has(stageKey)}
-            onOpen={() => s.openField(stageKey)}
-            display={row.stage}
-          >
+          <EditableField editing={s.editingKeys.has(stageKey)} display={row.stage}>
             <select
               autoFocus
               value={(s.edits[stageKey]?.value as string) ?? row.stage}
@@ -658,32 +686,20 @@ function BoardRow({ row, index, ...s }: { row: PriorityRow; index: number } & Ro
 }
 
 /**
- * A Lightning-style editable field: text plus a hover pencil, becoming a
- * control only once the pencil is clicked.
+ * A field that swaps between its read-only text and its control.
+ *
+ * It owns no pencil of its own: the project row's single edit control decides
+ * when this opens, which is what keeps one card from sprouting a pencil per
+ * field.
  */
 function EditableField({
-  editing, onOpen, display, children,
+  editing, display, children,
 }: {
-  editKey: EditKey
   editing: boolean
-  onOpen: () => void
   display: React.ReactNode
   children: React.ReactNode
 }) {
-  if (editing) return <>{children}</>
-  return (
-    <span className="inline-flex items-center gap-1.5">
-      <span>{display}</span>
-      <button
-        type="button"
-        onClick={e => { e.stopPropagation(); onOpen() }}
-        aria-label="Edit"
-        className="opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity text-[#94a3b8] hover:text-[#C8963A]"
-      >
-        <Pencil size={11} />
-      </button>
-    </span>
-  )
+  return editing ? <>{children}</> : <>{display}</>
 }
 
 // ── expanded card ─────────────────────────────────────────────────────
@@ -772,8 +788,6 @@ function SubMilestone({
   const { milestone, majorLabel, majorKey, workstream, teams, votes, votedByMe } = item
   const statusKey = `milestone:${milestone.id}:status`
   const dateKey = `milestone:${milestone.id}:end_date`
-  const rowEditing = s.editingKeys.has(statusKey) || s.editingKeys.has(dateKey)
-
   const slipped = milestone.end_date && milestone.baseline_date
     && milestone.end_date.slice(0, 10) > milestone.baseline_date.slice(0, 10)
 
@@ -788,27 +802,13 @@ function SubMilestone({
                     busy={s.busy} onVote={s.onVote} />
       </span>
 
-      <span className="flex-1 min-w-0 flex items-center gap-1.5">
-        <Link href={href}
-              className="min-w-0 text-[12.5px] text-[#181818] truncate hover:text-[#2C5485] hover:underline"
-              title={`${milestone.label} — open in Workstreams`}>
-          {milestone.label}
-        </Link>
-        {/* Opens status AND due date together — the two things that move at the
-            same time when a milestone is discussed. */}
-        {/* One click, always visible. Hiding it behind hover made editing a
-            two-step gesture: find the row, hover, then aim for a 10px target. */}
-        <button
-          type="button"
-          onClick={() => s.openFields([statusKey, dateKey])}
-          aria-label={`Edit ${milestone.label}`}
-          title="Edit status and due date"
-          className="shrink-0 transition-colors"
-          style={{ color: rowEditing ? '#C8963A' : '#C6D0DA' }}
-        >
-          <Pencil size={10} />
-        </button>
-      </span>
+      {/* No pencil here. Editing is opened once for the whole project from the
+          row above; a pencil per milestone put seven of them in one card. */}
+      <Link href={href}
+            className="flex-1 min-w-0 text-[12.5px] text-[#181818] truncate hover:text-[#2C5485] hover:underline"
+            title={`${milestone.label} — open in Workstreams`}>
+        {milestone.label}
+      </Link>
 
       <span className="w-[186px] shrink-0 min-w-0">
         <MajorPill label={majorLabel} workstream={workstream} />
