@@ -75,9 +75,10 @@ export interface CardMilestone {
   workstream: WorkstreamKey
   /** department names tagged on this milestone (migration 068) */
   teams: string[]
-  votes: number
-  /** whether the signed-in user has voted for it */
-  votedByMe: boolean
+  /** marked as this week's focus — a shared team flag, not a personal bookmark */
+  focus: boolean
+  /** number of comments on the thread, so the row can show there is context */
+  comments: number
 }
 
 /** A major milestone with the sub-milestones underneath it. */
@@ -256,10 +257,10 @@ export function buildRows(
   riskByProject: Map<string, ProjectRisk> = new Map(),
   /** milestone_id -> department display names (migration 068) */
   teamsByMilestone: Map<string, string[]> = new Map(),
-  /** milestone_id -> total upvotes (migration 071) */
-  votesByMilestone: Map<string, number> = new Map(),
-  /** milestone ids the signed-in user has voted for */
-  myVotes: Set<string> = new Set(),
+  /** milestone ids marked as this week's focus (migration 072) */
+  focusIds: Set<string> = new Set(),
+  /** milestone_id -> comment count */
+  commentCounts: Map<string, number> = new Map(),
 ): PriorityRow[] {
   const rows: PriorityRow[] = []
 
@@ -336,9 +337,9 @@ export function buildRows(
       workstreams: WORKSTREAMS.filter(ws =>
         open.some(m => defByKey.get(m.major_key)?.workstream === ws)),
       // Flattened once here, ordered by due date. Due-date order is the default
-      // because the card's job is "what lands next"; the vote tally re-sorts it
-      // when the team has expressed a priority, and undated items sit last
-      // rather than first — an undated milestone is unplanned, not urgent.
+      // because the card's job is "what lands next"; focus re-sorts it once the
+      // team has marked anything, and undated items sit last rather than first
+      // — an undated milestone is unplanned, not urgent.
       cardMilestones: groups
         .flatMap(g => g.milestones.map(m => ({
           milestone: m,
@@ -346,8 +347,8 @@ export function buildRows(
           majorLabel: g.majorLabel,
           workstream: g.workstream,
           teams: teamsByMilestone.get(m.id) ?? [],
-          votes: votesByMilestone.get(m.id) ?? 0,
-          votedByMe: myVotes.has(m.id),
+          focus: focusIds.has(m.id),
+          comments: commentCounts.get(m.id) ?? 0,
         })))
         .sort(byDueDate),
       momentum: momentumByProject.get(p.id) ?? null,
@@ -377,14 +378,14 @@ export function byDueDate(a: CardMilestone, b: CardMilestone): number {
 }
 
 /**
- * Vote order: most-upvoted first, then due date.
+ * Focus first, then due date.
  *
- * Only applied once something actually has a vote — with an all-zero tally this
- * would silently degrade to due-date order anyway, but being explicit means the
- * UI can say which ordering the reader is looking at.
+ * Focus is the answer to "what are we doing this week", so it belongs at the
+ * top of the list regardless of when it happens to be due — that is the whole
+ * reason for marking it.
  */
-export function byVotes(a: CardMilestone, b: CardMilestone): number {
-  if (a.votes !== b.votes) return b.votes - a.votes
+export function byFocus(a: CardMilestone, b: CardMilestone): number {
+  if (a.focus !== b.focus) return a.focus ? -1 : 1
   return byDueDate(a, b)
 }
 

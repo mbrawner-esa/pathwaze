@@ -5,6 +5,7 @@ export const dynamic = 'force-dynamic'
 import { formatDate, isPastDue } from '@/lib/utils'
 import { Avatar } from '@/components/ui/Avatar'
 import { StageBadge } from '@/components/ui/StageBadge'
+import { FocusCard, type FocusItem } from '@/components/dashboard/FocusCard'
 
 // ── Week helpers (Mon–Sun) ──
 function startOfWeek(d: Date): Date {
@@ -99,6 +100,67 @@ export default async function DashboardPage() {
       .order('created_at', { ascending: false })
       .limit(500),
   ])
+
+  // ── This week's focus (migration 072) ──
+  // The portfolio board is manager-only, so without this the week's decisions
+  // are invisible to the people doing the work. Read defensively: the dashboard
+  // must render even if 072 has not been run.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: focusRows } = await supabase
+    .from('workstream_milestone_focus')
+    .select('milestone_id')
+    .order('set_at', { ascending: false }) as unknown as { data: any[] | null }
+
+  const focusIds = (focusRows ?? []).map(f => f.milestone_id)
+  let focusItems: FocusItem[] = []
+
+  if (focusIds.length) {
+    const [{ data: focusMs }, { data: focusDefs }, { data: focusComments }] = await Promise.all([
+      supabase
+        .from('workstream_milestones')
+        .select('id, label, status, end_date, is_critical, major_key, project_id, project:projects(id, name)')
+        .in('id', focusIds) as unknown as Promise<{ data: any[] | null }>, // eslint-disable-line @typescript-eslint/no-explicit-any
+      supabase.from('workstream_majors').select('key, label, workstream') as unknown as Promise<{ data: any[] | null }>, // eslint-disable-line @typescript-eslint/no-explicit-any
+      supabase.from('workstream_milestone_comments')
+        .select('milestone_id').in('milestone_id', focusIds) as unknown as Promise<{ data: any[] | null }>, // eslint-disable-line @typescript-eslint/no-explicit-any
+    ])
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const defByKey = new Map<string, any>(((focusDefs ?? []) as any[]).map(d => [d.key, d]))
+    const commentCount = new Map<string, number>()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    for (const c of ((focusComments ?? []) as any[])) {
+      commentCount.set(c.milestone_id, (commentCount.get(c.milestone_id) ?? 0) + 1)
+    }
+
+    // Completed work drops off the list on its own — a focus that is done is no
+    // longer where anyone should be looking, and making someone un-tick it is
+    // busywork the status change already implied.
+    focusItems = ((focusMs ?? []) as any[]) // eslint-disable-line @typescript-eslint/no-explicit-any
+      .filter(m => m.status !== 'complete')
+      .map(m => {
+        const def = defByKey.get(m.major_key)
+        return {
+          milestoneId: m.id,
+          label: m.label,
+          projectId: m.project_id,
+          projectName: m.project?.name ?? 'Unknown project',
+          majorLabel: def?.label ?? m.major_key,
+          workstream: def?.workstream ?? '',
+          status: m.status,
+          endDate: m.end_date,
+          isCritical: !!m.is_critical,
+          comments: commentCount.get(m.id) ?? 0,
+        }
+      })
+      // Soonest first, undated last — the same rule the board's card uses.
+      .sort((a, b) => {
+        if (a.endDate && b.endDate) return a.endDate.localeCompare(b.endDate)
+        if (a.endDate) return -1
+        if (b.endDate) return 1
+        return a.label.localeCompare(b.label)
+      })
+  }
 
   // Filter tasks client-side (assignee = me AND due_date in week range AND not Complete)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -249,6 +311,8 @@ export default async function DashboardPage() {
           Here&apos;s what&apos;s on your plate this week.
         </p>
       </div>
+
+      <FocusCard items={focusItems} />
 
       {/* 2×2 grid — all four cards share the same dimensions */}
       <div className="grid grid-cols-2 auto-rows-fr gap-6">

@@ -2,16 +2,16 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 
 /**
- * Milestone upvotes (migration 071) — the priority signal on the /health board.
+ * This week's focus (migration 072).
  *
- * POST   { milestone_id }  → add my vote
- * DELETE ?milestone_id=…   → remove my vote
+ * POST   { milestone_id }  → mark as focus
+ * DELETE ?milestone_id=…   → unmark
  *
- * Deliberately NOT manager-gated, unlike the reorder endpoint it replaces.
- * Priority is worth more when the people doing the work can say what matters;
- * a tally that only managers can contribute to is just the drag order with
- * extra steps. RLS pins every row to the caller's own user_id, so nobody can
- * vote on someone else's behalf whatever they send.
+ * Focus is a SHARED decision, so this is deliberately not scoped to the caller:
+ * anyone signed in can set it and everyone sees the same list. The board itself
+ * is manager-only, which is where the real gate sits; a team member reaching
+ * this endpoint directly is adding to a list their own dashboard reads, which
+ * is not a privilege worth a second door.
  */
 
 export async function POST(request: NextRequest) {
@@ -24,11 +24,12 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'milestone_id is required' }, { status: 400 })
   }
 
-  // Upsert rather than insert: double-clicking the button is a normal thing to
-  // do and should be idempotent, not a duplicate-key error in the user's face.
+  // Upsert, not insert: ticking an already-focused row is a normal thing to do
+  // and should be a no-op rather than a duplicate-key error.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { error } = await (supabase.from('workstream_milestone_votes') as any)
-    .upsert({ milestone_id, user_id: user.id }, { onConflict: 'milestone_id,user_id' })
+  const { error } = await (supabase.from('workstream_milestone_focus') as any)
+    .upsert({ milestone_id, set_by: user.id, set_at: new Date().toISOString() },
+            { onConflict: 'milestone_id' })
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
   return NextResponse.json({ ok: true })
@@ -44,11 +45,9 @@ export async function DELETE(request: NextRequest) {
     return NextResponse.json({ error: 'milestone_id is required' }, { status: 400 })
   }
 
-  // The user_id filter is belt-and-braces — RLS already scopes the delete to the
-  // caller — but it makes the intent explicit at the call site.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { error } = await (supabase.from('workstream_milestone_votes') as any)
-    .delete().eq('milestone_id', milestone_id).eq('user_id', user.id)
+  const { error } = await (supabase.from('workstream_milestone_focus') as any)
+    .delete().eq('milestone_id', milestone_id)
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
   return NextResponse.json({ ok: true })

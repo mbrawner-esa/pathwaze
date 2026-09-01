@@ -24,7 +24,8 @@ import { useState, useMemo, useTransition } from 'react'
 import Link from 'next/link'
 import { useRouter, usePathname, useSearchParams } from 'next/navigation'
 import {
-  GripVertical, ChevronRight, ChevronDown, ChevronUp, AlertTriangle, X, RotateCcw, Pencil, Check, Sparkles,
+  GripVertical, ChevronRight, ChevronDown, AlertTriangle, X, RotateCcw, Pencil, Check, Sparkles,
+  MessageSquare, Target,
 } from 'lucide-react'
 import { formatShortDate, formatDate } from '@/lib/utils'
 import { SELECTABLE_STAGES } from '@/lib/stages'
@@ -33,13 +34,14 @@ import {
   type MilestoneStatus, type WorkstreamKey,
 } from '@/lib/workstreams'
 import {
-  inHorizon, filterRows, filterOptions, groupRows, byDueDate, byVotes,
+  inHorizon, filterRows, filterOptions, groupRows, byDueDate, byFocus,
   HORIZONS, HORIZON_LABEL, HORIZON_HINT, HORIZON_GANTT_MONTHS, GROUP_LABEL, EMPTY_FILTERS,
   type PriorityRow, type Horizon, type BoardFilters, type GroupBy, type CardMilestone,
 } from '@/lib/portfolio-priority'
 import { BAND_COLOR, BAND_LABEL, momentumSummary } from '@/lib/momentum'
 import { RISK_BAND_COLOR, RISK_BAND_LABEL } from '@/lib/risk'
 import { MomentumChart } from './MomentumChart'
+import { CommentThread } from './CommentThread'
 
 const LANE_HUE: Record<string, string> = {
   commercial: '#6E879E',
@@ -83,6 +85,7 @@ export function PriorityBoard({
   const [horizon, setHorizon] = useState<Horizon>('near')
   const [filters, setFilters] = useState<BoardFilters>(EMPTY_FILTERS)
   const [groupBy, setGroupBy] = useState<GroupBy>('none')
+  const [focusOnly, setFocusOnly] = useState(false)
   const [dragId, setDragId] = useState<string | null>(null)
   const [overId, setOverId] = useState<string | null>(null)
   const [openId, setOpenId] = useState<string | null>(null)
@@ -239,15 +242,15 @@ export function PriorityBoard({
     return ok
   }
 
-  /** Toggle my vote on a milestone. RLS pins the row to me server-side. */
-  async function onVote(milestoneId: string, next: boolean): Promise<boolean> {
+  /** Mark or unmark a milestone as this week's focus. Shared, not per-user. */
+  async function onFocus(milestoneId: string, next: boolean): Promise<boolean> {
     setBusy(true)
     const ok = next
-      ? await call('/api/workstreams/votes', {
+      ? await call('/api/workstreams/focus', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ milestone_id: milestoneId }),
         })
-      : await call(`/api/workstreams/votes?milestone_id=${encodeURIComponent(milestoneId)}`,
+      : await call(`/api/workstreams/focus?milestone_id=${encodeURIComponent(milestoneId)}`,
           { method: 'DELETE' })
     setBusy(false)
     startTransition(() => router.refresh())
@@ -296,7 +299,7 @@ export function PriorityBoard({
   const rowProps = {
     horizon, busy, editingKeys, edits, openFields, cancelRecord, stage,
     openId, setOpenId, dragId, overId, setDragId, setOverId, dropOn, dragEnabled,
-    reorderMilestones, onVote,
+    reorderMilestones, onFocus, focusOnly,
   }
 
   return (
@@ -336,6 +339,23 @@ export function PriorityBoard({
         </div>
 
         <span className="w-px h-6 bg-[#E4EAF0] mx-0.5" />
+
+        {/* Focus filter. Opening a row still shows an empty card rather than
+            hiding the project, so the list of sites stays stable while you
+            narrow to the week's work. */}
+        <button
+          type="button"
+          onClick={() => setFocusOnly(v => !v)}
+          aria-pressed={focusOnly}
+          title="Show only milestones marked as this week's focus"
+          className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-[12px] font-semibold border transition-colors"
+          style={focusOnly
+            ? { background: '#E6C87A', borderColor: '#C8963A', color: '#5E4511' }
+            : { background: '#fff', borderColor: '#D6DEE7', color: '#55677A' }}
+        >
+          <Target size={12} />
+          Focus only
+        </button>
 
         <Select label="Workstream" value={filters.workstream}
                 onChange={v => setFilters(f => ({ ...f, workstream: v as WorkstreamKey | 'all' }))}
@@ -485,7 +505,8 @@ interface RowShared {
   dropOn: (id: string) => void
   dragEnabled: boolean
   reorderMilestones: (ids: string[]) => Promise<boolean>
-  onVote: (id: string, next: boolean) => Promise<boolean>
+  onFocus: (id: string, next: boolean) => Promise<boolean>
+  focusOnly: boolean
 }
 
 function BoardTable({ rows, ...s }: { rows: PriorityRow[] } & RowShared) {
@@ -723,12 +744,18 @@ function ProjectPlan({ row, ...s }: { row: PriorityRow } & RowShared) {
 
   const inWindow = row.cardMilestones.filter(x => inHorizon(x.milestone, s.horizon))
   const notStartedCount = inWindow.filter(x => x.milestone.status === 'not_started').length
-  const visible = showNotStarted ? inWindow : inWindow.filter(x => x.milestone.status !== 'not_started')
+  const focusCount = inWindow.filter(x => x.focus).length
 
-  // Vote order once anyone has voted, due-date order otherwise. Stated in the
+  const afterStatus = showNotStarted ? inWindow : inWindow.filter(x => x.milestone.status !== 'not_started')
+  // The focus filter is board-wide, so a project with nothing focused collapses
+  // to an empty card rather than disappearing — the row still says the project
+  // exists and simply has nothing in this week's list.
+  const visible = s.focusOnly ? afterStatus.filter(x => x.focus) : afterStatus
+
+  // Focus first once anything is marked, due date otherwise. Stated in the
   // header so the reader always knows which list they are looking at.
-  const anyVotes = visible.some(x => x.votes > 0)
-  const ordered = [...visible].sort(anyVotes ? byVotes : byDueDate)
+  const anyFocus = visible.some(x => x.focus)
+  const ordered = [...visible].sort(anyFocus ? byFocus : byDueDate)
 
   if (!inWindow.length) {
     return (
@@ -746,7 +773,8 @@ function ProjectPlan({ row, ...s }: { row: PriorityRow } & RowShared) {
     <div className="rounded-lg bg-white border border-[#EDF1F5]">
       <div className="flex items-center justify-between gap-3 px-4 py-1.5 border-b border-[#F1F5F9]">
         <span className="text-[10.5px] text-[#94a3b8]">
-          {anyVotes ? 'Ordered by votes, then due date' : 'Ordered by due date'} · upvote to raise priority
+          {anyFocus ? 'Focus first, then due date' : 'Ordered by due date'}
+          {focusCount > 0 && ` · ${focusCount} in focus`}
         </span>
         {notStartedCount > 0 && (
           <button type="button" onClick={() => setShowNotStarted(v => !v)}
@@ -757,7 +785,7 @@ function ProjectPlan({ row, ...s }: { row: PriorityRow } & RowShared) {
       </div>
 
       <div className="flex items-center gap-3 px-4 py-1.5 border-b border-[#F1F5F9] bg-[#FAFBFC]">
-        <span className="w-[52px] text-[9.5px] font-bold uppercase tracking-[0.08em] text-[#94a3b8]">Votes</span>
+        <span className="w-[30px] text-[9.5px] font-bold uppercase tracking-[0.08em] text-[#94a3b8]">Focus</span>
         <span className="flex-1 min-w-0 text-[9.5px] font-bold uppercase tracking-[0.08em] text-[#94a3b8]">Milestone</span>
         <span className="w-[186px] text-[9.5px] font-bold uppercase tracking-[0.08em] text-[#94a3b8]">Major Milestone</span>
         <span className="w-[150px] text-[9.5px] font-bold uppercase tracking-[0.08em] text-[#94a3b8]">Team</span>
@@ -781,11 +809,12 @@ function ProjectPlan({ row, ...s }: { row: PriorityRow } & RowShared) {
   )
 }
 
-/** One sub-milestone: upvote, name, major, team, critical flag, status, due date. */
+/** One sub-milestone: focus checkbox, name, major, team, critical, status, due. */
 function SubMilestone({
   item, projectId, ...s
 }: { item: CardMilestone; projectId: string } & RowShared) {
-  const { milestone, majorLabel, majorKey, workstream, teams, votes, votedByMe } = item
+  const { milestone, majorLabel, majorKey, workstream, teams, focus, comments } = item
+  const [threadOpen, setThreadOpen] = useState(false)
   const statusKey = `milestone:${milestone.id}:status`
   const dateKey = `milestone:${milestone.id}:end_date`
   const slipped = milestone.end_date && milestone.baseline_date
@@ -796,126 +825,158 @@ function SubMilestone({
   const href = `/projects/${projectId}?tab=workstreams&ws=${workstream}&major=${encodeURIComponent(majorKey)}`
 
   return (
-    <li className="group/ms flex items-center gap-3 px-4 py-[7px] border-b border-[#F8FAFC] last:border-0 hover:bg-[#FAFBFC]">
-      <span className="w-[52px] shrink-0">
-        <VoteButton milestoneId={milestone.id} votes={votes} voted={votedByMe}
-                    busy={s.busy} onVote={s.onVote} />
-      </span>
-
-      {/* No pencil here. Editing is opened once for the whole project from the
-          row above; a pencil per milestone put seven of them in one card. */}
-      <Link href={href}
-            className="flex-1 min-w-0 text-[12.5px] text-[#181818] truncate hover:text-[#2C5485] hover:underline"
-            title={`${milestone.label} — open in Workstreams`}>
-        {milestone.label}
-      </Link>
-
-      <span className="w-[186px] shrink-0 min-w-0">
-        <MajorPill label={majorLabel} workstream={workstream} />
-      </span>
-
-      <span className="w-[150px] shrink-0 min-w-0 flex items-center gap-1">
-        {teams.length === 0
-          ? <span className="text-[#C6D0DA] text-[11px]">—</span>
-          : teams.slice(0, 2).map(t => (
-              <span key={t}
-                    className="inline-block max-w-[70px] truncate px-1.5 py-0.5 rounded-full text-[10px] font-semibold
-                               bg-[#F4F6F8] border border-[#E4EAF0] text-[#55677A]"
-                    title={teams.join(' · ')}>
-                {t}
-              </span>
-            ))}
-        {teams.length > 2 && (
-          <span className="text-[10px] text-[#94a3b8] shrink-0" title={teams.join(' · ')}>
-            +{teams.length - 2}
-          </span>
-        )}
-      </span>
-
-      <span className="w-[70px] shrink-0 text-center">
-        {milestone.is_critical
-          ? <span className="inline-block px-1.5 py-0.5 rounded-full text-[9.5px] font-bold uppercase tracking-[0.05em]
-                             bg-[#F3EEFC] text-[#5B21B6] border border-[#DDD0F2]">
-              Critical
-            </span>
-          : <span className="text-[#D7E0E8]">—</span>}
-      </span>
-
-      <span className="w-[96px] shrink-0">
-        {s.editingKeys.has(statusKey) ? (
-          <select
-            autoFocus
-            value={(s.edits[statusKey]?.value as string) ?? milestone.status}
-            disabled={s.busy}
-            onChange={e => s.stage(statusKey, {
-              kind: 'milestone', id: milestone.id, field: 'status', value: e.target.value,
-            })}
-            className="w-full px-1 py-0.5 rounded text-[10.5px] font-semibold border border-[#C8963A] bg-white"
-          >
-            {STATUSES.map(k => <option key={k} value={k}>{STATUS_STYLE[k].label}</option>)}
-          </select>
-        ) : (
-          <span className="inline-flex items-center gap-1">
-            <StatusPill status={milestone.status} />
-          </span>
-        )}
-      </span>
-
-      <span className="w-[108px] shrink-0 text-right">
-        {s.editingKeys.has(dateKey) ? (
-          <input
-            autoFocus
-            type="date"
-            value={(s.edits[dateKey]?.value as string) ?? milestone.end_date ?? ''}
-            disabled={s.busy}
-            onChange={e => s.stage(dateKey, {
-              kind: 'milestone', id: milestone.id, field: 'end_date', value: e.target.value,
-            })}
-            className="w-[104px] px-1 py-0.5 rounded text-[10.5px] text-[#181818] border border-[#C8963A] bg-white outline-none"
+    <>
+      <li
+        className="group/ms flex items-center gap-3 px-4 py-[7px] border-b border-[#F8FAFC] last:border-0 transition-colors"
+        style={focus
+          // Focused rows carry a gold left edge and a warm tint. The tint alone
+          // was too quiet to scan for; the edge is what makes the week's list
+          // findable in a long card.
+          ? { background: '#FFFDF6', boxShadow: 'inset 3px 0 0 #E6C87A' }
+          : undefined}
+      >
+        <span className="w-[30px] shrink-0">
+          <FocusCheckbox
+            milestoneId={milestone.id}
+            checked={focus}
+            busy={s.busy}
+            onToggle={s.onFocus}
           />
-        ) : (
-          <span className="inline-flex items-center gap-1 justify-end">
+        </span>
+
+        {/* No pencil here. Editing is opened once for the whole project from the
+            row above; a pencil per milestone put seven of them in one card. */}
+        <span className="flex-1 min-w-0 flex items-center gap-2">
+          <Link href={href}
+                className="min-w-0 truncate text-[12.5px] text-[#181818] hover:text-[#2C5485] hover:underline"
+                title={`${milestone.label} — open in Workstreams`}>
+            {milestone.label}
+          </Link>
+          {/* The thread is where the instructions live, so the count is a
+              deliberate affordance rather than a badge: zero still shows on
+              hover, because "add context" needs a way in. */}
+          <button
+            type="button"
+            onClick={() => setThreadOpen(o => !o)}
+            aria-expanded={threadOpen}
+            title={comments > 0 ? `${comments} comment${comments === 1 ? '' : 's'}` : 'Add context'}
+            className={'shrink-0 inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold transition-colors ' +
+              (comments > 0
+                ? 'text-[#55677A] bg-[#F4F6F8] border border-[#E4EAF0]'
+                : 'text-[#C6D0DA] opacity-0 group-hover/ms:opacity-100 focus:opacity-100')}
+          >
+            <MessageSquare size={10} />
+            {comments > 0 && <span className="tabular-nums">{comments}</span>}
+          </button>
+        </span>
+
+        <span className="w-[186px] shrink-0 min-w-0">
+          <MajorPill label={majorLabel} workstream={workstream} />
+        </span>
+
+        <span className="w-[150px] shrink-0 min-w-0 flex items-center gap-1">
+          {teams.length === 0
+            ? <span className="text-[#C6D0DA] text-[11px]">—</span>
+            : teams.slice(0, 2).map(t => (
+                <span key={t}
+                      className="inline-block max-w-[70px] truncate px-1.5 py-0.5 rounded-full text-[10px] font-semibold
+                                 bg-[#F4F6F8] border border-[#E4EAF0] text-[#55677A]"
+                      title={teams.join(' · ')}>
+                  {t}
+                </span>
+              ))}
+          {teams.length > 2 && (
+            <span className="text-[10px] text-[#94a3b8] shrink-0" title={teams.join(' · ')}>
+              +{teams.length - 2}
+            </span>
+          )}
+        </span>
+
+        <span className="w-[70px] shrink-0 text-center">
+          {milestone.is_critical
+            ? <span className="inline-block px-1.5 py-0.5 rounded-full text-[9.5px] font-bold uppercase tracking-[0.05em]
+                               bg-[#F3EEFC] text-[#5B21B6] border border-[#DDD0F2]">
+                Critical
+              </span>
+            : <span className="text-[#D7E0E8]">—</span>}
+        </span>
+
+        <span className="w-[96px] shrink-0">
+          {s.editingKeys.has(statusKey) ? (
+            <select
+              value={(s.edits[statusKey]?.value as string) ?? milestone.status}
+              disabled={s.busy}
+              onChange={e => s.stage(statusKey, {
+                kind: 'milestone', id: milestone.id, field: 'status', value: e.target.value,
+              })}
+              className="w-full px-1 py-0.5 rounded text-[10.5px] font-semibold border border-[#C8963A] bg-white"
+            >
+              {STATUSES.map(k => <option key={k} value={k}>{STATUS_STYLE[k].label}</option>)}
+            </select>
+          ) : (
+            <StatusPill status={milestone.status} />
+          )}
+        </span>
+
+        <span className="w-[108px] shrink-0 text-right">
+          {s.editingKeys.has(dateKey) ? (
+            <input
+              type="date"
+              value={(s.edits[dateKey]?.value as string) ?? milestone.end_date ?? ''}
+              disabled={s.busy}
+              onChange={e => s.stage(dateKey, {
+                kind: 'milestone', id: milestone.id, field: 'end_date', value: e.target.value,
+              })}
+              className="w-[104px] px-1 py-0.5 rounded text-[10.5px] text-[#181818] border border-[#C8963A] bg-white outline-none"
+            />
+          ) : (
             <DatePill date={milestone.end_date} slipped={!!slipped} baseline={milestone.baseline_date} />
-          </span>
-        )}
-      </span>
-    </li>
+          )}
+        </span>
+      </li>
+
+      {threadOpen && (
+        <li className="px-4 py-3 border-b border-[#F8FAFC] bg-[#FCFDFE]">
+          <CommentThread milestoneId={milestone.id} label={milestone.label} />
+        </li>
+      )}
+    </>
   )
 }
 
 /**
- * One vote per person, toggled.
+ * Mark a milestone as this week's focus.
  *
- * Replaces drag-to-reorder: a dragged list is one person's opinion stored as if
- * it were the team's, and it carries no argument. A tally shows that four people
- * wanted this and one wanted that, which is the actual conversation.
+ * A checkbox rather than a vote tally: the question in a delivery meeting is
+ * "are we doing this", which is binary and decided out loud. A count answers
+ * "how much do we collectively want it", which nobody asks.
  */
-function VoteButton({
-  milestoneId, votes, voted, busy, onVote,
+function FocusCheckbox({
+  milestoneId, checked, busy, onToggle,
 }: {
   milestoneId: string
-  votes: number
-  voted: boolean
+  checked: boolean
   busy: boolean
-  onVote: (id: string, next: boolean) => Promise<boolean>
+  onToggle: (id: string, next: boolean) => Promise<boolean>
 }) {
   return (
     <button
       type="button"
+      role="checkbox"
+      aria-checked={checked}
       disabled={busy}
-      onClick={() => onVote(milestoneId, !voted)}
-      aria-pressed={voted}
-      title={voted ? 'Remove your vote' : 'Upvote as a priority this week'}
-      className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md border transition-colors disabled:opacity-50"
-      style={voted
-        ? { background: '#FDF0D5', borderColor: '#E6C87A', color: '#8A6519' }
-        : { background: '#fff', borderColor: '#E4EAF0', color: '#94a3b8' }}
+      onClick={() => onToggle(milestoneId, !checked)}
+      title={checked ? 'Remove from this week’s focus' : 'Mark as this week’s focus'}
+      className="w-[18px] h-[18px] rounded-[5px] border flex items-center justify-center transition-colors disabled:opacity-50"
+      style={checked
+        ? { background: '#E6C87A', borderColor: '#C8963A', color: '#5E4511' }
+        : { background: '#fff', borderColor: '#D6DEE7' }}
     >
-      <ChevronUp size={12} strokeWidth={2.5} />
-      <span className="text-[11px] font-bold tabular-nums">{votes}</span>
+      {checked && <Check size={12} strokeWidth={3} />}
     </button>
   )
 }
+
 
 // ── gantt ─────────────────────────────────────────────────────────────
 

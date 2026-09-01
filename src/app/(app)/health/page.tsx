@@ -174,14 +174,16 @@ export default async function HealthPage({
     })
   }
 
-  // Department tags (068) and upvotes (071) for the expanded card. Both are
-  // read defensively — the board must render even if 071 has not been run.
-  const [{ data: deptTags }, { data: depts }, { data: votes }] = await Promise.all([
+  // Department tags (068), focus flags and comment counts (072) for the card.
+  // Read defensively — the board must render even if 072 has not been run.
+  const [{ data: deptTags }, { data: depts }, { data: focusRows }, { data: commentRows }] = await Promise.all([
     supabase.from('workstream_milestone_departments')
       .select('milestone_id, department_key') as unknown as Promise<{ data: any[] | null }>, // eslint-disable-line @typescript-eslint/no-explicit-any
     supabase.from('departments').select('key, name').order('sort_order') as unknown as Promise<{ data: any[] | null }>, // eslint-disable-line @typescript-eslint/no-explicit-any
-    supabase.from('workstream_milestone_votes')
-      .select('milestone_id, user_id') as unknown as Promise<{ data: any[] | null }>, // eslint-disable-line @typescript-eslint/no-explicit-any
+    supabase.from('workstream_milestone_focus')
+      .select('milestone_id') as unknown as Promise<{ data: any[] | null }>, // eslint-disable-line @typescript-eslint/no-explicit-any
+    supabase.from('workstream_milestone_comments')
+      .select('milestone_id') as unknown as Promise<{ data: any[] | null }>, // eslint-disable-line @typescript-eslint/no-explicit-any
   ])
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -196,12 +198,16 @@ export default async function HealthPage({
     else teamsByMilestone.set(t.milestone_id, [name])
   }
 
-  const votesByMilestone = new Map<string, number>()
-  const myVotes = new Set<string>()
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  for (const v of ((votes ?? []) as any[])) {
-    votesByMilestone.set(v.milestone_id, (votesByMilestone.get(v.milestone_id) ?? 0) + 1)
-    if (v.user_id === user.id) myVotes.add(v.milestone_id)
+  const focusIds = new Set<string>(((focusRows ?? []) as any[]).map(f => f.milestone_id))
+
+  // Counted in code rather than with a grouped query: PostgREST has no clean
+  // group-by here, and the row set is small enough that fetching ids and
+  // tallying costs less than the round trips a per-milestone count would need.
+  const commentCounts = new Map<string, number>()
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  for (const c of ((commentRows ?? []) as any[])) {
+    commentCounts.set(c.milestone_id, (commentCounts.get(c.milestone_id) ?? 0) + 1)
   }
 
   const ranks = new Map<string, number>((priority ?? []).map(r => [r.project_id, r.rank]))
@@ -220,6 +226,9 @@ export default async function HealthPage({
       pmNames,
       momentumByProject,
       riskByProject,
+      teamsByMilestone,
+      focusIds,
+      commentCounts,
     ),
     manual,
   )
