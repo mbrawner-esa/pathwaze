@@ -68,10 +68,16 @@ export function MomentumChart({
 }) {
   // Before any early return: hooks must not be conditional.
   const [openId, setOpenId] = useState<string | null>(null)
+  const [sortBy, setSortBy] = useState<'score' | 'name'>('score')
 
   const scored = rows.filter((r): r is PriorityRow & { momentum: Momentum } => !!r.momentum)
 
-  const sorted = [...scored].sort((a, b) => b.momentum.score - a.momentum.score)
+  // Score order answers "who is stuck"; name order answers "how is X doing"
+  // without hunting a moving row. Both are one click, neither is a default
+  // anyone has to undo.
+  const sorted = [...scored].sort((a, b) => sortBy === 'name'
+    ? a.name.localeCompare(b.name)
+    : b.momentum.score - a.momentum.score)
 
   const counts = sorted.reduce<Record<MomentumBand, number>>((acc, r) => {
     acc[r.momentum.band]++
@@ -86,16 +92,29 @@ export function MomentumChart({
 
   return (
     <section className={'bg-white rounded-xl border border-[#e2e8f0] ' +
-      (expandable ? 'px-5 pt-4 pb-4' : 'px-4 pt-3.5 pb-3 mb-4')}>
+      (expandable ? 'px-7 pt-6 pb-6' : 'px-4 pt-3.5 pb-3 mb-4')}>
       <div className="flex items-baseline justify-between gap-4 flex-wrap mb-3">
         <div className="flex items-baseline gap-2.5">
-          <h2 className="m-0 text-[12.5px] font-semibold text-[#3E3E3C]">Portfolio momentum</h2>
+          <h2 className={'m-0 font-semibold text-[#3E3E3C] ' + (expandable ? 'text-[15px]' : 'text-[12.5px]')}>
+            Portfolio momentum
+          </h2>
           <span className="text-[11px] text-[#94a3b8]">
-            last 30 days · median <span className="tabular-nums font-semibold text-[#55677A]">{median}</span>
+            last {WINDOW_DAYS} days · median <span className="tabular-nums font-semibold text-[#55677A]">{median}</span>
           </span>
         </div>
-        {/* Legend: colour never travels without its label. */}
-        <div className="flex items-center gap-3 flex-wrap">
+        <div className="flex items-center gap-4 flex-wrap">
+          {expandable && (
+            <span className="flex items-center gap-1 bg-[#F7F9FA] border border-[#E4EAF0] rounded-md p-[2px]">
+              {(['score', 'name'] as const).map(k => (
+                <button key={k} type="button" onClick={() => setSortBy(k)} aria-pressed={sortBy === k}
+                        className={'px-2 py-[3px] rounded text-[10.5px] font-semibold transition-colors ' +
+                          (sortBy === k ? 'bg-white text-[#3E3E3C] shadow-sm' : 'text-[#94a3b8] hover:text-[#55677A]')}>
+                  {k === 'score' ? 'By score' : 'A–Z'}
+                </button>
+              ))}
+            </span>
+          )}
+          {/* Legend: colour never travels without its label. */}
           {([['stalled', 'Stalled'], ['steady', 'Moving']] as const).map(([b, label]) => (
             <span key={b} className="inline-flex items-center gap-1.5 text-[10.5px] text-[#94a3b8]">
               <i className="block w-[8px] h-[8px] rounded-full" style={{ background: BAR_FILL[b] }} />
@@ -113,8 +132,9 @@ export function MomentumChart({
             return (
               <li key={r.projectId}>
                 <div
-                  className={'flex items-center gap-2 rounded hover:bg-[#FAFBFC] ' +
-                    (expandable ? 'py-[5px] cursor-pointer' : 'py-[3px]')}
+                  className={'flex items-center rounded hover:bg-[#F7F9FA] transition-colors ' +
+                    (expandable ? 'gap-4 ' : 'gap-2 ') +
+                    (expandable ? 'py-[9px] px-2 -mx-2 cursor-pointer' : 'py-[3px]')}
                   onClick={expandable ? () => setOpenId(open ? null : r.projectId) : undefined}
                   title={expandable ? undefined : `${r.name} — ${BAND_LABEL[m.band]} ${m.score}/100\n${momentumSummary(m)}`}
                 >
@@ -122,10 +142,10 @@ export function MomentumChart({
                     {expandable && (open
                       ? <ChevronDown size={12} className="text-[#8A6519] shrink-0" />
                       : <ChevronRight size={12} className="text-[#C6D0DA] shrink-0" />)}
-                    <span className="text-[11.5px] text-[#3E3E3C] truncate">{r.name}</span>
+                    <span className={'truncate ' + (expandable ? 'text-[13px] text-[#181818]' : 'text-[11.5px] text-[#3E3E3C]')}>{r.name}</span>
                   </span>
                   <span className={'flex-1 rounded-sm bg-[#F5F7F9] relative overflow-hidden ' +
-                    (expandable ? 'h-[10px]' : 'h-[9px]')}>
+                    (expandable ? 'h-[14px]' : 'h-[9px]')}>
                     <span
                       className="absolute inset-y-0 left-0 rounded-r-[4px]"
                       style={{
@@ -136,8 +156,9 @@ export function MomentumChart({
                       }}
                     />
                   </span>
-                  <span className="text-[11.5px] font-semibold tabular-nums text-[#3E3E3C] text-right shrink-0"
-                        style={{ width: SCORE_PX }}>
+                  <span className={'font-semibold tabular-nums text-right shrink-0 ' +
+                    (expandable ? 'text-[14px] text-[#181818]' : 'text-[11.5px] text-[#3E3E3C]')}
+                        style={{ width: expandable ? 40 : SCORE_PX }}>
                     {m.score}
                   </span>
                 </div>
@@ -147,6 +168,16 @@ export function MomentumChart({
           })}
         </ul>
       </div>
+
+      {expandable && (
+        <div className="flex items-center gap-4 mt-1.5" aria-hidden>
+          <span className="shrink-0" style={{ width: LABEL_PX }} />
+          <span className="flex-1 flex justify-between text-[9.5px] tabular-nums text-[#C6D0DA]">
+            {[0, 25, 50, 75, 100].map(t => <span key={t}>{t}</span>)}
+          </span>
+          <span className="shrink-0" style={{ width: 40 }} />
+        </div>
+      )}
 
       <p className="m-0 mt-3 pt-2.5 border-t border-[#F4F6F8] text-[10.5px] text-[#A9B5C1]">
         <span className="tabular-nums font-semibold text-[#b91c1c]">{counts.stalled}</span> stalled of{' '}
@@ -166,7 +197,7 @@ export function MomentumChart({
  */
 function MomentumDetail({ momentum }: { momentum: Momentum }) {
   return (
-    <div className="ml-[188px] mr-[30px] mb-2 mt-1 rounded-lg bg-[#FAFBFC] border border-[#EDF1F5] px-3.5 py-2.5">
+    <div className="ml-[192px] mr-[40px] mb-3 mt-1 rounded-lg bg-[#FAFBFC] border border-[#EDF1F5] px-3.5 py-2.5">
       {momentum.components.length === 0 ? (
         <p className="m-0 text-[11.5px] text-[#706E6B]">
           {momentum.daysSinceActivity === null

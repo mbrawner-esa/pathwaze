@@ -9,12 +9,16 @@
 // Collapsed, a project is ONE row. Expanded, it is the whole plan — every
 // discipline at once, majors with their sub-milestones underneath.
 //
-// EDITING FOLLOWS SALESFORCE LIGHTNING. Nothing is an input until you say so: a
-// field renders as text with a pencil that appears on hover, clicking it turns
-// that one field into a control, and a Save / Cancel bar collects every pending
-// change until you commit them together. The alternative — live inputs that
-// save on blur — makes a read-only glance feel like a form, and turns a stray
-// click in a meeting into an unannounced write.
+// EDITING IS RECORD-LEVEL AND EXPLICIT. Nothing is an input until you say so.
+// Each row carries ONE always-visible pencil; clicking it once turns every
+// editable field on that row into a control, and the Save / Cancel bar commits
+// them together and returns the row to read-only.
+//
+// Two earlier shapes were wrong. Live inputs that save on blur make a read-only
+// glance feel like a form and turn a stray click into an unannounced write. A
+// pencil per field hidden behind hover makes editing a three-step gesture —
+// find the row, hover it, then aim at a 10px target — and leaves you asking
+// which of the row's pencils is the one you want.
 
 import { useState, useMemo, useTransition } from 'react'
 import Link from 'next/link'
@@ -287,7 +291,7 @@ export function PriorityBoard({
   }
 
   return (
-    <div className="px-8 py-9 max-w-[1440px] mx-auto pb-24">
+    <div className={'px-8 py-9 mx-auto pb-24 ' + (view === 'graph' ? 'max-w-none' : 'max-w-[1440px]')}>
       {/* ── Header + view switch ── */}
       <div className="mb-5 flex items-start justify-between gap-6 flex-wrap">
         <div>
@@ -508,11 +512,16 @@ function BoardRow({ row, index, ...s }: { row: PriorityRow; index: number } & Ro
   const open = s.openId === row.projectId
   const isOver = s.overId === row.projectId && s.dragId !== row.projectId
   const stageKey = `project:${row.projectId}:stage`
+  // Target belongs to the current milestone, not the project, but it is on this
+  // row so the record pencil opens it too — the pencil edits what you can see.
+  const targetKey = m ? `milestone:${m.id}:end_date` : null
+  const recordKeys = [stageKey, ...(targetKey ? [targetKey] : [])]
+  const rowEditing = recordKeys.some(k => s.editingKeys.has(k))
 
   return (
     <>
       <tr
-        draggable={s.dragEnabled}
+        draggable={s.dragEnabled && !rowEditing}
         onDragStart={() => s.setDragId(row.projectId)}
         onDragEnter={() => s.setOverId(row.projectId)}
         onDragOver={e => e.preventDefault()}
@@ -551,10 +560,11 @@ function BoardRow({ row, index, ...s }: { row: PriorityRow; index: number } & Ro
                 once, rather than making you find each pencil in turn. */}
             <button
               type="button"
-              onClick={() => s.openFields([stageKey])}
+              onClick={() => s.openFields(recordKeys)}
               aria-label={`Edit ${row.name}`}
               title="Edit this site record"
-              className="opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity text-[#94a3b8] hover:text-[#C8963A]"
+              className="shrink-0 transition-colors"
+              style={{ color: rowEditing ? '#C8963A' : '#C6D0DA' }}
             >
               <Pencil size={11} />
             </button>
@@ -621,7 +631,17 @@ function BoardRow({ row, index, ...s }: { row: PriorityRow; index: number } & Ro
             : <span className="text-[#C6D0DA]">—</span>}
         </Td>
         <Td align="right" className="tabular-nums">
-          {m?.end_date ? formatShortDate(m.end_date) : <span className="text-[#C6D0DA]">—</span>}
+          {targetKey && s.editingKeys.has(targetKey) ? (
+            <input
+              type="date"
+              value={(s.edits[targetKey]?.value as string) ?? m?.end_date ?? ''}
+              disabled={s.busy}
+              onChange={e => s.stage(targetKey, {
+                kind: 'milestone', id: m!.id, field: 'end_date', value: e.target.value,
+              })}
+              className="w-[116px] px-1.5 py-0.5 rounded text-[11px] text-[#181818] border border-[#C8963A] bg-white outline-none"
+            />
+          ) : m?.end_date ? formatShortDate(m.end_date) : <span className="text-[#C6D0DA]">—</span>}
         </Td>
       </tr>
 
@@ -752,6 +772,7 @@ function SubMilestone({
   const { milestone, majorLabel, majorKey, workstream, teams, votes, votedByMe } = item
   const statusKey = `milestone:${milestone.id}:status`
   const dateKey = `milestone:${milestone.id}:end_date`
+  const rowEditing = s.editingKeys.has(statusKey) || s.editingKeys.has(dateKey)
 
   const slipped = milestone.end_date && milestone.baseline_date
     && milestone.end_date.slice(0, 10) > milestone.baseline_date.slice(0, 10)
@@ -775,12 +796,15 @@ function SubMilestone({
         </Link>
         {/* Opens status AND due date together — the two things that move at the
             same time when a milestone is discussed. */}
+        {/* One click, always visible. Hiding it behind hover made editing a
+            two-step gesture: find the row, hover, then aim for a 10px target. */}
         <button
           type="button"
           onClick={() => s.openFields([statusKey, dateKey])}
           aria-label={`Edit ${milestone.label}`}
-          title="Edit this milestone"
-          className="opacity-0 group-hover/ms:opacity-100 focus:opacity-100 transition-opacity text-[#94a3b8] hover:text-[#C8963A] shrink-0"
+          title="Edit status and due date"
+          className="shrink-0 transition-colors"
+          style={{ color: rowEditing ? '#C8963A' : '#C6D0DA' }}
         >
           <Pencil size={10} />
         </button>
@@ -833,10 +857,6 @@ function SubMilestone({
         ) : (
           <span className="inline-flex items-center gap-1">
             <StatusPill status={milestone.status} />
-            <button type="button" onClick={() => s.openField(statusKey)} aria-label="Edit status"
-                    className="opacity-0 group-hover/ms:opacity-100 focus:opacity-100 transition-opacity text-[#94a3b8] hover:text-[#C8963A]">
-              <Pencil size={9} />
-            </button>
           </span>
         )}
       </span>
@@ -856,10 +876,6 @@ function SubMilestone({
         ) : (
           <span className="inline-flex items-center gap-1 justify-end">
             <DatePill date={milestone.end_date} slipped={!!slipped} baseline={milestone.baseline_date} />
-            <button type="button" onClick={() => s.openField(dateKey)} aria-label="Edit due date"
-                    className="opacity-0 group-hover/ms:opacity-100 focus:opacity-100 transition-opacity text-[#94a3b8] hover:text-[#C8963A]">
-              <Pencil size={9} />
-            </button>
           </span>
         )}
       </span>
