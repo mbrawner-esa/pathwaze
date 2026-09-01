@@ -123,6 +123,21 @@ export function PriorityBoard({
   function openField(key: EditKey) {
     setEditingKeys(prev => new Set(prev).add(key))
   }
+  /**
+   * Put a whole record into edit mode.
+   *
+   * Salesforce Lightning offers both: a pencil per field for a one-value fix,
+   * and Edit on the record for "I am going to change several things". Editing a
+   * site row one pencil at a time is the wrong shape for the second case, which
+   * is what a planning meeting actually does.
+   */
+  function openFields(keys: EditKey[]) {
+    setEditingKeys(prev => {
+      const next = new Set(prev)
+      for (const k of keys) next.add(k)
+      return next
+    })
+  }
   function stage(key: EditKey, edit: PendingEdit) {
     setEdits(prev => ({ ...prev, [key]: edit }))
   }
@@ -266,7 +281,7 @@ export function PriorityBoard({
   const dragEnabled = !filtersOn && groupBy === 'none'
 
   const rowProps = {
-    horizon, busy, editingKeys, edits, openField, stage,
+    horizon, busy, editingKeys, edits, openField, openFields, stage,
     openId, setOpenId, dragId, overId, setDragId, setOverId, dropOn, dragEnabled,
     reorderMilestones, onVote,
   }
@@ -446,6 +461,7 @@ interface RowShared {
   editingKeys: Set<EditKey>
   edits: Record<EditKey, PendingEdit>
   openField: (k: EditKey) => void
+  openFields: (keys: EditKey[]) => void
   stage: (k: EditKey, e: PendingEdit) => void
   openId: string | null
   setOpenId: (id: string | null) => void
@@ -531,6 +547,17 @@ function BoardRow({ row, index, ...s }: { row: PriorityRow; index: number } & Ro
                   className="text-[13px] font-semibold text-[#181818] hover:text-[#2C5485] hover:underline">
               {row.name}
             </Link>
+            {/* Record-level edit: opens every editable field on this row at
+                once, rather than making you find each pencil in turn. */}
+            <button
+              type="button"
+              onClick={() => s.openFields([stageKey])}
+              aria-label={`Edit ${row.name}`}
+              title="Edit this site record"
+              className="opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity text-[#94a3b8] hover:text-[#C8963A]"
+            >
+              <Pencil size={11} />
+            </button>
           </span>
         </Td>
         <Td>
@@ -740,11 +767,24 @@ function SubMilestone({
                     busy={s.busy} onVote={s.onVote} />
       </span>
 
-      <Link href={href}
-            className="flex-1 min-w-0 text-[12.5px] text-[#181818] truncate hover:text-[#2C5485] hover:underline"
-            title={`${milestone.label} — open in Workstreams`}>
-        {milestone.label}
-      </Link>
+      <span className="flex-1 min-w-0 flex items-center gap-1.5">
+        <Link href={href}
+              className="min-w-0 text-[12.5px] text-[#181818] truncate hover:text-[#2C5485] hover:underline"
+              title={`${milestone.label} — open in Workstreams`}>
+          {milestone.label}
+        </Link>
+        {/* Opens status AND due date together — the two things that move at the
+            same time when a milestone is discussed. */}
+        <button
+          type="button"
+          onClick={() => s.openFields([statusKey, dateKey])}
+          aria-label={`Edit ${milestone.label}`}
+          title="Edit this milestone"
+          className="opacity-0 group-hover/ms:opacity-100 focus:opacity-100 transition-opacity text-[#94a3b8] hover:text-[#C8963A] shrink-0"
+        >
+          <Pencil size={10} />
+        </button>
+      </span>
 
       <span className="w-[186px] shrink-0 min-w-0">
         <MajorPill label={majorLabel} workstream={workstream} />

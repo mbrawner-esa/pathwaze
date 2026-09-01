@@ -11,11 +11,10 @@
 // names, and "which ones" is the actual question. Not vertical bars — project
 // names are long and would need rotating.
 //
-// COLOUR. Momentum band is a STATUS, not a series identity, so it uses a
-// reserved three-step scale and always ships with a text label beside it, never
-// colour alone. The palette was validated rather than eyeballed — see the note
-// on BAR_FILL. Bar LENGTH carries the precise score; colour carries only the
-// coarse bad / middle / good read, which is why three steps serve four bands.
+// COLOUR. Two colours, not four. Bar LENGTH already carries the score
+// precisely, so colour only has to answer one question — is this one in
+// trouble — and every extra hue past that is decoration competing with the
+// data. See BAR_FILL for what was tried and rejected.
 
 import { useState } from 'react'
 import { ChevronRight, ChevronDown } from 'lucide-react'
@@ -26,31 +25,36 @@ import {
 import type { PriorityRow } from '@/lib/portfolio-priority'
 
 /**
- * Validated status fills. `node scripts/validate_palette.js` (dataviz skill) on
- * "#B91C1C,#C8963A,#166534" passes lightness, chroma, CVD separation and the
- * normal-vision floor against a light surface.
+ * One neutral, one alarm. Everything that is not stalled is the same calm
+ * slate; a stalled project is red.
  *
- * The obvious choice — reusing the four band colours from momentum.ts — FAILS:
- * stalled (#991B1B) and slow (#92400E) sit at ΔE 6.7 in normal vision, well
- * under the floor of 15, so full-colour readers cannot reliably tell them
- * apart, before considering colour blindness. Slow and Steady therefore share
- * the gold step, and their bar lengths separate them.
+ * Three things were tried and rejected, all with the validator rather than by
+ * eye (`node scripts/validate_palette.js`, dataviz skill):
  *
- * The gold carries a contrast WARN at 2.6:1, which the skill permits only with
- * relief: every bar here is directly labelled with its name, score and band.
+ *   · the four band colours from momentum.ts — FAILED. Stalled (#991B1B) and
+ *     slow (#92400E) sit at ΔE 6.7 in normal vision, under the floor of 15.
+ *   · a three-step red / gold / green scale — passed, but the gold sat at
+ *     2.6:1 contrast and three hues made a 13-row chart busier than the data
+ *     it carried.
+ *   · pastel versions of either — FAILED on both the lightness band and the
+ *     chroma floor. Lightening a chart by washing out its MARKS is the wrong
+ *     move; the weight to remove is the chrome around them.
+ *
+ * The pair here passes separation (ΔE 27 normal, 19.3 deutan) and contrast.
+ * It fails the chroma floor on the slate, knowingly: that check exists to keep
+ * categorical hues from reading gray and colliding with each other, and this
+ * slate is *meant* to read neutral — it carries no identity, only "not the
+ * alarm". Band is still named in the row's tooltip and in the table view.
  */
 const BAR_FILL: Record<MomentumBand, string> = {
   stalled: '#B91C1C',
-  slow:    '#C8963A',
-  steady:  '#C8963A',
-  strong:  '#166534',
+  slow:    '#8095A8',
+  steady:  '#8095A8',
+  strong:  '#8095A8',
 }
 
-/** Band thresholds from momentum.ts, drawn as recessive ticks. */
-const THRESHOLDS = [16, 40, 70]
-
-const LABEL_PX = 168
-const SCORE_PX = 34
+const LABEL_PX = 176
+const SCORE_PX = 30
 
 export function MomentumChart({
   rows, expandable = false,
@@ -85,16 +89,16 @@ export function MomentumChart({
       (expandable ? 'px-5 pt-4 pb-4' : 'px-4 pt-3.5 pb-3 mb-4')}>
       <div className="flex items-baseline justify-between gap-4 flex-wrap mb-3">
         <div className="flex items-baseline gap-2.5">
-          <h2 className="m-0 text-[13px] font-bold text-[#181818]">Portfolio momentum</h2>
+          <h2 className="m-0 text-[12.5px] font-semibold text-[#3E3E3C]">Portfolio momentum</h2>
           <span className="text-[11px] text-[#94a3b8]">
             last 30 days · median <span className="tabular-nums font-semibold text-[#55677A]">{median}</span>
           </span>
         </div>
-        {/* Legend: status colour never travels without its label. */}
-        <div className="flex items-center gap-3.5 flex-wrap">
-          {([['stalled', 'Stalled'], ['slow', 'Slow / Steady'], ['strong', 'Strong']] as const).map(([b, label]) => (
-            <span key={b} className="inline-flex items-center gap-1.5 text-[11px] text-[#55677A]">
-              <i className="block w-[9px] h-[9px] rounded-sm" style={{ background: BAR_FILL[b] }} />
+        {/* Legend: colour never travels without its label. */}
+        <div className="flex items-center gap-3 flex-wrap">
+          {([['stalled', 'Stalled'], ['steady', 'Moving']] as const).map(([b, label]) => (
+            <span key={b} className="inline-flex items-center gap-1.5 text-[10.5px] text-[#94a3b8]">
+              <i className="block w-[8px] h-[8px] rounded-full" style={{ background: BAR_FILL[b] }} />
               {label}
             </span>
           ))}
@@ -102,14 +106,6 @@ export function MomentumChart({
       </div>
 
       <div className="relative">
-        {/* Recessive band thresholds, so a bar's colour has a visible reason. */}
-        <div className="absolute inset-y-0 pointer-events-none"
-             style={{ left: LABEL_PX, right: SCORE_PX }} aria-hidden>
-          {THRESHOLDS.map(t => (
-            <span key={t} className="absolute top-0 bottom-0 w-px bg-[#F1F5F9]" style={{ left: `${t}%` }} />
-          ))}
-        </div>
-
         <ul className="list-none m-0 p-0 relative">
           {sorted.map(r => {
             const m = r.momentum
@@ -128,8 +124,8 @@ export function MomentumChart({
                       : <ChevronRight size={12} className="text-[#C6D0DA] shrink-0" />)}
                     <span className="text-[11.5px] text-[#3E3E3C] truncate">{r.name}</span>
                   </span>
-                  <span className={'flex-1 rounded-sm bg-[#F4F6F8] relative overflow-hidden ' +
-                    (expandable ? 'h-[14px]' : 'h-[12px]')}>
+                  <span className={'flex-1 rounded-sm bg-[#F5F7F9] relative overflow-hidden ' +
+                    (expandable ? 'h-[10px]' : 'h-[9px]')}>
                     <span
                       className="absolute inset-y-0 left-0 rounded-r-[4px]"
                       style={{
@@ -152,11 +148,10 @@ export function MomentumChart({
         </ul>
       </div>
 
-      <p className="m-0 mt-2.5 pt-2 border-t border-[#F1F5F9] text-[11px] text-[#94a3b8]">
-        <span className="tabular-nums font-semibold text-[#b91c1c]">{counts.stalled}</span> stalled ·{' '}
-        <span className="tabular-nums font-semibold text-[#8A6519]">{counts.slow + counts.steady}</span> slow or steady ·{' '}
-        <span className="tabular-nums font-semibold text-[#166534]">{counts.strong}</span> strong.
-        {' '}{expandable ? 'Click a row for what drove its score.' : 'Hover a bar for what drove its score.'}
+      <p className="m-0 mt-3 pt-2.5 border-t border-[#F4F6F8] text-[10.5px] text-[#A9B5C1]">
+        <span className="tabular-nums font-semibold text-[#b91c1c]">{counts.stalled}</span> stalled of{' '}
+        <span className="tabular-nums">{sorted.length}</span>.
+        {' '}{expandable ? 'Click a row to see what drove its score.' : 'Hover a bar for detail.'}
       </p>
     </section>
   )
@@ -171,7 +166,7 @@ export function MomentumChart({
  */
 function MomentumDetail({ momentum }: { momentum: Momentum }) {
   return (
-    <div className="ml-[184px] mr-[34px] mb-2 mt-1 rounded-lg bg-[#FAFBFC] border border-[#EDF1F5] px-3.5 py-2.5">
+    <div className="ml-[188px] mr-[30px] mb-2 mt-1 rounded-lg bg-[#FAFBFC] border border-[#EDF1F5] px-3.5 py-2.5">
       {momentum.components.length === 0 ? (
         <p className="m-0 text-[11.5px] text-[#706E6B]">
           {momentum.daysSinceActivity === null

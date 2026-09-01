@@ -36,7 +36,11 @@ export default async function HealthPage({
   if (!isManagerOrAbove(profile?.role)) redirect('/dashboard')
 
   const sp = await searchParams
-  const view = sp.view === 'gantt' ? 'gantt' : 'table'
+  // Whitelist rather than a chain of ternaries: the previous form silently
+  // dropped 'graph' back to 'table', so the tab rendered as a no-op.
+  const view = (['table', 'graph', 'gantt'] as const).includes(sp.view as never)
+    ? (sp.view as 'table' | 'graph' | 'gantt')
+    : 'table'
 
   // ── Portfolio fetch ────────────────────────────────────────────────
   const [{ data: projects }, { data: users }, { data: wsDefs }, { data: wsMajorState }, { data: priority }] =
