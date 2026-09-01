@@ -2,12 +2,12 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { isManagerOrAbove } from '@/lib/permissions'
 import {
-  scoreComplexity, fingerprint, isConfigured,
-  type ComplexityInput, type ComplexityCounts,
-} from '@/lib/complexity'
+  scoreRisk, fingerprint, isConfigured,
+  type RiskInput, type RiskCounts,
+} from '@/lib/risk'
 
 /**
- * POST — (re)score project complexity (migration 070).
+ * POST — (re)score project risk (migration 070).
  *
  * Body: { projectId } to score one, or {} to sweep every active project.
  *
@@ -42,7 +42,7 @@ export async function POST(request: NextRequest) {
 
   if (!isConfigured()) {
     return NextResponse.json(
-      { error: 'Complexity scoring is not configured. Set GEMINI_API_KEY.' },
+      { error: 'Risk scoring is not configured. Set GEMINI_API_KEY.' },
       { status: 503 },
     )
   }
@@ -83,7 +83,7 @@ export async function POST(request: NextRequest) {
     supabase.from('workstream_updates')
       .select('project_id, body, created_at').in('project_id', ids)
       .gte('created_at', since).order('created_at', { ascending: false }) as unknown as Promise<{ data: any[] | null }>, // eslint-disable-line @typescript-eslint/no-explicit-any
-    supabase.from('project_complexity')
+    supabase.from('project_risk')
       .select('project_id, input_fingerprint').in('project_id', ids) as unknown as Promise<{ data: any[] | null }>, // eslint-disable-line @typescript-eslint/no-explicit-any
   ])
 
@@ -127,7 +127,7 @@ export async function POST(request: NextRequest) {
     const myTasks = taskByP.get(p.id) ?? []
     const open = mine.filter(m => m.status !== 'complete')
 
-    const counts: ComplexityCounts = {
+    const counts: RiskCounts = {
       openMilestones: open.length,
       criticalOpen: open.filter(m => m.is_critical).length,
       blocked: open.filter(m => m.status === 'blocked').length,
@@ -140,7 +140,7 @@ export async function POST(request: NextRequest) {
       weeklyUpdatesRecently: (updateByP.get(p.id) ?? []).length,
     }
 
-    const input: ComplexityInput = {
+    const input: RiskInput = {
       projectName: p.name,
       stage: p.stage,
       counts,
@@ -156,11 +156,11 @@ export async function POST(request: NextRequest) {
     }
 
     // eslint-disable-next-line no-await-in-loop
-    const result = await scoreComplexity(input)
+    const result = await scoreRisk(input)
     if (!result) { failed.push(p.name); continue }
 
     // eslint-disable-next-line no-await-in-loop, @typescript-eslint/no-explicit-any
-    const { error } = await (supabase.from('project_complexity') as any).upsert({
+    const { error } = await (supabase.from('project_risk') as any).upsert({
       project_id: p.id,
       score: result.score,
       band: result.band,

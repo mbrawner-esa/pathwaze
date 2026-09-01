@@ -20,21 +20,21 @@ import { useState, useMemo, useTransition } from 'react'
 import Link from 'next/link'
 import { useRouter, usePathname, useSearchParams } from 'next/navigation'
 import {
-  GripVertical, ChevronRight, ChevronDown, AlertTriangle, X, RotateCcw, Pencil, Check, Sparkles,
+  GripVertical, ChevronRight, ChevronDown, ChevronUp, AlertTriangle, X, RotateCcw, Pencil, Check, Sparkles,
 } from 'lucide-react'
 import { formatShortDate, formatDate } from '@/lib/utils'
 import { SELECTABLE_STAGES } from '@/lib/stages'
 import {
   HEALTH_LABEL, WORKSTREAM_LABELS, WORKSTREAMS,
-  type MilestoneStatus, type Milestone, type WorkstreamKey,
+  type MilestoneStatus, type WorkstreamKey,
 } from '@/lib/workstreams'
 import {
-  inHorizon, filterRows, filterOptions, groupRows,
+  inHorizon, filterRows, filterOptions, groupRows, byDueDate, byVotes,
   HORIZONS, HORIZON_LABEL, HORIZON_HINT, HORIZON_GANTT_MONTHS, GROUP_LABEL, EMPTY_FILTERS,
-  type PriorityRow, type Horizon, type BoardFilters, type GroupBy,
+  type PriorityRow, type Horizon, type BoardFilters, type GroupBy, type CardMilestone,
 } from '@/lib/portfolio-priority'
 import { BAND_COLOR, BAND_LABEL, momentumSummary } from '@/lib/momentum'
-import { COMPLEXITY_BAND_COLOR, COMPLEXITY_BAND_LABEL } from '@/lib/complexity'
+import { RISK_BAND_COLOR, RISK_BAND_LABEL } from '@/lib/risk'
 import { MomentumChart } from './MomentumChart'
 
 const LANE_HUE: Record<string, string> = {
@@ -48,8 +48,8 @@ const HEALTH_DOT: Record<string, string> = {
 }
 
 const STATUS_STYLE: Record<MilestoneStatus, { bg: string; border: string; text: string; label: string }> = {
-  not_started: { bg: '#EEF2F6', border: '#D7E0E8', text: '#61758A', label: 'Not started' },
-  in_progress: { bg: '#FDF0D5', border: '#E6C87A', text: '#8A6519', label: 'In progress' },
+  not_started: { bg: '#EEF2F6', border: '#D7E0E8', text: '#61758A', label: 'Not Started' },
+  in_progress: { bg: '#FDF0D5', border: '#E6C87A', text: '#8A6519', label: 'In Progress' },
   blocked:     { bg: '#FEF0C7', border: '#F3D08A', text: '#92400E', label: 'Blocked' },
   complete:    { bg: '#DCFCE7', border: '#86D3A6', text: '#166534', label: 'Complete' },
 }
@@ -61,16 +61,15 @@ type EditKey = string
 interface PendingEdit { kind: 'project' | 'milestone'; id: string; field: string; value: string }
 
 export function PriorityBoard({
-  rows, view, manual, setAt, heldCount, complexityScored,
+  rows, view, manual, heldCount, riskScored,
 }: {
   rows: PriorityRow[]
   people: { id: string; name: string; avatarUrl: string | null }[]
-  view: 'table' | 'gantt'
+  view: 'table' | 'graph' | 'gantt'
   manual: boolean
-  setAt: string | null
   heldCount: number
-  /** how many projects already carry a cached complexity score */
-  complexityScored: number
+  /** how many projects already carry a cached risk score */
+  riskScored: number
 }) {
   const router = useRouter()
   const pathname = usePathname()
@@ -212,6 +211,21 @@ export function PriorityBoard({
     return ok
   }
 
+  /** Toggle my vote on a milestone. RLS pins the row to me server-side. */
+  async function onVote(milestoneId: string, next: boolean): Promise<boolean> {
+    setBusy(true)
+    const ok = next
+      ? await call('/api/workstreams/votes', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ milestone_id: milestoneId }),
+        })
+      : await call(`/api/workstreams/votes?milestone_id=${encodeURIComponent(milestoneId)}`,
+          { method: 'DELETE' })
+    setBusy(false)
+    startTransition(() => router.refresh())
+    return ok
+  }
+
   async function resetOrder() {
     setOptimistic(null)
     setBusy(true)
@@ -228,22 +242,22 @@ export function PriorityBoard({
    */
   const [scoring, setScoring] = useState(false)
   const [scoreNote, setScoreNote] = useState<string | null>(null)
-  async function rescoreComplexity() {
+  async function rescoreRisk() {
     setScoring(true)
     setScoreNote(null)
     setError(null)
     try {
-      const res = await fetch('/api/complexity', {
+      const res = await fetch('/api/risk', {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
       })
       const body = await res.json().catch(() => ({}))
-      if (!res.ok) setError(body.error || 'Complexity scoring failed.')
+      if (!res.ok) setError(body.error || 'Risk scoring failed.')
       else {
         setScoreNote(`Scored ${body.scored}${body.skipped ? `, ${body.skipped} unchanged` : ''}.`)
         startTransition(() => router.refresh())
       }
     } catch {
-      setError('Complexity scoring failed.')
+      setError('Risk scoring failed.')
     } finally {
       setScoring(false)
     }
@@ -254,7 +268,7 @@ export function PriorityBoard({
   const rowProps = {
     horizon, busy, editingKeys, edits, openField, stage,
     openId, setOpenId, dragId, overId, setDragId, setOverId, dropOn, dragEnabled,
-    reorderMilestones,
+    reorderMilestones, onVote,
   }
 
   return (
@@ -262,88 +276,88 @@ export function PriorityBoard({
       {/* ── Header + view switch ── */}
       <div className="mb-5 flex items-start justify-between gap-6 flex-wrap">
         <div>
-          <h1 className="m-0 text-[26px] font-bold tracking-tight text-[#181818] leading-tight">Portfolio priority</h1>
+          <h1 className="m-0 text-[26px] font-bold tracking-tight text-[#181818] leading-tight">Portfolio Health</h1>
           <p className="mt-1.5 mb-0 text-[13.5px] text-[#3E3E3C]">
             Active projects only{manual ? '. Drag to set this week’s order.' : ', ordered by what needs attention first.'}
           </p>
         </div>
         <div className="flex items-center gap-1 bg-white border border-[#D6DEE7] rounded-lg p-1">
-          {(['table', 'gantt'] as const).map(v => (
+          {(['table', 'graph', 'gantt'] as const).map(v => (
             <Link key={v} href={withParam('view', v)}
                   className={'px-3 py-1.5 rounded-md text-[12.5px] font-semibold transition-colors ' +
                     (view === v ? 'bg-[#2F3E50] text-white' : 'text-[#55677A] hover:bg-[#f8fafc]')}>
-              {v === 'table' ? 'Table' : 'Gantt'}
+              {v === 'table' ? 'Table' : v === 'graph' ? 'Graph' : 'Gantt'}
             </Link>
           ))}
         </div>
       </div>
-
-      {/* ── Horizon ── */}
-      <div className="flex items-center justify-between gap-5 flex-wrap mb-3">
-        <div className="flex items-center gap-2">
-          <span className="text-[10px] uppercase tracking-[0.11em] text-[#706E6B]">Showing</span>
-          <div className="flex items-center gap-1 bg-white border border-[#D6DEE7] rounded-lg p-[3px]">
-            {HORIZONS.map(h => (
-              <button key={h} type="button" onClick={() => setHorizon(h)} aria-pressed={horizon === h}
-                      title={`Milestones landing in the ${HORIZON_HINT[h]}`}
-                      className={'px-3 py-1 rounded-[5px] text-[11.5px] font-semibold transition-colors ' +
-                        (horizon === h ? 'bg-[#2F3E50] text-white' : 'text-[#55677A] hover:bg-[#f8fafc]')}>
-                {HORIZON_LABEL[h]}
-              </button>
-            ))}
-          </div>
-          <span className="text-[11px] text-[#94a3b8]">{HORIZON_HINT[horizon]}</span>
+      {/* ── One control row: horizon, filters, grouping, scoring, scope ──
+          Previously three stacked rows. They are all "narrow what I am looking
+          at", and splitting one job across three lines made the page open with
+          a wall of chrome above any content. */}
+      <div className="flex items-center gap-2 flex-wrap mb-3.5">
+        <div className="flex items-center gap-1 bg-white border border-[#D6DEE7] rounded-lg p-[3px]">
+          {HORIZONS.map(h => (
+            <button key={h} type="button" onClick={() => setHorizon(h)} aria-pressed={horizon === h}
+                    title={`Milestones landing in the ${HORIZON_HINT[h]}`}
+                    className={'px-3 py-1 rounded-[5px] text-[11.5px] font-semibold transition-colors ' +
+                      (horizon === h ? 'bg-[#2F3E50] text-white' : 'text-[#55677A] hover:bg-[#f8fafc]')}>
+              {HORIZON_LABEL[h]}
+            </button>
+          ))}
         </div>
-        <div className="flex items-center gap-3">
+
+        <span className="w-px h-6 bg-[#E4EAF0] mx-0.5" />
+
+        <Select label="Workstream" value={filters.workstream}
+                onChange={v => setFilters(f => ({ ...f, workstream: v as WorkstreamKey | 'all' }))}
+                options={[['all', 'All Workstreams'], ...WORKSTREAMS.map(w => [w, WORKSTREAM_LABELS[w]] as [string, string])]} />
+        <Select label="Project manager" value={filters.pm}
+                onChange={v => setFilters(f => ({ ...f, pm: v }))}
+                options={[['all', 'All Managers'], ...opts.pms.map(([id, name]) => [id, name] as [string, string])]} />
+        <Select label="Tranche" value={filters.tranche}
+                onChange={v => setFilters(f => ({ ...f, tranche: v }))}
+                options={[['all', 'All Tranches'], ...opts.tranches.map(t => [t, t] as [string, string])]} />
+        <Select label="Group by" value={groupBy}
+                onChange={v => setGroupBy(v as GroupBy)}
+                options={(Object.keys(GROUP_LABEL) as GroupBy[]).map(k => [k, GROUP_LABEL[k]] as [string, string])} />
+
+        {(filtersOn || groupBy !== 'none') && (
+          <button type="button" onClick={() => { setFilters(EMPTY_FILTERS); setGroupBy('none') }}
+                  className="text-[11.5px] font-semibold text-[#2C5485] hover:underline">
+            Clear
+          </button>
+        )}
+
+        {/* Everything after this sits right, so the row reads as
+            "narrow it down … | … here is what you are looking at". */}
+        <span className="ml-auto flex items-center gap-2.5">
           {manual && (
-            <span className="inline-flex items-center gap-1.5 text-[11.5px] font-semibold text-[#8A6519] bg-[#FDF0D5] border border-[#E6C87A] rounded-full px-3 py-1.5">
+            <span className="inline-flex items-center gap-1.5 text-[11.5px] font-semibold text-[#8A6519] bg-[#FDF0D5] border border-[#E6C87A] rounded-full px-2.5 py-1">
               <RotateCcw size={11} />
-              Manual order{setAt ? ` · set ${formatShortDate(setAt)}` : ''}
+              Manual order
               <button type="button" onClick={resetOrder} disabled={busy}
-                      className="underline font-bold hover:text-[#5E4511]">Reset to urgency</button>
+                      className="underline font-bold hover:text-[#5E4511]">Reset</button>
             </span>
           )}
           <button
             type="button"
-            onClick={rescoreComplexity}
+            onClick={rescoreRisk}
             disabled={scoring || busy}
-            title={complexityScored === 0
-              ? 'Score project complexity from weekly notes and threads. Sends that text to the Gemini API.'
-              : 'Re-score complexity. Projects whose notes and counts have not changed are skipped.'}
+            title={riskScored === 0
+              ? 'Score delivery risk from weekly notes and threads. Sends that text to the Gemini API.'
+              : 'Re-score risk. Projects whose notes and counts have not changed are skipped.'}
             className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-[11.5px] font-semibold border border-[#D6DEE7] bg-white text-[#55677A] hover:bg-[#f8fafc] disabled:opacity-50"
           >
             <Sparkles size={11} />
-            {scoring ? 'Scoring…' : complexityScored === 0 ? 'Score complexity' : 'Re-score'}
+            {scoring ? 'Scoring…' : riskScored === 0 ? 'Score Risk' : 'Re-score'}
           </button>
-          <span className="text-[12px] text-[#55677A]">
+          <span className="text-[12px] text-[#55677A] whitespace-nowrap">
             <strong className="tabular-nums text-[#181818] font-bold">{filtered.length}</strong>
             {filtered.length !== list.length && <span className="text-[#94a3b8]"> of {list.length}</span>} active
-            {heldCount > 0 && <span className="text-[#94a3b8]"> · {heldCount} on hold, hidden</span>}
+            {heldCount > 0 && <span className="text-[#94a3b8]"> · {heldCount} on hold</span>}
           </span>
-        </div>
-      </div>
-
-      {/* ── Filters + group by ── */}
-      <div className="flex items-center gap-2 flex-wrap mb-3.5">
-        <Select label="Workstream" value={filters.workstream}
-                onChange={v => setFilters(f => ({ ...f, workstream: v as WorkstreamKey | 'all' }))}
-                options={[['all', 'All workstreams'], ...WORKSTREAMS.map(w => [w, WORKSTREAM_LABELS[w]] as [string, string])]} />
-        <Select label="Project manager" value={filters.pm}
-                onChange={v => setFilters(f => ({ ...f, pm: v }))}
-                options={[['all', 'All managers'], ...opts.pms.map(([id, name]) => [id, name] as [string, string])]} />
-        <Select label="Tranche" value={filters.tranche}
-                onChange={v => setFilters(f => ({ ...f, tranche: v }))}
-                options={[['all', 'All tranches'], ...opts.tranches.map(t => [t, t] as [string, string])]} />
-        <span className="w-px h-6 bg-[#E4EAF0] mx-1" />
-        <Select label="Group by" value={groupBy}
-                onChange={v => setGroupBy(v as GroupBy)}
-                options={(Object.keys(GROUP_LABEL) as GroupBy[]).map(k => [k, GROUP_LABEL[k]] as [string, string])} />
-        {(filtersOn || groupBy !== 'none') && (
-          <button type="button" onClick={() => { setFilters(EMPTY_FILTERS); setGroupBy('none') }}
-                  className="text-[11.5px] font-semibold text-[#2C5485] hover:underline ml-1">
-            Clear
-          </button>
-        )}
+        </span>
       </div>
 
       {scoreNote && (
@@ -369,14 +383,14 @@ export function PriorityBoard({
         </p>
       )}
 
-      {filtered.length > 0 && view === 'table' && <MomentumChart rows={filtered} />}
-
       {filtered.length === 0 ? (
         <div className="bg-white rounded-xl border border-[#e2e8f0] px-6 py-14 text-center">
           <p className="m-0 text-[13.5px] text-[#3E3E3C]">
             {list.length === 0 ? 'No active projects. Everything is on hold or archived.' : 'Nothing matches those filters.'}
           </p>
         </div>
+      ) : view === 'graph' ? (
+        <MomentumChart rows={filtered} expandable />
       ) : view === 'gantt' ? (
         <PriorityGantt rows={filtered} horizon={horizon} />
       ) : groups ? (
@@ -442,6 +456,7 @@ interface RowShared {
   dropOn: (id: string) => void
   dragEnabled: boolean
   reorderMilestones: (ids: string[]) => Promise<boolean>
+  onVote: (id: string, next: boolean) => Promise<boolean>
 }
 
 function BoardTable({ rows, ...s }: { rows: PriorityRow[] } & RowShared) {
@@ -456,7 +471,7 @@ function BoardTable({ rows, ...s }: { rows: PriorityRow[] } & RowShared) {
               <Th>Project</Th>
               <Th>Stage</Th>
               <Th>Momentum</Th>
-              <Th>Complexity</Th>
+              <Th>Risk</Th>
               <Th>Phase</Th>
               <Th align="right">Target</Th>
             </tr>
@@ -555,21 +570,21 @@ function BoardRow({ row, index, ...s }: { row: PriorityRow; index: number } & Ro
           ) : <span className="text-[#C6D0DA]">—</span>}
         </Td>
         <Td>
-          {row.complexity ? (
+          {row.risk ? (
             <span
               className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-bold"
               style={{
-                background: COMPLEXITY_BAND_COLOR[row.complexity.band].bg,
-                color: COMPLEXITY_BAND_COLOR[row.complexity.band].fg,
+                background: RISK_BAND_COLOR[row.risk.band].bg,
+                color: RISK_BAND_COLOR[row.risk.band].fg,
               }}
               title={[
-                row.complexity.summary,
-                row.complexity.drivers.length ? `Drivers: ${row.complexity.drivers.join(' · ')}` : '',
-                `Scored ${formatShortDate(row.complexity.scoredAt)}`,
+                row.risk.summary,
+                row.risk.drivers.length ? `Drivers: ${row.risk.drivers.join(' · ')}` : '',
+                `Scored ${formatShortDate(row.risk.scoredAt)}`,
               ].filter(Boolean).join('\n')}
             >
-              {COMPLEXITY_BAND_LABEL[row.complexity.band]}
-              <span className="tabular-nums opacity-70">{row.complexity.score}</span>
+              {RISK_BAND_LABEL[row.risk.band]}
+              <span className="tabular-nums opacity-70">{row.risk.score}</span>
             </span>
           ) : <span className="text-[#C6D0DA]" title="Not scored yet">—</span>}
         </Td>
@@ -587,7 +602,7 @@ function BoardRow({ row, index, ...s }: { row: PriorityRow; index: number } & Ro
         <tr className="border-b border-[#F1F5F9]" style={{ background: '#FFFBF5' }}>
           <td /><td />
           <td colSpan={6} className="px-3.5 pb-4 pt-0">
-            <ProjectPlan row={row} onReorder={s.reorderMilestones} {...s} />
+            <ProjectPlan row={row} {...s} />
           </td>
         </tr>
       )}
@@ -636,47 +651,27 @@ function EditableField({
  * Flat and single-column, the major each item belongs to becomes a label on the
  * row rather than a heading above it, and the whole plan is one orderable list.
  */
-function ProjectPlan({
-  row, onReorder, ...s
-}: { row: PriorityRow; onReorder: (ids: string[]) => Promise<boolean> } & RowShared) {
-  const [dragId, setDragId] = useState<string | null>(null)
-  const [overId, setOverId] = useState<string | null>(null)
+function ProjectPlan({ row, ...s }: { row: PriorityRow } & RowShared) {
+  // Not Started is hidden by default. The card exists to run a weekly meeting,
+  // and work nobody has begun is the bulk of any plan — showing it buries the
+  // handful of things actually in flight. The toggle says how many are hidden
+  // rather than hiding the fact that anything is.
+  const [showNotStarted, setShowNotStarted] = useState(false)
 
-  // Every milestone on the project, in stored order — the list a drop is
-  // resolved against.
-  const all = useMemo(() => row.groups.flatMap(g =>
-    g.milestones.map(m => ({ milestone: m, majorLabel: g.majorLabel, workstream: g.workstream }))),
-    [row.groups])
+  const inWindow = row.cardMilestones.filter(x => inHorizon(x.milestone, s.horizon))
+  const notStartedCount = inWindow.filter(x => x.milestone.status === 'not_started').length
+  const visible = showNotStarted ? inWindow : inWindow.filter(x => x.milestone.status !== 'not_started')
 
-  const visible = all.filter(x => inHorizon(x.milestone, s.horizon))
+  // Vote order once anyone has voted, due-date order otherwise. Stated in the
+  // header so the reader always knows which list they are looking at.
+  const anyVotes = visible.some(x => x.votes > 0)
+  const ordered = [...visible].sort(anyVotes ? byVotes : byDueDate)
 
-  /**
-   * Reorder against the FULL list, not the visible subset.
-   *
-   * The horizon hides rows, so the visible list is a subsequence. Splicing
-   * inside it would silently reshuffle the hidden ones; resolving the drop by
-   * the target's index in the full list keeps everything not being dragged
-   * exactly where it was.
-   */
-  async function dropOn(targetId: string) {
-    const dragging = dragId
-    setDragId(null)
-    setOverId(null)
-    if (!dragging || dragging === targetId) return
-
-    const ids = all.map(x => x.milestone.id)
-    const from = ids.indexOf(dragging)
-    const to = ids.indexOf(targetId)
-    if (from < 0 || to < 0) return
-    ids.splice(to, 0, ...ids.splice(from, 1))
-    await onReorder(ids)
-  }
-
-  if (!visible.length) {
+  if (!inWindow.length) {
     return (
       <div className="rounded-lg bg-white border border-[#EDF1F5] px-4 py-5 text-center">
         <p className="m-0 text-[12.5px] text-[#706E6B]">
-          {all.length === 0
+          {row.cardMilestones.length === 0
             ? 'No milestones on this project yet.'
             : `Nothing lands in the ${HORIZON_HINT[s.horizon]}. Widen the horizon to see the rest of the plan.`}
         </p>
@@ -686,99 +681,103 @@ function ProjectPlan({
 
   return (
     <div className="rounded-lg bg-white border border-[#EDF1F5]">
-      <div className="flex items-center gap-2 px-3 py-1.5 border-b border-[#F1F5F9] bg-[#FAFBFC]">
-        <span className="w-[13px]" />
-        <span className="flex-1 text-[9.5px] font-bold uppercase tracking-[0.08em] text-[#94a3b8]">Milestone</span>
-        <span className="w-[168px] text-[9.5px] font-bold uppercase tracking-[0.08em] text-[#94a3b8]">Major milestone</span>
-        <span className="w-[64px] text-center text-[9.5px] font-bold uppercase tracking-[0.08em] text-[#94a3b8]">Critical</span>
-        <span className="w-[86px] text-[9.5px] font-bold uppercase tracking-[0.08em] text-[#94a3b8]">Status</span>
-        <span className="w-[104px] text-right text-[9.5px] font-bold uppercase tracking-[0.08em] text-[#94a3b8]">Due</span>
+      <div className="flex items-center justify-between gap-3 px-4 py-1.5 border-b border-[#F1F5F9]">
+        <span className="text-[10.5px] text-[#94a3b8]">
+          {anyVotes ? 'Ordered by votes, then due date' : 'Ordered by due date'} · upvote to raise priority
+        </span>
+        {notStartedCount > 0 && (
+          <button type="button" onClick={() => setShowNotStarted(v => !v)}
+                  className="text-[11px] font-semibold text-[#2C5485] hover:underline">
+            {showNotStarted ? 'Hide' : 'Show'} {notStartedCount} Not Started
+          </button>
+        )}
+      </div>
+
+      <div className="flex items-center gap-3 px-4 py-1.5 border-b border-[#F1F5F9] bg-[#FAFBFC]">
+        <span className="w-[52px] text-[9.5px] font-bold uppercase tracking-[0.08em] text-[#94a3b8]">Votes</span>
+        <span className="flex-1 min-w-0 text-[9.5px] font-bold uppercase tracking-[0.08em] text-[#94a3b8]">Milestone</span>
+        <span className="w-[186px] text-[9.5px] font-bold uppercase tracking-[0.08em] text-[#94a3b8]">Major Milestone</span>
+        <span className="w-[150px] text-[9.5px] font-bold uppercase tracking-[0.08em] text-[#94a3b8]">Team</span>
+        <span className="w-[70px] text-center text-[9.5px] font-bold uppercase tracking-[0.08em] text-[#94a3b8]">Critical</span>
+        <span className="w-[96px] text-[9.5px] font-bold uppercase tracking-[0.08em] text-[#94a3b8]">Status</span>
+        <span className="w-[108px] text-right text-[9.5px] font-bold uppercase tracking-[0.08em] text-[#94a3b8]">Due</span>
       </div>
 
       <ul className="list-none m-0 p-0">
-        {visible.map(({ milestone, majorLabel, workstream }) => (
-          <SubMilestone
-            key={milestone.id}
-            milestone={milestone}
-            majorLabel={majorLabel}
-            workstream={workstream}
-            dragging={dragId === milestone.id}
-            isOver={overId === milestone.id && dragId !== milestone.id}
-            onDragStart={() => setDragId(milestone.id)}
-            onDragEnter={() => setOverId(milestone.id)}
-            onDrop={() => dropOn(milestone.id)}
-            {...s}
-          />
+        {ordered.map(item => (
+          <SubMilestone key={item.milestone.id} item={item} projectId={row.projectId} {...s} />
         ))}
       </ul>
 
-      <div className="flex items-center justify-end px-3 py-1.5 border-t border-[#F1F5F9]">
-        <Link href={`/projects/${row.projectId}?tab=workstreams`}
-              className="text-[11.5px] font-semibold text-[#2C5485] hover:underline">
-          Open Workstreams →
-        </Link>
-      </div>
+      {ordered.length === 0 && (
+        <p className="m-0 px-4 py-4 text-center text-[12px] text-[#94a3b8]">
+          Everything in this window is Not Started.
+        </p>
+      )}
     </div>
   )
 }
 
-/** One compact, draggable sub-milestone row. */
+/** One sub-milestone: upvote, name, major, team, critical flag, status, due date. */
 function SubMilestone({
-  milestone, majorLabel, workstream, dragging, isOver,
-  onDragStart, onDragEnter, onDrop, ...s
-}: {
-  milestone: Milestone
-  majorLabel: string
-  workstream: WorkstreamKey
-  dragging: boolean
-  isOver: boolean
-  onDragStart: () => void
-  onDragEnter: () => void
-  onDrop: () => void
-} & RowShared) {
+  item, projectId, ...s
+}: { item: CardMilestone; projectId: string } & RowShared) {
+  const { milestone, majorLabel, majorKey, workstream, teams, votes, votedByMe } = item
   const statusKey = `milestone:${milestone.id}:status`
   const dateKey = `milestone:${milestone.id}:end_date`
+
   const slipped = milestone.end_date && milestone.baseline_date
     && milestone.end_date.slice(0, 10) > milestone.baseline_date.slice(0, 10)
 
-  return (
-    <li
-      draggable
-      // The project row is itself draggable, so every drag event here must stop
-      // before it reaches the table row — otherwise reordering one milestone
-      // would also start reordering its project.
-      onDragStart={e => { e.stopPropagation(); onDragStart() }}
-      onDragEnter={e => { e.stopPropagation(); onDragEnter() }}
-      onDragOver={e => { e.preventDefault(); e.stopPropagation() }}
-      onDrop={e => { e.stopPropagation(); onDrop() }}
-      className="group/ms flex items-center gap-2 px-3 py-[5px] border-b border-[#F8FAFC] last:border-0 hover:bg-[#FAFBFC]"
-      style={{
-        boxShadow: isOver ? 'inset 0 2px 0 #C8963A' : undefined,
-        opacity: dragging ? 0.4 : 1,
-      }}
-    >
-      <GripVertical size={11} className="text-[#D7E0E8] group-hover/ms:text-[#A9B5C1] cursor-grab shrink-0" />
+  // Deep-link straight to this milestone's major on the project's Workstreams
+  // tab, rather than dumping the reader on the tab to find it themselves.
+  const href = `/projects/${projectId}?tab=workstreams&ws=${workstream}&major=${encodeURIComponent(majorKey)}`
 
-      <span className="flex-1 min-w-0 text-[12px] text-[#181818] truncate" title={milestone.label}>
-        {milestone.label}
+  return (
+    <li className="group/ms flex items-center gap-3 px-4 py-[7px] border-b border-[#F8FAFC] last:border-0 hover:bg-[#FAFBFC]">
+      <span className="w-[52px] shrink-0">
+        <VoteButton milestoneId={milestone.id} votes={votes} voted={votedByMe}
+                    busy={s.busy} onVote={s.onVote} />
       </span>
 
-      <span className="w-[168px] shrink-0 min-w-0">
+      <Link href={href}
+            className="flex-1 min-w-0 text-[12.5px] text-[#181818] truncate hover:text-[#2C5485] hover:underline"
+            title={`${milestone.label} — open in Workstreams`}>
+        {milestone.label}
+      </Link>
+
+      <span className="w-[186px] shrink-0 min-w-0">
         <MajorPill label={majorLabel} workstream={workstream} />
       </span>
 
-      {/* Critical path as its own column rather than a marker beside the name —
-          it is a property worth scanning down, which a symbol inline with the
-          label cannot support. */}
-      <span className="w-[64px] shrink-0 text-center">
+      <span className="w-[150px] shrink-0 min-w-0 flex items-center gap-1">
+        {teams.length === 0
+          ? <span className="text-[#C6D0DA] text-[11px]">—</span>
+          : teams.slice(0, 2).map(t => (
+              <span key={t}
+                    className="inline-block max-w-[70px] truncate px-1.5 py-0.5 rounded-full text-[10px] font-semibold
+                               bg-[#F4F6F8] border border-[#E4EAF0] text-[#55677A]"
+                    title={teams.join(' · ')}>
+                {t}
+              </span>
+            ))}
+        {teams.length > 2 && (
+          <span className="text-[10px] text-[#94a3b8] shrink-0" title={teams.join(' · ')}>
+            +{teams.length - 2}
+          </span>
+        )}
+      </span>
+
+      <span className="w-[70px] shrink-0 text-center">
         {milestone.is_critical
-          ? <span className="inline-block px-1.5 py-0.5 rounded text-[9.5px] font-bold uppercase tracking-[0.05em] bg-[#F3EEFC] text-[#5B21B6] border border-[#DDD0F2]">
+          ? <span className="inline-block px-1.5 py-0.5 rounded-full text-[9.5px] font-bold uppercase tracking-[0.05em]
+                             bg-[#F3EEFC] text-[#5B21B6] border border-[#DDD0F2]">
               Critical
             </span>
           : <span className="text-[#D7E0E8]">—</span>}
       </span>
 
-      <span className="w-[86px] shrink-0">
+      <span className="w-[96px] shrink-0">
         {s.editingKeys.has(statusKey) ? (
           <select
             autoFocus
@@ -793,8 +792,6 @@ function SubMilestone({
           </select>
         ) : (
           <span className="inline-flex items-center gap-1">
-            {/* Fixed width: status pills that size to their text make every row
-                a different shape and the column impossible to scan. */}
             <StatusPill status={milestone.status} />
             <button type="button" onClick={() => s.openField(statusKey)} aria-label="Edit status"
                     className="opacity-0 group-hover/ms:opacity-100 focus:opacity-100 transition-opacity text-[#94a3b8] hover:text-[#C8963A]">
@@ -804,7 +801,7 @@ function SubMilestone({
         )}
       </span>
 
-      <span className="w-[104px] shrink-0 text-right">
+      <span className="w-[108px] shrink-0 text-right">
         {s.editingKeys.has(dateKey) ? (
           <input
             autoFocus
@@ -814,15 +811,11 @@ function SubMilestone({
             onChange={e => s.stage(dateKey, {
               kind: 'milestone', id: milestone.id, field: 'end_date', value: e.target.value,
             })}
-            className="w-[100px] px-1 py-0.5 rounded text-[10.5px] text-[#181818] border border-[#C8963A] bg-white outline-none"
+            className="w-[104px] px-1 py-0.5 rounded text-[10.5px] text-[#181818] border border-[#C8963A] bg-white outline-none"
           />
         ) : (
           <span className="inline-flex items-center gap-1 justify-end">
-            <DatePill
-              date={milestone.end_date}
-              slipped={!!slipped}
-              baseline={milestone.baseline_date}
-            />
+            <DatePill date={milestone.end_date} slipped={!!slipped} baseline={milestone.baseline_date} />
             <button type="button" onClick={() => s.openField(dateKey)} aria-label="Edit due date"
                     className="opacity-0 group-hover/ms:opacity-100 focus:opacity-100 transition-opacity text-[#94a3b8] hover:text-[#C8963A]">
               <Pencil size={9} />
@@ -831,6 +824,40 @@ function SubMilestone({
         )}
       </span>
     </li>
+  )
+}
+
+/**
+ * One vote per person, toggled.
+ *
+ * Replaces drag-to-reorder: a dragged list is one person's opinion stored as if
+ * it were the team's, and it carries no argument. A tally shows that four people
+ * wanted this and one wanted that, which is the actual conversation.
+ */
+function VoteButton({
+  milestoneId, votes, voted, busy, onVote,
+}: {
+  milestoneId: string
+  votes: number
+  voted: boolean
+  busy: boolean
+  onVote: (id: string, next: boolean) => Promise<boolean>
+}) {
+  return (
+    <button
+      type="button"
+      disabled={busy}
+      onClick={() => onVote(milestoneId, !voted)}
+      aria-pressed={voted}
+      title={voted ? 'Remove your vote' : 'Upvote as a priority this week'}
+      className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md border transition-colors disabled:opacity-50"
+      style={voted
+        ? { background: '#FDF0D5', borderColor: '#E6C87A', color: '#8A6519' }
+        : { background: '#fff', borderColor: '#E4EAF0', color: '#94a3b8' }}
+    >
+      <ChevronUp size={12} strokeWidth={2.5} />
+      <span className="text-[11px] font-bold tabular-nums">{votes}</span>
+    </button>
   )
 }
 

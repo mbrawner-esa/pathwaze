@@ -28,7 +28,7 @@ import {
   type WorkstreamKey, type ScheduleHealth,
 } from './workstreams'
 import type { Momentum } from './momentum'
-import type { ComplexityBand } from './complexity'
+import type { RiskBand } from './risk'
 
 /**
  * How far ahead the board looks.
@@ -63,6 +63,22 @@ const HORIZON_DAYS: Record<Horizon, number> = { week: 7, near: 30, long: 182 }
  * nowhere to put a marker.
  */
 export const HORIZON_GANTT_MONTHS: Record<Horizon, number> = { week: 1, near: 2, long: 6 }
+
+/**
+ * A sub-milestone plus everything the board's card shows beside it, resolved
+ * once here rather than looked up per render.
+ */
+export interface CardMilestone {
+  milestone: Milestone
+  majorKey: string
+  majorLabel: string
+  workstream: WorkstreamKey
+  /** department names tagged on this milestone (migration 068) */
+  teams: string[]
+  votes: number
+  /** whether the signed-in user has voted for it */
+  votedByMe: boolean
+}
 
 /** A major milestone with the sub-milestones underneath it. */
 export interface MajorGroup {
@@ -108,16 +124,19 @@ export interface PriorityRow {
   /** disciplines this project has OPEN work in, for the workstream filter */
   workstreams: WorkstreamKey[]
 
+  /** the project's whole plan, flattened, for the expanded card */
+  cardMilestones: CardMilestone[]
+
   // ── scores ──
   momentum: Momentum | null
   /** last cached LLM judgement; null until the project has been scored */
-  complexity: ProjectComplexity | null
+  risk: ProjectRisk | null
 }
 
-/** The cached row from `project_complexity` (migration 070). */
-export interface ProjectComplexity {
+/** The cached row from `project_risk` (migration 070). */
+export interface ProjectRisk {
   score: number
-  band: ComplexityBand
+  band: RiskBand
   drivers: string[]
   summary: string | null
   scoredAt: string
@@ -234,7 +253,13 @@ export function buildRows(
   ranks: Map<string, number>,
   pmNames: Map<string, string> = new Map(),
   momentumByProject: Map<string, Momentum> = new Map(),
-  complexityByProject: Map<string, ProjectComplexity> = new Map(),
+  riskByProject: Map<string, ProjectRisk> = new Map(),
+  /** milestone_id -> department display names (migration 068) */
+  teamsByMilestone: Map<string, string[]> = new Map(),
+  /** milestone_id -> total upvotes (migration 071) */
+  votesByMilestone: Map<string, number> = new Map(),
+  /** milestone ids the signed-in user has voted for */
+  myVotes: Set<string> = new Set(),
 ): PriorityRow[] {
   const rows: PriorityRow[] = []
 
@@ -310,12 +335,57 @@ export function buildRows(
       // "show me what Approvals is carrying".
       workstreams: WORKSTREAMS.filter(ws =>
         open.some(m => defByKey.get(m.major_key)?.workstream === ws)),
+      // Flattened once here, ordered by due date. Due-date order is the default
+      // because the card's job is "what lands next"; the vote tally re-sorts it
+      // when the team has expressed a priority, and undated items sit last
+      // rather than first — an undated milestone is unplanned, not urgent.
+      cardMilestones: groups
+        .flatMap(g => g.milestones.map(m => ({
+          milestone: m,
+          majorKey: g.majorKey,
+          majorLabel: g.majorLabel,
+          workstream: g.workstream,
+          teams: teamsByMilestone.get(m.id) ?? [],
+          votes: votesByMilestone.get(m.id) ?? 0,
+          votedByMe: myVotes.has(m.id),
+        })))
+        .sort(byDueDate),
       momentum: momentumByProject.get(p.id) ?? null,
-      complexity: complexityByProject.get(p.id) ?? null,
+      risk: riskByProject.get(p.id) ?? null,
     })
   }
 
   return rows
+}
+
+/**
+ * Due-date order for the card: soonest first, undated last.
+ *
+ * Undated milestones sort to the END rather than the start. A missing date is
+ * "not planned yet", and floating those above dated work would put the least
+ * decided items at the top of a list about what happens next.
+ */
+export function byDueDate(a: CardMilestone, b: CardMilestone): number {
+  const da = a.milestone.end_date
+  const db = b.milestone.end_date
+  if (da && db) {
+    const d = dayNumber(da) - dayNumber(db)
+    if (d !== 0) return d
+  } else if (da) return -1
+  else if (db) return 1
+  return a.milestone.sort_order - b.milestone.sort_order
+}
+
+/**
+ * Vote order: most-upvoted first, then due date.
+ *
+ * Only applied once something actually has a vote — with an all-zero tally this
+ * would silently degrade to due-date order anyway, but being explicit means the
+ * UI can say which ordering the reader is looking at.
+ */
+export function byVotes(a: CardMilestone, b: CardMilestone): number {
+  if (a.votes !== b.votes) return b.votes - a.votes
+  return byDueDate(a, b)
 }
 
 // ── ordering ──────────────────────────────────────────────────────────

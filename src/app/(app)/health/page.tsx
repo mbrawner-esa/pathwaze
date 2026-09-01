@@ -14,7 +14,7 @@ import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import { isManagerOrAbove } from '@/lib/permissions'
 import { type MajorDef, type Milestone } from '@/lib/workstreams'
-import { buildRows, orderRows, type ProjectComplexity } from '@/lib/portfolio-priority'
+import { buildRows, orderRows, type ProjectRisk } from '@/lib/portfolio-priority'
 import { scoreMomentum, WINDOW_DAYS, type ActivityEvent, type Momentum } from '@/lib/momentum'
 import { PriorityBoard } from '@/components/health/PriorityBoard'
 
@@ -55,12 +55,12 @@ export default async function HealthPage({
       supabase.from('portfolio_priority').select('project_id, rank, set_at, set_by').order('rank') as unknown as Promise<{ data: any[] | null }>, // eslint-disable-line @typescript-eslint/no-explicit-any
     ])
 
-  // Cached LLM complexity (migration 070). Read separately and defensively:
+  // Cached LLM risk (migration 070). Read separately and defensively:
   // scoring is optional, so a missing table or an unscored portfolio must leave
   // the board fully working rather than taking the page down.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: complexityRows } = await supabase
-    .from('project_complexity')
+  const { data: riskRows } = await supabase
+    .from('project_risk')
     .select('project_id, score, band, drivers, summary, scored_at, input_fingerprint') as unknown as { data: any[] | null }
 
   // Milestones for the whole portfolio, paged.
@@ -153,10 +153,10 @@ export default async function HealthPage({
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const pmNames = new Map<string, string>(((users ?? []) as any[]).map(u => [u.id, u.full_name ?? '']))
 
-  const complexityByProject = new Map<string, ProjectComplexity>()
+  const riskByProject = new Map<string, ProjectRisk>()
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  for (const c of ((complexityRows ?? []) as any[])) {
-    complexityByProject.set(c.project_id, {
+  for (const c of ((riskRows ?? []) as any[])) {
+    riskByProject.set(c.project_id, {
       score: c.score,
       band: c.band,
       drivers: Array.isArray(c.drivers) ? c.drivers : [],
@@ -168,6 +168,36 @@ export default async function HealthPage({
       // decides staleness when it runs.
       stale: false,
     })
+  }
+
+  // Department tags (068) and upvotes (071) for the expanded card. Both are
+  // read defensively — the board must render even if 071 has not been run.
+  const [{ data: deptTags }, { data: depts }, { data: votes }] = await Promise.all([
+    supabase.from('workstream_milestone_departments')
+      .select('milestone_id, department_key') as unknown as Promise<{ data: any[] | null }>, // eslint-disable-line @typescript-eslint/no-explicit-any
+    supabase.from('departments').select('key, name').order('sort_order') as unknown as Promise<{ data: any[] | null }>, // eslint-disable-line @typescript-eslint/no-explicit-any
+    supabase.from('workstream_milestone_votes')
+      .select('milestone_id, user_id') as unknown as Promise<{ data: any[] | null }>, // eslint-disable-line @typescript-eslint/no-explicit-any
+  ])
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const deptName = new Map<string, string>(((depts ?? []) as any[]).map(d => [d.key, d.name]))
+  const teamsByMilestone = new Map<string, string[]>()
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  for (const t of ((deptTags ?? []) as any[])) {
+    const name = deptName.get(t.department_key)
+    if (!name) continue
+    const list = teamsByMilestone.get(t.milestone_id)
+    if (list) list.push(name)
+    else teamsByMilestone.set(t.milestone_id, [name])
+  }
+
+  const votesByMilestone = new Map<string, number>()
+  const myVotes = new Set<string>()
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  for (const v of ((votes ?? []) as any[])) {
+    votesByMilestone.set(v.milestone_id, (votesByMilestone.get(v.milestone_id) ?? 0) + 1)
+    if (v.user_id === user.id) myVotes.add(v.milestone_id)
   }
 
   const ranks = new Map<string, number>((priority ?? []).map(r => [r.project_id, r.rank]))
@@ -185,7 +215,7 @@ export default async function HealthPage({
       ranks,
       pmNames,
       momentumByProject,
-      complexityByProject,
+      riskByProject,
     ),
     manual,
   )
@@ -204,9 +234,8 @@ export default async function HealthPage({
       people={people}
       view={view}
       manual={manual}
-      setAt={(priority ?? [])[0]?.set_at ?? null}
       heldCount={heldCount}
-      complexityScored={complexityByProject.size}
+      riskScored={riskByProject.size}
     />
   )
 }

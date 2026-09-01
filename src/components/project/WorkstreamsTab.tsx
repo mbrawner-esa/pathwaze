@@ -1,5 +1,6 @@
 'use client'
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { MoreVertical, CheckCircle2, RotateCcw, AlertTriangle, PauseCircle } from 'lucide-react'
 import { formatDate, formatShortDate } from '@/lib/utils'
 import { WorkstreamPlan } from './WorkstreamPlan'
@@ -72,11 +73,20 @@ export function WorkstreamsTab({
   onHold: boolean
   isAdmin: boolean
 }) {
-  const [view, setView] = useState<View>('overview')
+  // Deep-link support, so another screen can point at one major milestone:
+  //   ?tab=workstreams&ws=<workstream>&major=<major_key>
+  // Read once as the initial state rather than kept in sync, so clicking around
+  // the tab afterwards does not fight the URL it was opened with.
+  const params = useSearchParams()
+  const linkedWs = params.get('ws')
+  const linkedMajor = params.get('major')
+
+  const [view, setView] = useState<View>(
+    linkedWs && (WORKSTREAMS as string[]).includes(linkedWs) ? (linkedWs as View) : 'overview')
 
   // `null` means "not touched yet" → default to the major a PM most likely
   // wants. `''` means the user deliberately collapsed everything.
-  const [openKey, setOpenKey] = useState<string | null>(null)
+  const [openKey, setOpenKey] = useState<string | null>(linkedMajor ?? null)
   const [celebrating, setCelebrating] = useState<string | null>(null)
 
   const conflicts = useMemo(() => dateConflicts(milestones, deps), [milestones, deps])
