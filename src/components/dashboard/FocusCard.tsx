@@ -80,13 +80,14 @@ export function FocusCard({ items }: { items: FocusItem[] }) {
             </div>
 
             {f.isCritical && (
-              <span className="shrink-0 px-1.5 py-0.5 rounded-full text-[9.5px] font-bold uppercase tracking-[0.05em]
+              <span className="shrink-0 px-2 py-0.5 rounded-full text-[10px] font-semibold
                                bg-[#F3EEFC] text-[#5B21B6] border border-[#DDD0F2]">
                 Critical
               </span>
             )}
 
-            <span className="shrink-0 px-1.5 py-0.5 rounded-full text-[10px] font-semibold border w-[68px] text-center truncate"
+            <span className="shrink-0 inline-flex items-center justify-center w-[82px] px-1.5 py-0.5 rounded-full
+                             text-[10px] font-semibold border whitespace-nowrap"
                   style={STATUS_STYLE[f.status] ?? STATUS_STYLE.not_started}>
               {STATUS_LABEL[f.status] ?? f.status}
             </span>

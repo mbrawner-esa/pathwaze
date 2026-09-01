@@ -107,9 +107,18 @@ export function PriorityBoard({
 
   const list = optimistic ?? rows
   const opts = useMemo(() => filterOptions(list), [list])
-  const filtered = useMemo(() => filterRows(list, filters), [list, filters])
+  const filtered = useMemo(() => {
+    const byDimension = filterRows(list, filters)
+    // "Focus only" answers "which sites are we working this week", so it drops
+    // projects with nothing marked. Inside a project the grouping does the
+    // narrowing, which is why this no longer touches milestones.
+    return focusOnly
+      ? byDimension.filter(r => r.cardMilestones.some(x => x.focus))
+      : byDimension
+  }, [list, filters, focusOnly])
   const groups = useMemo(() => groupRows(filtered, groupBy), [filtered, groupBy])
-  const filtersOn = filters.workstream !== 'all' || filters.pm !== 'all' || filters.tranche !== 'all'
+  const filtersOn = filters.workstream !== 'all' || filters.pm !== 'all'
+    || filters.tranche !== 'all' || focusOnly
 
   function withParam(key: string, value: string): string {
     const next = new URLSearchParams(params.toString())
@@ -305,11 +314,11 @@ export function PriorityBoard({
   const rowProps = {
     horizon, busy, editingKeys, edits, openFields, cancelRecord, stage,
     openId, setOpenId, dragId, overId, setDragId, setOverId, dropOn, dragEnabled,
-    reorderMilestones, onFocus, focusOnly, threadUsers, currentUserId,
+    reorderMilestones, onFocus, threadUsers, currentUserId,
   }
 
   return (
-    <div className={'px-8 py-9 mx-auto pb-24 ' + (view === 'graph' ? 'max-w-none' : 'max-w-[1440px]')}>
+    <div className={'px-8 py-9 mx-auto pb-24 ' + (view === 'table' ? 'max-w-[1440px]' : 'max-w-none')}>
       {/* ── Header + view switch ── */}
       <div className="mb-5 flex items-start justify-between gap-6 flex-wrap">
         <div>
@@ -353,7 +362,7 @@ export function PriorityBoard({
           type="button"
           onClick={() => setFocusOnly(v => !v)}
           aria-pressed={focusOnly}
-          title="Show only milestones marked as this week's focus"
+          title="Show only projects with something marked as this week's focus"
           className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-[12px] font-semibold border transition-colors"
           style={focusOnly
             ? { background: '#E6C87A', borderColor: '#C8963A', color: '#5E4511' }
@@ -512,7 +521,6 @@ interface RowShared {
   dragEnabled: boolean
   reorderMilestones: (ids: string[]) => Promise<boolean>
   onFocus: (id: string, next: boolean) => Promise<boolean>
-  focusOnly: boolean
   threadUsers: { id: string; full_name: string; avatar_url?: string | null }[]
   currentUserId: string
 }
@@ -761,11 +769,12 @@ function ProjectPlan({ row, ...s }: { row: PriorityRow } & RowShared) {
   const notStartedCount = inWindow.filter(x => x.milestone.status === 'not_started').length
   const focusCount = inWindow.filter(x => x.focus).length
 
-  const afterStatus = showNotStarted ? inWindow : inWindow.filter(x => x.milestone.status !== 'not_started')
-  // The focus filter is board-wide, so a project with nothing focused collapses
-  // to an empty card rather than disappearing — the row still says the project
-  // exists and simply has nothing in this week's list.
-  const visible = s.focusOnly ? afterStatus.filter(x => x.focus) : afterStatus
+  // Focus deliberately does NOT filter here. It used to, and that quietly broke
+  // the grouping: with the non-focus rows already removed, `others` was empty,
+  // `split` was false, and the Focus / Other headings never appeared. The
+  // board-level control now narrows PROJECTS instead, so the two compose rather
+  // than one cancelling the other.
+  const visible = showNotStarted ? inWindow : inWindow.filter(x => x.milestone.status !== 'not_started')
 
   // Focus first once anything is marked, due date otherwise. Stated in the
   // header so the reader always knows which list they are looking at.
@@ -814,7 +823,7 @@ function ProjectPlan({ row, ...s }: { row: PriorityRow } & RowShared) {
         <span className="w-[186px] text-[9.5px] font-bold uppercase tracking-[0.08em] text-[#94a3b8]">Major Milestone</span>
         <span className="w-[150px] text-[9.5px] font-bold uppercase tracking-[0.08em] text-[#94a3b8]">Team</span>
         <span className="w-[70px] text-center text-[9.5px] font-bold uppercase tracking-[0.08em] text-[#94a3b8]">Critical</span>
-        <span className="w-[96px] text-[9.5px] font-bold uppercase tracking-[0.08em] text-[#94a3b8]">Status</span>
+        <span className="w-[92px] text-[9.5px] font-bold uppercase tracking-[0.08em] text-[#94a3b8]">Status</span>
         <span className="w-[108px] text-right text-[9.5px] font-bold uppercase tracking-[0.08em] text-[#94a3b8]">Due</span>
       </div>
 
@@ -946,14 +955,14 @@ function SubMilestone({
 
         <span className="w-[70px] shrink-0 text-center">
           {milestone.is_critical
-            ? <span className="inline-block px-1.5 py-0.5 rounded-full text-[9.5px] font-bold uppercase tracking-[0.05em]
+            ? <span className="inline-block px-2 py-0.5 rounded-full text-[10px] font-semibold
                                bg-[#F3EEFC] text-[#5B21B6] border border-[#DDD0F2]">
                 Critical
               </span>
             : <span className="text-[#D7E0E8]">—</span>}
         </span>
 
-        <span className="w-[96px] shrink-0">
+        <span className="w-[92px] shrink-0">
           {s.editingKeys.has(statusKey) ? (
             <select
               value={(s.edits[statusKey]?.value as string) ?? milestone.status}
@@ -1056,7 +1065,7 @@ function GroupHeader({ label, count, tone }: {
 // ── gantt ─────────────────────────────────────────────────────────────
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-const LANE_LABEL_PX = 210
+const LANE_LABEL_PX = 260
 
 /** What the in-app hover card is currently describing. */
 interface GanttHover {
@@ -1094,12 +1103,15 @@ function PriorityGantt({ rows, horizon }: { rows: PriorityRow[]; horizon: Horizo
     return f >= 0 && f <= 1 ? f : null
   }
 
-  const colPx = span > 3 ? 56 : 120
+  const colPx = span > 3 ? 96 : 200
   const cols = `${LANE_LABEL_PX}px repeat(${span}, minmax(${colPx}px, 1fr))`
 
   return (
-    <div className="bg-white rounded-xl border border-[#e2e8f0] px-4 pt-3.5 pb-3">
-      <div className="overflow-x-auto">
+    <div className="bg-white rounded-xl border border-[#e2e8f0] px-5 pt-4 pb-4">
+      {/* pt-24 reserves room for the hover card above the first row: this
+          element scrolls horizontally, and a box with overflow-x:auto also
+          clips vertically, so a card drawn above row 1 was being cut off. */}
+      <div className="overflow-x-auto pt-24 -mt-24">
         <div ref={chartRef} className="relative" style={{ minWidth: LANE_LABEL_PX + span * colPx }}>
           <div className="grid border-b border-[#E4EAF0]" style={{ gridTemplateColumns: cols }}>
             <span />
@@ -1118,7 +1130,7 @@ function PriorityGantt({ rows, horizon }: { rows: PriorityRow[]; horizon: Horizo
                 && x.milestone.end_date && fraction(x.milestone.end_date) !== null)
             return (
               <div key={r.projectId} className="grid items-center relative border-b border-[#F4F7FA] last:border-0"
-                   style={{ gridTemplateColumns: cols, minHeight: 36, background: r.health === 'delayed' ? '#FFFBF5' : undefined }}>
+                   style={{ gridTemplateColumns: cols, minHeight: 46, background: r.health === 'delayed' ? '#FFFBF5' : undefined }}>
                 <span className="flex items-center gap-2 pl-3 pr-2.5">
                   <span className="text-[11px] font-bold text-[#A9B5C1] w-[16px] tabular-nums">{i + 1}</span>
                   {r.health && <i className="block w-[7px] h-[7px] rounded-full shrink-0" style={{ background: HEALTH_DOT[r.health] }} />}
@@ -1177,10 +1189,10 @@ function PriorityGantt({ rows, horizon }: { rows: PriorityRow[]; horizon: Horizo
         </div>
       </div>
       <div className="flex flex-wrap gap-4 mt-3 pt-2.5 border-t border-[#E4EAF0] text-[11.5px] text-[#706E6B]">
-        <span className="flex items-center gap-1.5"><i className="block w-2 h-2 rotate-45 bg-[#5B21B6]" />Critical path</span>
-        <span className="flex items-center gap-1.5"><i className="block w-2 h-2 rotate-45 bg-[#E6C87A]" />In progress</span>
+        <span className="flex items-center gap-1.5"><i className="block w-2 h-2 rotate-45 bg-[#5B21B6]" />Critical Path</span>
+        <span className="flex items-center gap-1.5"><i className="block w-2 h-2 rotate-45 bg-[#E6C87A]" />In Progress</span>
         <span className="flex items-center gap-1.5"><i className="block w-2 h-2 rotate-45 bg-[#92400E]" />Blocked</span>
-        <span className="flex items-center gap-1.5"><i className="block w-2 h-2 rotate-45 bg-[#E6C87A] opacity-50" />Not started</span>
+        <span className="flex items-center gap-1.5"><i className="block w-2 h-2 rotate-45 bg-[#E6C87A] opacity-50" />Not Started</span>
       </div>
     </div>
   )
@@ -1196,12 +1208,19 @@ function PriorityGantt({ rows, horizon }: { rows: PriorityRow[]; horizon: Horizo
  */
 function GanttTooltip({ hover }: { hover: GanttHover }) {
   const st = STATUS_STYLE[hover.status]
+  // The first couple of rows have no room above them, so the card flips under
+  // its marker rather than being clipped by the scroll container.
+  const below = hover.y < 80
   return (
     <div
-      className="absolute z-[5] pointer-events-none -translate-x-1/2 -translate-y-full"
-      style={{ left: hover.x, top: hover.y - 8 }}
+      className={'absolute z-[5] pointer-events-none -translate-x-1/2 ' + (below ? '' : '-translate-y-full')}
+      style={{ left: hover.x, top: below ? hover.y + 22 : hover.y - 8 }}
     >
-      <div className="rounded-lg bg-white border border-[#D6DEE7] shadow-lg px-3 py-2 min-w-[190px] max-w-[280px]">
+      {/* Arrow above the card when the card sits below its marker. */}
+      {below && (
+        <span className="block w-2 h-2 bg-white border-l border-t border-[#D6DEE7] rotate-45 mx-auto -mb-1" />
+      )}
+      <div className="rounded-lg bg-white border border-[#D6DEE7] shadow-lg px-3 py-2 min-w-[210px] max-w-[300px]">
         <p className="m-0 text-[12px] font-semibold text-[#181818] leading-snug">{hover.label}</p>
         <p className="m-0 mt-0.5 text-[10.5px] text-[#706E6B] truncate">
           {hover.project} · {hover.major}
@@ -1212,7 +1231,7 @@ function GanttTooltip({ hover }: { hover: GanttHover }) {
             {st.label}
           </span>
           {hover.critical && (
-            <span className="px-1.5 py-0.5 rounded-full text-[9.5px] font-bold uppercase tracking-[0.05em]
+            <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold
                              bg-[#F3EEFC] text-[#5B21B6] border border-[#DDD0F2]">
               Critical
             </span>
@@ -1222,8 +1241,10 @@ function GanttTooltip({ hover }: { hover: GanttHover }) {
           </span>
         </div>
       </div>
-      {/* Pointer down to the marker. */}
-      <span className="block w-2 h-2 bg-white border-r border-b border-[#D6DEE7] rotate-45 mx-auto -mt-1" />
+      {/* Pointer down to the marker, when the card sits above it. */}
+      {!below && (
+        <span className="block w-2 h-2 bg-white border-r border-b border-[#D6DEE7] rotate-45 mx-auto -mt-1" />
+      )}
     </div>
   )
 }
@@ -1278,9 +1299,14 @@ function StatusPill({ status }: { status: MilestoneStatus }) {
   const st = STATUS_STYLE[status]
   return (
     <span
-      className="inline-block w-[68px] text-center px-1 py-0.5 rounded-full text-[10px] font-semibold border truncate"
+      // 82px fits the longest label ("In Progress") without truncating. At the
+      // previous 68px that label overran its own box and `truncate` clipped it,
+      // which read as the text being off-centre rather than too big. Centred
+      // with flex rather than text-align so the label is centred as a box, not
+      // as a line of text inside a wider one.
+      className="inline-flex items-center justify-center w-[82px] px-1.5 py-0.5 rounded-full
+                 text-[10px] font-semibold border whitespace-nowrap"
       style={{ background: st.bg, borderColor: st.border, color: st.text }}
-      title={st.label}
     >
       {st.label}
     </span>
