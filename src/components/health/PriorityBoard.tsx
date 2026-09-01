@@ -20,7 +20,7 @@
 // find the row, hover it, then aim at a 10px target — and leaves you asking
 // which of the row's pencils is the one you want.
 
-import { useState, useMemo, useTransition } from 'react'
+import { useState, useMemo, useRef, useTransition } from 'react'
 import Link from 'next/link'
 import { useRouter, usePathname, useSearchParams } from 'next/navigation'
 import {
@@ -752,6 +752,12 @@ function ProjectPlan({ row, ...s }: { row: PriorityRow } & RowShared) {
   const [showOthers, setShowOthers] = useState(false)
 
   const inWindow = row.cardMilestones.filter(x => inHorizon(x.milestone, s.horizon))
+  // How many open milestones the HORIZON is holding back, as distinct from the
+  // Not Started toggle. Without this the control looks broken: on the test data
+  // Near and Long show the same rows, because everything past 30 days happens
+  // to be Not Started and hidden by the other filter.
+  const beyondHorizon = row.cardMilestones.filter(
+    x => x.milestone.status !== 'complete' && !inHorizon(x.milestone, s.horizon)).length
   const notStartedCount = inWindow.filter(x => x.milestone.status === 'not_started').length
   const focusCount = inWindow.filter(x => x.focus).length
 
@@ -792,6 +798,7 @@ function ProjectPlan({ row, ...s }: { row: PriorityRow } & RowShared) {
         <span className="text-[10.5px] text-[#94a3b8]">
           {anyFocus ? 'Focus first, then due date' : 'Ordered by due date'}
           {focusCount > 0 && ` · ${focusCount} in focus`}
+          {beyondHorizon > 0 && ` · ${beyondHorizon} beyond ${HORIZON_LABEL[s.horizon]}`}
         </span>
         {notStartedCount > 0 && (
           <button type="button" onClick={() => setShowNotStarted(v => !v)}
@@ -1051,8 +1058,26 @@ function GroupHeader({ label, count, tone }: {
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 const LANE_LABEL_PX = 210
 
+/** What the in-app hover card is currently describing. */
+interface GanttHover {
+  label: string
+  project: string
+  major: string
+  date: string
+  status: MilestoneStatus
+  critical: boolean
+  /** pixel position inside the chart, so the card can be placed without a portal */
+  x: number
+  y: number
+}
+
 function PriorityGantt({ rows, horizon }: { rows: PriorityRow[]; horizon: Horizon }) {
   const span = HORIZON_GANTT_MONTHS[horizon]
+  const chartRef = useRef<HTMLDivElement>(null)
+  // Native `title` tooltips are slow to appear, cannot be styled, and truncate
+  // in some browsers — a chart whose only detail is a browser tooltip reads as
+  // unfinished. This is the same information, in the app's own type.
+  const [hover, setHover] = useState<GanttHover | null>(null)
   const now = new Date()
   const originY = now.getUTCFullYear()
   const originM = now.getUTCMonth()
@@ -1075,7 +1100,7 @@ function PriorityGantt({ rows, horizon }: { rows: PriorityRow[]; horizon: Horizo
   return (
     <div className="bg-white rounded-xl border border-[#e2e8f0] px-4 pt-3.5 pb-3">
       <div className="overflow-x-auto">
-        <div className="relative" style={{ minWidth: LANE_LABEL_PX + span * colPx }}>
+        <div ref={chartRef} className="relative" style={{ minWidth: LANE_LABEL_PX + span * colPx }}>
           <div className="grid border-b border-[#E4EAF0]" style={{ gridTemplateColumns: cols }}>
             <span />
             {months.map((mo, i) => (
@@ -1088,8 +1113,9 @@ function PriorityGantt({ rows, horizon }: { rows: PriorityRow[]; horizon: Horizo
           </div>
 
           {rows.map((r, i) => {
-            const marks = r.groups.flatMap(g => g.milestones)
-              .filter(m => m.status !== 'complete' && m.end_date && fraction(m.end_date) !== null)
+            const marks = r.cardMilestones
+              .filter(x => x.milestone.status !== 'complete'
+                && x.milestone.end_date && fraction(x.milestone.end_date) !== null)
             return (
               <div key={r.projectId} className="grid items-center relative border-b border-[#F4F7FA] last:border-0"
                    style={{ gridTemplateColumns: cols, minHeight: 36, background: r.health === 'delayed' ? '#FFFBF5' : undefined }}>
@@ -1105,20 +1131,42 @@ function PriorityGantt({ rows, horizon }: { rows: PriorityRow[]; horizon: Horizo
                   <span key={`${r.projectId}-${mo.y}-${mo.m}`} className="h-full"
                         style={{ borderLeft: c === 0 ? undefined : '1px solid #F0F4F8' }} />
                 ))}
-                {marks.map(m => (
-                  <span key={m.id}
-                        title={`${m.label} · ${formatShortDate(m.end_date)} · ${STATUS_STYLE[m.status].label}`}
-                        className="absolute top-1/2 w-[9px] h-[9px] -ml-[4.5px] -mt-[4.5px] rotate-45"
+                {marks.map(mk => (
+                  <span key={mk.milestone.id}
+                        onMouseEnter={e => {
+                          const chart = chartRef.current
+                          if (!chart) return
+                          const a = e.currentTarget.getBoundingClientRect()
+                          const c = chart.getBoundingClientRect()
+                          setHover({
+                            label: mk.milestone.label,
+                            project: r.name,
+                            major: mk.majorLabel,
+                            date: mk.milestone.end_date as string,
+                            status: mk.milestone.status,
+                            critical: mk.milestone.is_critical,
+                            // Measured against the chart, not the viewport, so the
+                            // card stays put when the page scrolls.
+                            x: a.left - c.left + a.width / 2,
+                            y: a.top - c.top,
+                          })
+                        }}
+                        onMouseLeave={() => setHover(null)}
+                        className="absolute top-1/2 w-[10px] h-[10px] -ml-[5px] -mt-[5px] rotate-45 cursor-pointer
+                                   hover:scale-125 transition-transform"
                         style={{
-                          left: `calc(${LANE_LABEL_PX}px + (100% - ${LANE_LABEL_PX}px) * ${fraction(m.end_date as string)})`,
-                          background: m.is_critical ? '#5B21B6' : m.status === 'blocked' ? '#92400E' : '#E6C87A',
-                          opacity: m.status === 'not_started' && !m.is_critical ? 0.5 : 1,
+                          left: `calc(${LANE_LABEL_PX}px + (100% - ${LANE_LABEL_PX}px) * ${fraction(mk.milestone.end_date as string)})`,
+                          background: mk.milestone.is_critical ? '#5B21B6'
+                            : mk.milestone.status === 'blocked' ? '#92400E' : '#E6C87A',
+                          opacity: mk.milestone.status === 'not_started' && !mk.milestone.is_critical ? 0.5 : 1,
                           zIndex: 2,
                         }} />
                 ))}
               </div>
             )
           })}
+
+          {hover && <GanttTooltip hover={hover} />}
 
           <div aria-hidden className="absolute top-0 bottom-0 w-px z-[3] pointer-events-none"
                style={{ left: LANE_LABEL_PX, background: '#EF4444' }}>
@@ -1134,6 +1182,48 @@ function PriorityGantt({ rows, horizon }: { rows: PriorityRow[]; horizon: Horizo
         <span className="flex items-center gap-1.5"><i className="block w-2 h-2 rotate-45 bg-[#92400E]" />Blocked</span>
         <span className="flex items-center gap-1.5"><i className="block w-2 h-2 rotate-45 bg-[#E6C87A] opacity-50" />Not started</span>
       </div>
+    </div>
+  )
+}
+
+/**
+ * The Gantt's hover card.
+ *
+ * Positioned inside the chart rather than the viewport, so it travels with the
+ * chart's own horizontal scroll instead of detaching from its marker. It is
+ * pointer-events-none: the card must never sit between the cursor and the
+ * marker it describes, or hovering would flicker.
+ */
+function GanttTooltip({ hover }: { hover: GanttHover }) {
+  const st = STATUS_STYLE[hover.status]
+  return (
+    <div
+      className="absolute z-[5] pointer-events-none -translate-x-1/2 -translate-y-full"
+      style={{ left: hover.x, top: hover.y - 8 }}
+    >
+      <div className="rounded-lg bg-white border border-[#D6DEE7] shadow-lg px-3 py-2 min-w-[190px] max-w-[280px]">
+        <p className="m-0 text-[12px] font-semibold text-[#181818] leading-snug">{hover.label}</p>
+        <p className="m-0 mt-0.5 text-[10.5px] text-[#706E6B] truncate">
+          {hover.project} · {hover.major}
+        </p>
+        <div className="flex items-center gap-2 mt-1.5">
+          <span className="px-1.5 py-0.5 rounded-full text-[10px] font-semibold border"
+                style={{ background: st.bg, borderColor: st.border, color: st.text }}>
+            {st.label}
+          </span>
+          {hover.critical && (
+            <span className="px-1.5 py-0.5 rounded-full text-[9.5px] font-bold uppercase tracking-[0.05em]
+                             bg-[#F3EEFC] text-[#5B21B6] border border-[#DDD0F2]">
+              Critical
+            </span>
+          )}
+          <span className="ml-auto text-[11px] tabular-nums font-semibold text-[#3E3E3C]">
+            {formatShortDate(hover.date)}
+          </span>
+        </div>
+      </div>
+      {/* Pointer down to the marker. */}
+      <span className="block w-2 h-2 bg-white border-r border-b border-[#D6DEE7] rotate-45 mx-auto -mt-1" />
     </div>
   )
 }
