@@ -1057,6 +1057,21 @@ function GroupHeader({ label, count, tone }: {
 // ── gantt ─────────────────────────────────────────────────────────────
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+
+/**
+ * Gantt marker colours — deliberately two, not four.
+ *
+ * The same validated pair the momentum chart uses (separation delta-E 27 normal,
+ * 19.3 deutan against a light surface), so the two charts on this page do not
+ * teach the reader two different colour languages.
+ *
+ * Note this is the one place red does NOT mean "in trouble": elsewhere on the
+ * board red is delayed or slipped. Critical path is important, not bad. It reads
+ * clearly here because the Gantt carries no other red, but it is worth knowing
+ * if a second red signal is ever added to this chart.
+ */
+const CRITICAL_MARK = '#B91C1C'
+const PLAIN_MARK = '#8095A8'
 const LANE_LABEL_PX = 260
 
 /** What the in-app hover card is currently describing. */
@@ -1156,14 +1171,20 @@ function PriorityGantt({ rows, horizon }: { rows: PriorityRow[]; horizon: Horizo
                           })
                         }}
                         onMouseLeave={() => setHover(null)}
-                        className="absolute top-1/2 w-[10px] h-[10px] -ml-[5px] -mt-[5px] rotate-45 cursor-pointer
-                                   hover:scale-125 transition-transform"
+                        className="absolute top-1/2 w-[11px] h-[11px] -ml-[5.5px] -mt-[5.5px] rounded-full
+                                   cursor-pointer hover:scale-125 transition-transform"
                         style={{
                           left: `calc(${LANE_LABEL_PX}px + (100% - ${LANE_LABEL_PX}px) * ${fraction(mk.milestone.end_date as string)})`,
-                          background: mk.milestone.is_critical ? '#5B21B6'
-                            : mk.milestone.status === 'blocked' ? '#92400E' : '#E6C87A',
-                          opacity: mk.milestone.status === 'not_started' && !mk.milestone.is_critical ? 0.5 : 1,
-                          zIndex: 2,
+                          // Two colours only. Four hues encoding status made the
+                          // chart a puzzle to decode when the one question it has
+                          // to answer at a glance is "what is on the critical
+                          // path". Status still travels with every marker — in
+                          // the hover card, where there is room to name it.
+                          background: mk.milestone.is_critical ? CRITICAL_MARK : PLAIN_MARK,
+                          // A ring rather than a fill difference, so overlapping
+                          // markers on close dates stay countable.
+                          boxShadow: '0 0 0 1.5px #fff',
+                          zIndex: mk.milestone.is_critical ? 3 : 2,
                         }} />
                 ))}
               </div>
@@ -1180,11 +1201,14 @@ function PriorityGantt({ rows, horizon }: { rows: PriorityRow[]; horizon: Horizo
           </div>
         </div>
       </div>
-      <div className="flex flex-wrap gap-4 mt-3 pt-2.5 border-t border-[#E4EAF0] text-[11.5px] text-[#706E6B]">
-        <span className="flex items-center gap-1.5"><i className="block w-2 h-2 rotate-45 bg-[#5B21B6]" />Critical Path</span>
-        <span className="flex items-center gap-1.5"><i className="block w-2 h-2 rotate-45 bg-[#E6C87A]" />In Progress</span>
-        <span className="flex items-center gap-1.5"><i className="block w-2 h-2 rotate-45 bg-[#92400E]" />Blocked</span>
-        <span className="flex items-center gap-1.5"><i className="block w-2 h-2 rotate-45 bg-[#E6C87A] opacity-50" />Not Started</span>
+      <div className="flex flex-wrap items-center gap-4 mt-3 pt-2.5 border-t border-[#E4EAF0] text-[11.5px] text-[#706E6B]">
+        <span className="flex items-center gap-1.5">
+          <i className="block w-2.5 h-2.5 rounded-full" style={{ background: CRITICAL_MARK }} />Critical Path
+        </span>
+        <span className="flex items-center gap-1.5">
+          <i className="block w-2.5 h-2.5 rounded-full" style={{ background: PLAIN_MARK }} />Milestone
+        </span>
+        <span className="text-[#A9B5C1]">Hover any marker for its status and date.</span>
       </div>
     </div>
   )
