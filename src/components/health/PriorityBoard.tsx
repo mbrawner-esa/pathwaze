@@ -546,7 +546,6 @@ function BoardTable({ rows, ...s }: { rows: PriorityRow[] } & RowShared) {
               <Th>Momentum</Th>
               <Th>Risk</Th>
               <Th>Phase</Th>
-              <Th align="right">Target</Th>
             </tr>
           </thead>
           <tbody>
@@ -561,21 +560,21 @@ function BoardTable({ rows, ...s }: { rows: PriorityRow[] } & RowShared) {
 }
 
 function BoardRow({ row, index, ...s }: { row: PriorityRow; index: number } & RowShared) {
-  const m = row.current
   const open = s.openId === row.projectId
   const isOver = s.overId === row.projectId && s.dragId !== row.projectId
   const stageKey = `project:${row.projectId}:stage`
-  // Target belongs to the current milestone, not the project, but it is on this
-  // row so the record pencil opens it too — the pencil edits what you can see.
-  const targetKey = m ? `milestone:${m.id}:end_date` : null
 
   /**
    * ONE edit control per project, covering everything that project shows.
    *
    * Every milestone row used to carry its own pencil, which put seven of them
    * in a single open card and made "edit" a hunt rather than an action. This
-   * opens the row's own fields plus every milestone in the current horizon, so
+   * opens the row's own stage plus every milestone in the current horizon, so
    * one click makes the whole record editable and Save closes all of it.
+   *
+   * It deliberately does NOT reach for the project row's own target date any
+   * more: that column is gone, and a pencil that edits a field you cannot see
+   * is a trap. Dates are edited where they are shown — on the milestones.
    *
    * Milestones hidden by the Not Started toggle are included deliberately: they
    * render as inputs the moment they are revealed, rather than being stuck
@@ -583,7 +582,6 @@ function BoardRow({ row, index, ...s }: { row: PriorityRow; index: number } & Ro
    */
   const recordKeys = [
     stageKey,
-    ...(targetKey ? [targetKey] : []),
     ...row.cardMilestones
       .filter(x => inHorizon(x.milestone, s.horizon))
       .flatMap(x => [`milestone:${x.milestone.id}:status`, `milestone:${x.milestone.id}:end_date`]),
@@ -702,25 +700,12 @@ function BoardRow({ row, index, ...s }: { row: PriorityRow; index: number } & Ro
             ? <MajorPill label={row.phaseLabel} workstream={row.phaseWorkstream} />
             : <span className="text-[#C6D0DA]">—</span>}
         </Td>
-        <Td align="right" className="tabular-nums">
-          {targetKey && s.editingKeys.has(targetKey) ? (
-            <input
-              type="date"
-              value={(s.edits[targetKey]?.value as string) ?? m?.end_date ?? ''}
-              disabled={s.busy}
-              onChange={e => s.stage(targetKey, {
-                kind: 'milestone', id: m!.id, field: 'end_date', value: e.target.value,
-              })}
-              className="w-[116px] px-1.5 py-0.5 rounded text-[11px] text-[#181818] border border-[#C8963A] bg-white outline-none"
-            />
-          ) : m?.end_date ? formatShortDate(m.end_date) : <span className="text-[#C6D0DA]">—</span>}
-        </Td>
       </tr>
 
       {open && (
         <tr className="border-b border-[#F1F5F9]" style={{ background: '#FFFBF5' }}>
           <td /><td />
-          <td colSpan={6} className="px-3.5 pb-4 pt-0">
+          <td colSpan={5} className="px-3.5 pb-4 pt-0">
             <ProjectPlan row={row} {...s} />
           </td>
         </tr>
