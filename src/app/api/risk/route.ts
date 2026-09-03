@@ -121,6 +121,7 @@ export async function POST(request: NextRequest) {
   let scored = 0
   let skipped = 0
   const failed: string[] = []
+  let lastError: string | null = null
 
   for (const p of targets) {
     const mine = msByP.get(p.id) ?? []
@@ -171,8 +172,27 @@ export async function POST(request: NextRequest) {
       scored_at: new Date().toISOString(),
       scored_by: user.id,
     }, { onConflict: 'project_id' })
-    if (error) { failed.push(p.name); continue }
+    if (error) {
+      // Log the reason. A silent push onto `failed` cost a debugging session:
+      // every model call succeeded, every write failed, and nothing said why.
+      console.error('[risk] write failed for', p.name, '—', error.message)
+      failed.push(p.name)
+      lastError = error.message
+      continue
+    }
     scored++
+  }
+
+  // A run where everything failed is an error, not a success with a zero in it.
+  // This previously returned 200 with `ok: false` in the body, and the client
+  // only checked the HTTP status — so a total failure rendered as "Scored 0".
+  if (failed.length && scored === 0) {
+    return NextResponse.json({
+      error: lastError
+        ? `Scoring failed for all ${failed.length} project(s): ${lastError}`
+        : `Scoring failed for all ${failed.length} project(s).`,
+      failed,
+    }, { status: 502 })
   }
 
   return NextResponse.json({

@@ -298,8 +298,15 @@ export function PriorityBoard({
       })
       const body = await res.json().catch(() => ({}))
       if (!res.ok) setError(body.error || 'Risk scoring failed.')
-      else {
-        setScoreNote(`Scored ${body.scored}${body.skipped ? `, ${body.skipped} unchanged` : ''}.`)
+      else if (body.failed?.length) {
+        // Partial success still needs saying out loud — otherwise a run that
+        // scored 3 of 6 reads exactly like one that scored all 6.
+        setError(`Scored ${body.scored}, but ${body.failed.length} failed: ${body.failed.join(', ')}`)
+        startTransition(() => router.refresh())
+      } else {
+        setScoreNote(body.scored === 0 && body.skipped
+          ? `Nothing to score — ${body.skipped} project(s) unchanged since the last run.`
+          : `Scored ${body.scored}${body.skipped ? `, ${body.skipped} unchanged` : ''}.`)
         startTransition(() => router.refresh())
       }
     } catch {
