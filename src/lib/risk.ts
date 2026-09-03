@@ -31,8 +31,14 @@ const ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/models'
  * Default model. Deliberately overridable: model ids move faster than this
  * codebase, and a wrong hardcoded id is a silent 404 at the worst moment. Set
  * GEMINI_MODEL to pin a different one without a deploy.
+ *
+ * Verified live 2026-09-03. The first attempt used gemini-2.0-flash and Google
+ * answered 404 with "no longer available … use models/gemini-3.6-flash", which
+ * is exactly the failure this indirection exists for. Google's message also
+ * suggests their newer Interactions API; generateContent still works and is
+ * what this calls.
  */
-const DEFAULT_MODEL = 'gemini-2.0-flash'
+const DEFAULT_MODEL = 'gemini-3.6-flash'
 
 /** Per-field caps. Long enough to be representative, short enough to stay cheap. */
 const MAX_ITEMS = 40
