@@ -238,9 +238,16 @@ export async function scoreRisk(input: RiskInput): Promise<RiskResult | null> {
   const model = process.env.GEMINI_MODEL || DEFAULT_MODEL
 
   try {
-    const res = await fetch(`${ENDPOINT}/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(key)}`, {
+    const res = await fetch(`${ENDPOINT}/${encodeURIComponent(model)}:generateContent`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      // The key travels as a header, not a query parameter. Both authenticate,
+      // but a URL carrying a secret ends up in proxy logs, browser history and
+      // error reports; a header does not. This is also the form Google's own
+      // docs specify.
+      headers: {
+        'Content-Type': 'application/json',
+        'x-goog-api-key': key,
+      },
       cache: 'no-store',
       body: JSON.stringify({
         contents: [{ role: 'user', parts: [{ text: buildPrompt(input) }] }],
