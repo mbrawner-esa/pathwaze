@@ -8,12 +8,15 @@ import {
   ClipboardDocumentCheckIcon,
   UserGroupIcon,
   QuestionMarkCircleIcon,
+  HeartIcon,
 } from '@heroicons/react/24/solid'
 import { createClient } from '@/lib/supabase/client'
 import { useState, useEffect } from 'react'
 import { PathwazeLogo } from '@/components/ui/PathwazeLogo'
 import { Avatar } from '@/components/ui/Avatar'
 import { entityHref } from '@/lib/activity-links'
+import { isManagerOrAbove } from '@/lib/permissions'
+import { timeAgo } from '@/lib/utils'
 
 interface Notification {
   id: string
@@ -24,14 +27,6 @@ interface Notification {
   created_at: string
   user_id: string
   users?: { full_name: string; avatar_url?: string | null } | null
-}
-
-function timeAgo(iso: string): string {
-  const sec = Math.floor((Date.now() - new Date(iso).getTime()) / 1000)
-  if (sec < 60)    return `${sec}s ago`
-  if (sec < 3600)  return `${Math.floor(sec / 60)}m ago`
-  if (sec < 86400) return `${Math.floor(sec / 3600)}h ago`
-  return `${Math.floor(sec / 86400)}d ago`
 }
 
 function formatAction(n: Notification): { who: string; action: string; entity: string } {
@@ -50,8 +45,12 @@ function notifHref(n: Notification): string | null {
   return entityHref(n.entity_type, n.entity_id, pid)
 }
 
+// `managerOnly` items are hidden for team/investor. This is presentation only —
+// the routes themselves re-check the role (defense in depth), because a hidden
+// link is not access control.
 const NAV_ITEMS = [
   { label: 'Dashboard', href: '/dashboard', Icon: Squares2X2Icon },
+  { label: 'Health', href: '/health', Icon: HeartIcon, managerOnly: true },
   { label: 'Projects', href: '/projects', Icon: BriefcaseIcon },
   { label: 'Tasks', href: '/tasks', Icon: ClipboardDocumentCheckIcon },
   { label: 'Stakeholders', href: '/stakeholders', Icon: UserGroupIcon },
@@ -111,7 +110,7 @@ export function NavBar({ user }: NavBarProps) {
         <PathwazeLogo variant="dark" style={{ height: 32, width: 'auto' }} />
       </Link>
       <div className="flex-1 flex items-center gap-0.5">
-        {NAV_ITEMS.map(item => {
+        {NAV_ITEMS.filter(item => !item.managerOnly || isManagerOrAbove(user.role)).map(item => {
           const active = pathname === item.href || pathname.startsWith(item.href + '/')
           const Icon = item.Icon
           return (

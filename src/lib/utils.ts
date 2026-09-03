@@ -90,3 +90,18 @@ export function formatShortDate(date: string | null | undefined): string {
   const thisYear = new Date().getFullYear()
   return y === thisYear ? `${month} ${d}` : `${month} ${d} '${String(y).slice(2)}`
 }
+
+/**
+ * Compact relative time: "3m ago", "2d ago".
+ *
+ * Deliberately stops at days rather than rolling into weeks/months — every
+ * caller shows it inside a bounded recent window (the notification dropdown,
+ * the pipeline-health feed), where "31d ago" is more useful than "last month".
+ */
+export function timeAgo(iso: string): string {
+  const sec = Math.floor((Date.now() - new Date(iso).getTime()) / 1000)
+  if (sec < 60)    return `${sec}s ago`
+  if (sec < 3600)  return `${Math.floor(sec / 60)}m ago`
+  if (sec < 86400) return `${Math.floor(sec / 3600)}h ago`
+  return `${Math.floor(sec / 86400)}d ago`
+}

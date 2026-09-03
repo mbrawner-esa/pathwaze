@@ -117,7 +117,45 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     })
   }
 
+  // `risk` is rich text and so is excluded from LOGGED above — it saves on every
+  // edit and the body would drown the feed. But a risk being RAISED or CLEARED
+  // is exactly the signal the pipeline-health feed exists for, and that is a
+  // transition, not a body change: it fires twice in a milestone's life, not on
+  // every keystroke-pause. So log presence, never content.
+  if (update.risk !== undefined) {
+    const had = hasContent(before.risk)
+    const has = hasContent(update.risk as string | null)
+    if (had !== has) {
+      await logActivity(supabase, user, {
+        entity_type: 'workstream_milestone',
+        entity_id: id,
+        action: 'field_changed',
+        project_id: before.project_id,
+        metadata: {
+          field: 'risk', field_label: 'risk',
+          // Booleans, deliberately: the log records that a risk exists, not what
+          // it says. Reading the risk itself means opening the milestone.
+          from: had, to: has,
+          label: data.label,
+          major_key: before.major_key,
+        },
+      })
+    }
+  }
+
   return NextResponse.json(data)
+}
+
+/**
+ * Does a rich-text field actually say anything?
+ *
+ * RichTextEditor leaves an empty field as `<p></p>` or `<p><br></p>` rather than
+ * an empty string, so a plain truthiness check would read a cleared risk as one
+ * that is still raised.
+ */
+function hasContent(html: string | null | undefined): boolean {
+  if (!html) return false
+  return html.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').trim().length > 0
 }
 
 export async function DELETE(_request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
