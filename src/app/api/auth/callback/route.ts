@@ -10,5 +10,11 @@ export async function GET(request: NextRequest) {
     await supabase.auth.exchangeCodeForSession(code)
   }
 
-  return NextResponse.redirect(`${origin}/dashboard`)
+  // `next` lets a flow resume where it left off — the MCP connector sends
+  // users through login mid-OAuth and needs them back on the consent screen.
+  // Same-site paths only, so this cannot be turned into an open redirect.
+  const next = searchParams.get('next')
+  const safe = next && next.startsWith('/') && !next.startsWith('//') ? next : '/dashboard'
+
+  return NextResponse.redirect(`${origin}${safe}`)
 }

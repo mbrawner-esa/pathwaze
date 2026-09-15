@@ -34,8 +34,8 @@ would push outdated code. If you're unsure which clone you're in, run
   `supabase/migrations/NNN_*.sql` file must be **run manually on Supabase** by
   the user. Always call out new migration numbers explicitly in the summary.
 - Migrations are numbered sequentially, idempotent (`IF NOT EXISTS` /
-  `DROP POLICY IF EXISTS`). Next free number as of 2026-08-27: **069**
-  (latest applied: **068** — 054–068 are all live on Supabase).
+  `DROP POLICY IF EXISTS`). Next free number as of 2026-09-15: **075**
+  (latest applied: **072** — 073 and 074 are written but NOT yet run, see below).
   ⚠️ **Check `ls supabase/migrations` before claiming a number, not this line.**
   Two sessions ran concurrently on 2026-08-26 and both wrote a `066_*`; the
   Workstreams one was renamed to `068` after the fact. This line goes stale the
@@ -44,8 +44,19 @@ would push outdated code. If you're unsure which clone you're in, run
   Storage → Settings upload limit must also be ≥ 2 GB for it to take effect).
   ⚠️ **067 is written but NOT run** — adds a `manager`-role SELECT policy on
   `project_threads` (019 covered only admin/team, so a manager's Threads tab is
-  currently blank). Safe to run anytime; only matters once someone has the
-  manager role.
+  currently blank). **Superseded by 073**, which folds it in; run 073 and 067
+  becomes a no-op.
+  ⚠️ **073 + 074 are written but NOT run** (added 2026-09-15 with the MCP
+  server). **073 is the significant one**: until now the permission model in
+  this file and in `permissions.ts` ("manager sees everything, team sees all
+  projects") lived only in application code — live RLS still had the 001
+  policies, which predate the manager role entirely, so a manager had *no*
+  policy on any table and team members could only read projects they were
+  assigned to. 073 adds `FOR SELECT` policies for both roles across the ~44
+  read tables. It is additive and read-only, but it genuinely widens what team
+  members can see in the app, not just over MCP. Verify with
+  `node scripts/check-rls-roles.mjs` before and after. 074 adds the OAuth
+  bookkeeping tables (`mcp_clients`, `mcp_auth_codes`, `mcp_tokens`).
   ⚠️ 054–063 are the Workstreams series and must run **in order**: 057 purges
   branch test data so 058/060 can retire placeholder majors, and 059 reshapes
   the date columns the rest depend on.
@@ -53,6 +64,11 @@ would push outdated code. If you're unsure which clone you're in, run
   migrations numbered 022/023 that collide with main's. That branch is a delete
   candidate — never merge it as-is.
 - **Never set `EMAIL_NOTIFY_SELF=true` in Production** — dev/preview only.
+- `MCP_TOKEN_PEPPER` and `TOKEN_ENC_KEY` must be **identical** in `.env.local`
+  and Vercel — local dev and prod share one Supabase database, so a mismatch
+  means tokens written by one side can't be read by the other.
+  `SUPABASE_JWT_SECRET` (Supabase → Settings → API → JWT Secret) is required by
+  /api/mcp; without it no MCP request can be authorized.
 - Secrets live in `.env.local` (gitignored) + Vercel project settings. Never
   paste real credentials into chat or commit them.
 
@@ -223,6 +239,23 @@ server route handlers (defense in depth).
   `project_threads` where the correspondent matches a `stakeholders.email`.
   `CRON_SECRET`-gated; supports `?dry=1` and `?user=<uuid>`; `maxDuration=60`.
 - /api/auth/outlook/{connect,callback,disconnect} — per-user Graph OAuth
+- /api/mcp — **MCP server** (read-only). Remote Streamable-HTTP endpoint that
+  lets Claude (CoWork / Desktop / Code) read Pathwaze data. Org-wide: teammates
+  add it once as a connector and sign in with their normal Pathwaze login.
+  OAuth 2.1 + PKCE + Dynamic Client Registration at
+  `/api/mcp/oauth/{register,authorize,token,revoke}`, discovery at
+  `/.well-known/oauth-{protected-resource,authorization-server}`.
+  ⚠️ **RLS is the authorization boundary** — each request mints a 5-minute
+  Supabase JWT for the calling user and hands it to PostgREST, so a tool can
+  only ever return what that person can already see. There is deliberately **no
+  service-role path to row data**; the service key is used only for the `mcp_*`
+  bookkeeping tables and for the OpenAPI schema document, which Supabase serves
+  *only* to the service role (a user JWT gets 401). That document is table and
+  column names — schema shape, not rows — and backs `list_tables` /
+  `describe_table`; every actual read still goes through the user's JWT.
+  Investors are refused at the authorize endpoint.
+  Tools + data layer live in `src/lib/mcp/`; users manage and revoke their own
+  connections from /settings.
 
 ## Conventions
 - All DB queries via Supabase client

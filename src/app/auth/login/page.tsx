@@ -17,12 +17,20 @@ function LoginInner() {
   const initialError = params.get('error')
   const supabase = createClient()
 
+  // Where to land after signing in. Used by the MCP connector flow, which
+  // sends users here mid-OAuth and needs them back on the consent screen.
+  // Only same-site paths are honoured, so this cannot become an open redirect.
+  const rawNext = params.get('next')
+  const next = rawNext && rawNext.startsWith('/') && !rawNext.startsWith('//') ? rawNext : null
+
   async function handleSlackLogin() {
     setSlackLoading(true); setError('')
+    const callback = new URL('/auth/callback', window.location.origin)
+    if (next) callback.searchParams.set('next', next)
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'slack_oidc',
       options: {
-        redirectTo: `${window.location.origin}/auth/callback`,
+        redirectTo: callback.toString(),
       },
     })
     if (error) { setError(error.message); setSlackLoading(false) }
@@ -33,7 +41,7 @@ function LoginInner() {
     setLoading(true); setError('')
     const { error } = await supabase.auth.signInWithPassword({ email, password })
     if (error) { setError(error.message); setLoading(false); return }
-    router.push('/dashboard'); router.refresh()
+    router.push(next || '/dashboard'); router.refresh()
   }
 
   return (

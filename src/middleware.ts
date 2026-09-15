@@ -9,7 +9,13 @@ export async function middleware(request: NextRequest) {
   const isPending = pathname === '/auth/pending'
   // Routes that must run even while signed in (they clear/complete the session).
   const isSessionRoute = pathname.startsWith('/auth/callback') || pathname.startsWith('/auth/logout')
-  const isPublic = pathname.startsWith('/investor') || pathname.startsWith('/email-logo')
+  // `.well-known` carries the OAuth discovery documents for the MCP connector
+  // (/api/mcp). They must be readable without a session — they are what tells
+  // a client where to go and authenticate in the first place.
+  const isPublic =
+    pathname.startsWith('/investor') ||
+    pathname.startsWith('/email-logo') ||
+    pathname.startsWith('/.well-known')
 
   try {
     const supabase = createServerClient(

@@ -1,9 +1,9 @@
 'use client'
-import { useState } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Avatar } from '@/components/ui/Avatar'
-import { Mail } from 'lucide-react'
+import { Mail, Plug } from 'lucide-react'
 
 export interface SettingsUser {
   id: string
@@ -53,11 +53,51 @@ const ALL_TASK_TYPES = [
   'Financial', 'Legal', 'Construction', 'Operations', 'Administrative',
 ] as const
 
+/** An app (Claude, etc.) connected to the read-only Pathwaze MCP server. */
+interface McpConnection {
+  id: string
+  client_name: string | null
+  created_at: string
+  last_used_at: string | null
+  expires_at: string
+}
+
+const fmtDate = (v: string | null) =>
+  v ? new Date(v).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) : 'never'
+
 export function SettingsClient({ user, outlook }: { user: SettingsUser; outlook: OutlookStatus }) {
   const router = useRouter()
   const supabase = createClient()
 
   const [disconnecting, setDisconnecting] = useState(false)
+
+  // Apps connected to the MCP server. Investors can't connect, so don't ask.
+  const canUseMcp = user.role !== 'investor'
+  const [mcp, setMcp] = useState<McpConnection[]>([])
+  const [mcpLoading, setMcpLoading] = useState(canUseMcp)
+  const [revoking, setRevoking] = useState<string | null>(null)
+
+  const loadMcp = useCallback(async () => {
+    if (!canUseMcp) return
+    try {
+      const res = await fetch('/api/mcp/connections')
+      if (res.ok) setMcp((await res.json()).connections ?? [])
+    } finally {
+      setMcpLoading(false)
+    }
+  }, [canUseMcp])
+
+  useEffect(() => { void loadMcp() }, [loadMcp])
+
+  async function revokeMcp(id: string) {
+    setRevoking(id)
+    try {
+      await fetch(`/api/mcp/connections?id=${id}`, { method: 'DELETE' })
+      await loadMcp()
+    } finally {
+      setRevoking(null)
+    }
+  }
   async function disconnectOutlook() {
     setDisconnecting(true); setErr(null)
     const res = await fetch('/api/auth/outlook/disconnect', { method: 'POST' })
@@ -287,6 +327,58 @@ export function SettingsClient({ user, outlook }: { user: SettingsUser; outlook:
           )}
         </div>
       </Section>
+
+      {/* Claude / MCP connections */}
+      {canUseMcp && (
+        <Section
+          title="Claude (MCP)"
+          subtitle="Apps connected to the Pathwaze MCP server. They can read Pathwaze data as you — the same projects, notes, threads and tasks you see here — and cannot change anything."
+        >
+          {mcpLoading ? (
+            <p className="text-[12.5px] text-[#706E6B]">Loading…</p>
+          ) : mcp.length === 0 ? (
+            <div className="flex items-start gap-3">
+              <div className="w-9 h-9 rounded-full bg-[#F5F0E6] flex items-center justify-center flex-shrink-0">
+                <Plug size={16} className="text-[#C8963A]" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-[13px] font-medium text-[#181818]">No apps connected</p>
+                <p className="text-[12px] text-[#706E6B] mt-0.5 leading-snug">
+                  In Claude, add the Pathwaze connector and sign in here when prompted. Anything you
+                  connect will show up in this list.
+                </p>
+              </div>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-3">
+              {mcp.map(c => (
+                <div key={c.id} className="flex items-start justify-between gap-4">
+                  <div className="flex items-start gap-3 min-w-0">
+                    <div className="w-9 h-9 rounded-full bg-[#F5F0E6] flex items-center justify-center flex-shrink-0">
+                      <Plug size={16} className="text-[#C8963A]" />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-[13px] font-medium text-[#181818]">
+                        {c.client_name || 'MCP client'}
+                      </p>
+                      <p className="text-[12px] text-[#706E6B] mt-0.5">
+                        Connected {fmtDate(c.created_at)} · Last used {fmtDate(c.last_used_at)}
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => revokeMcp(c.id)}
+                    disabled={revoking === c.id}
+                    className={`px-3 py-1.5 text-[12.5px] font-semibold border border-[#e2e8f0] rounded hover:bg-[#fafbfc] text-[#3E3E3C] flex-shrink-0 ${revoking === c.id ? 'opacity-60' : ''}`}
+                  >
+                    {revoking === c.id ? 'Revoking…' : 'Revoke'}
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </Section>
+      )}
 
       {/* Task subscriptions */}
       {user.role !== 'investor' && (
