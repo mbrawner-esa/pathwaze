@@ -170,6 +170,16 @@ export async function GET(req: NextRequest) {
   return res
 }
 
+/**
+ * 303, not the framework default of 307.
+ *
+ * This handler is reached by a POST from the consent form, and 307 PRESERVES
+ * the method — so the browser would re-send the client's callback as a POST.
+ * OAuth callbacks are GET endpoints (claude.ai answers a POST with "Method Not
+ * Allowed"), and 303 is the status that means "follow this with GET".
+ */
+const seeOther = (url: string) => NextResponse.redirect(url, 303)
+
 export async function POST(req: NextRequest) {
   const form = await req.formData()
   const fields = new URLSearchParams()
@@ -191,14 +201,14 @@ export async function POST(req: NextRequest) {
 
   if (form.get('deny')) {
     back.searchParams.set('error', 'access_denied')
-    return NextResponse.redirect(back.toString())
+    return seeOther(back.toString())
   }
 
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) {
     back.searchParams.set('error', 'access_denied')
-    return NextResponse.redirect(back.toString())
+    return seeOther(back.toString())
   }
 
   // Re-check the role on approval, not just on render.
@@ -211,7 +221,7 @@ export async function POST(req: NextRequest) {
   if (!profile || (profile.status && profile.status !== 'active') || !CONNECTABLE_ROLES.includes(profile.role)) {
     back.searchParams.set('error', 'access_denied')
     back.searchParams.set('error_description', 'This Pathwaze role cannot connect.')
-    return NextResponse.redirect(back.toString())
+    return seeOther(back.toString())
   }
 
   const code = randomToken(24)
@@ -230,11 +240,11 @@ export async function POST(req: NextRequest) {
   if (error) {
     console.error('[mcp authorize] could not store code:', error.message)
     back.searchParams.set('error', 'server_error')
-    return NextResponse.redirect(back.toString())
+    return seeOther(back.toString())
   }
 
   back.searchParams.set('code', code)
-  const res = NextResponse.redirect(back.toString())
+  const res = seeOther(back.toString())
   res.cookies.delete(CSRF_COOKIE)
   return res
 }
