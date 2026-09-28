@@ -6,6 +6,20 @@
 
 ---
 
+## 2026-09-28
+
+- **"Working…" feedback on navigation and saves** — moving between pages or
+  saving something gave no sign Pathwaze was busy (in-app navigation never
+  triggers Chrome's own spinner), which led to a real double-submit. A gold
+  progress bar now runs across the top, with a progress cursor, whenever a
+  page is loading or a save is in flight. The note / event / file / new-task
+  forms and the Financial, Technical and Utility edit panels now stay in their
+  *Saving…* state until the saved result is actually on screen, instead of
+  closing seconds early; task and stakeholder comments can no longer be posted
+  twice by a double-click or double-Enter. No migration.
+
+---
+
 ## 2026-08-27
 
 - **Cron endpoints now require their secret** — the three scheduled jobs (RFI

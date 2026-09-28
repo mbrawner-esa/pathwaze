@@ -1,6 +1,7 @@
 'use client'
 import { useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { beginNav } from '@/lib/busy'
 import { ReceivedFromPicker } from './ReceivedFromPicker'
 import { isPastDue } from '@/lib/utils'
 
@@ -113,7 +114,7 @@ export function RfisClient({ rfis: initial, projects, users, stakeholders }: { r
               const st = STATUS_PILL[r.status] ?? STATUS_PILL.open
               const d = daysOpen(r)
               return (
-                <tr key={r.id} onClick={() => router.push(`/rfis/${r.id}`)} className="hover:bg-[#FBFCFE] cursor-pointer border-b border-[#ECEBEA] last:border-b-0">
+                <tr key={r.id} onClick={() => { beginNav(); router.push(`/rfis/${r.id}`) }} className="hover:bg-[#FBFCFE] cursor-pointer border-b border-[#ECEBEA] last:border-b-0">
                   <td className="px-3 py-3 font-extrabold text-[#2C5485]">{rfiNo(r.rfi_number)}</td>
                   <td className="px-3 py-3 font-bold text-[#181818] max-w-[320px]">{r.subject}</td>
                   <td className="px-3 py-3 text-[#3E3E3C] whitespace-nowrap">{r.project?.name ?? '—'}</td>
@@ -136,7 +137,7 @@ export function RfisClient({ rfis: initial, projects, users, stakeholders }: { r
       </div>
 
       {creating && <CreateRfiModal projects={projects} users={users} stakeholders={stakeholders} onClose={() => setCreating(false)}
-        onCreated={r => { setRfis(prev => [{ ...r, project: projects.find(p => p.id === r.project_id) }, ...prev]); setCreating(false); router.push(`/rfis/${r.id}`) }} />}
+        onCreated={r => { setRfis(prev => [{ ...r, project: projects.find(p => p.id === r.project_id) }, ...prev]); setCreating(false); beginNav(); router.push(`/rfis/${r.id}`) }} />}
     </div>
   )
 }

@@ -1,6 +1,6 @@
 'use client'
 import { useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRefresh } from '@/lib/useSubmit'
 import { formatCurrency } from '@/lib/utils'
 import { EditToolbar, ErrorBanner, FieldGrid, Field, FieldInput, FieldSelect } from './_editFields'
 import { OfftakerPricingTable, type PricingRow } from './OfftakerPricingTable'
@@ -174,9 +174,10 @@ function SectionCard({
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function FinancialTab({ financials, projectId, systemKwdc = 0, pricingRows = [], systems = [], meters = [], users = [] }: { financials: Financials | null; projectId: string; systemKwdc?: number; pricingRows?: PricingRow[]; systems?: any[]; meters?: any[]; users?: any[] }) {
-  const router = useRouter()
+  const { refresh, refreshing } = useRefresh()
   const [editingSection, setEditingSection] = useState<Section | null>(null)
-  const [saving, setSaving] = useState(false)
+  const [posting, setPosting] = useState(false)
+  const saving = posting || refreshing
   const [error, setError] = useState<string | null>(null)
 
   // Per-section forms
@@ -225,7 +226,7 @@ export function FinancialTab({ financials, projectId, systemKwdc = 0, pricingRow
   }
 
   async function save(section: Section) {
-    setSaving(true); setError(null)
+    setPosting(true); setError(null)
     let payload: Record<string, unknown> = {}
     if (section === 'cost') payload = {
       estimated_epc_cost: Number(costForm.estimated_epc_cost) || 0,
@@ -251,8 +252,9 @@ export function FinancialTab({ financials, projectId, systemKwdc = 0, pricingRow
         body: JSON.stringify(payload),
       })
       if (res.ok) {
-        setEditingSection(null)
-        router.refresh()
+        // Stay in edit mode (Saving…) until the saved values are on screen,
+        // rather than flashing the old ones for a few seconds.
+        refresh(() => setEditingSection(null))
       } else {
         const body = await res.json().catch(() => ({}))
         setError(body?.error || `Save failed (${res.status})`)
@@ -260,7 +262,7 @@ export function FinancialTab({ financials, projectId, systemKwdc = 0, pricingRow
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Network error')
     }
-    setSaving(false)
+    setPosting(false)
   }
 
   return (

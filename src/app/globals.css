@@ -22,6 +22,27 @@ body {
   font-family: var(--font-jakarta), -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
 }
 
+/* "Pathwaze is working" — set by src/lib/busy.ts while a navigation or save
+   is in flight. Overrides pointer / not-allowed so it reads everywhere,
+   including on the disabled Save button that was just clicked. */
+html[data-busy],
+html[data-busy] * {
+  cursor: progress !important;
+}
+
+/* Top progress bar (ActivityIndicator). No real progress to report, so it
+   eases toward 90% and holds until the work finishes. */
+.pw-progress {
+  width: 90%;
+  box-shadow: 0 0 6px rgba(230, 200, 122, 0.8);
+  animation: pw-progress 8s cubic-bezier(0.1, 0.7, 0.2, 1) both;
+}
+@keyframes pw-progress {
+  from { width: 0; }
+  8%   { width: 35%; }
+  to   { width: 90%; }
+}
+
 @layer components {
   .card {
     background: white;

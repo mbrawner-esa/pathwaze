@@ -1,6 +1,8 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
+import { Suspense } from 'react'
 import { NavBar } from './NavBar'
+import { ActivityIndicator } from './ActivityIndicator'
 import { WhatsNewGate } from '@/components/whats-new/WhatsNewGate'
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
@@ -29,6 +31,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   return (
     <div className="min-h-screen bg-[#F1F5F9]">
+      {/* useSearchParams needs a Suspense boundary; fallback is simply no bar */}
+      <Suspense fallback={null}><ActivityIndicator /></Suspense>
       <NavBar user={profile ?? { full_name: user.email ?? '', role: 'team', email: user.email ?? '', avatar_url: null }} />
       <main style={{ paddingTop: 52 }}>
         {children}

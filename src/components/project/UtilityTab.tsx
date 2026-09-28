@@ -1,6 +1,6 @@
 'use client'
 import { useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRefresh } from '@/lib/useSubmit'
 import { EditToolbar, ErrorBanner, FieldGrid, Field, FieldInput, FieldSelect } from './_editFields'
 import { MetersTable, type Meter } from './MetersTable'
 import type { Building } from './BuildingsTable'
@@ -16,7 +16,7 @@ export function UtilityTab({ project, buildings = [], meters = [] }: { project: 
   const includedMeters = meters.filter(m => m.included)
   const meterUsageKwh  = includedMeters.reduce((s, m) => s + (m.annual_usage_kwh ?? 0), 0)
   const meterPeakKw    = Math.max(0, ...includedMeters.map(m => m.peak_demand_kw ?? 0))
-  const router = useRouter()
+  const { refresh, refreshing } = useRefresh()
   const p = project as {
     id: string
     utility?: string; rate_schedule?: string; rate_schedule_type?: string
@@ -28,7 +28,8 @@ export function UtilityTab({ project, buildings = [], meters = [] }: { project: 
   }
 
   const [editingSection, setEditingSection] = useState<Section | null>(null)
-  const [saving, setSaving] = useState(false)
+  const [posting, setPosting] = useState(false)
+  const saving = posting || refreshing
   const [error, setError] = useState<string | null>(null)
 
   const [utilityForm, setUtilityForm] = useState({
@@ -70,7 +71,7 @@ export function UtilityTab({ project, buildings = [], meters = [] }: { project: 
   }
 
   async function save(section: Section) {
-    setSaving(true); setError(null)
+    setPosting(true); setError(null)
     const payload: Record<string, unknown> = section === 'utility' ? {
       ...utilityForm,
       annual_usage_kwh: Number(utilityForm.annual_usage_kwh) || 0,
@@ -85,7 +86,7 @@ export function UtilityTab({ project, buildings = [], meters = [] }: { project: 
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       })
-      if (res.ok) { setEditingSection(null); router.refresh() }
+      if (res.ok) refresh(() => setEditingSection(null)) // exit edit mode once saved values are on screen
       else {
         const body = await res.json().catch(() => ({}))
         setError(body?.error || `Save failed (${res.status})`)
@@ -93,7 +94,7 @@ export function UtilityTab({ project, buildings = [], meters = [] }: { project: 
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Network error')
     }
-    setSaving(false)
+    setPosting(false)
   }
 
   const isEditingUtility = editingSection === 'utility'

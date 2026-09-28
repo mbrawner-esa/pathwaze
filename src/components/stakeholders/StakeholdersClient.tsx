@@ -3,6 +3,7 @@ import { useState, useMemo, useEffect, useCallback } from 'react'
 import { Search, Plus, X, Mail, Phone, MessageSquare, Activity, Slack, Pencil, Send } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
+import { useSubmit } from '@/lib/useSubmit'
 import { Avatar } from '@/components/ui/Avatar'
 import { formatDate } from '@/lib/utils'
 
@@ -35,6 +36,7 @@ export function StakeholdersClient({ stakeholders, projects }: { stakeholders: a
   const [threads, setThreads] = useState<any[]>([])
   const [loadingThreads, setLoadingThreads] = useState(false)
   const [newThread, setNewThread] = useState('')
+  const sendingThread = useSubmit()
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [activity, setActivity] = useState<any[]>([])
   const [loadingActivity, setLoadingActivity] = useState(false)
@@ -164,18 +166,20 @@ export function StakeholdersClient({ stakeholders, projects }: { stakeholders: a
     setEditError(null)
   }, [selectedId, loadThreads, loadActivity, loadEmails])
 
-  async function sendThread() {
+  // Guarded: a double-click or double-Enter used to post the message twice.
+  function sendThread() {
     if (!selectedId || !newThread.trim()) return
-    const res = await fetch(`/api/stakeholders/${selectedId}/comments`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message: newThread }),
-    })
-    if (res.ok) {
+    sendingThread.run(async () => {
+      const res = await fetch(`/api/stakeholders/${selectedId}/comments`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: newThread }),
+      })
+      if (!res.ok) return false
       const created = await res.json()
       setThreads(prev => [...prev, created])
       setNewThread('')
-    }
+    })
   }
 
   function startDrawerEdit() {
@@ -546,7 +550,7 @@ export function StakeholdersClient({ stakeholders, projects }: { stakeholders: a
                     <input type="text" value={newThread} onChange={e => setNewThread(e.target.value)}
                       onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendThread() } }}
                       placeholder="Add a message..." className="flex-1 px-3 py-2 border border-[#cbd5e1] rounded text-[13px] focus:outline-none focus:border-[#70A0D0] focus:ring-2 focus:ring-[#70A0D0]/20" />
-                    <button onClick={sendThread} className="p-2 bg-[#70A0D0] text-white rounded hover:bg-[#2C5485] transition-colors">
+                    <button onClick={sendThread} disabled={sendingThread.busy} className="p-2 bg-[#70A0D0] text-white rounded hover:bg-[#2C5485] transition-colors disabled:opacity-50">
                       <Send size={14} />
                     </button>
                   </div>

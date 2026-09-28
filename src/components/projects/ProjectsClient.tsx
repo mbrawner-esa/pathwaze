@@ -2,6 +2,7 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { ChevronDown, Search, Plus, X, Settings2, Check } from 'lucide-react'
 import { useRouter } from 'next/navigation'
+import { beginNav } from '@/lib/busy'
 import { SELECTABLE_STAGES, DEFAULT_STAGE } from '@/lib/stages'
 import { StageBadge } from '@/components/ui/StageBadge'
 import { DealHealthBadge } from '@/components/ui/DealHealthBadge'
@@ -278,7 +279,7 @@ export function ProjectsClient({ projects, users = [] }: ProjectsClientProps) {
   function ProjectRow({ p }: { p: Project }) {
     return (
       <tr
-        onClick={() => router.push(`/projects/${p.id}`)}
+        onClick={() => { beginNav(); router.push(`/projects/${p.id}`) }}
         className="border-b border-[#f1f5f9] cursor-pointer hover:bg-[#f8fafc] transition-colors"
       >
         {activeCols.map(c => renderCell(c.id, p))}

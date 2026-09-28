@@ -1,6 +1,7 @@
 'use client'
 import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
+import { beginNav } from '@/lib/busy'
 import { MoreHorizontal, Pencil, Slack, Copy, Archive, Trash2, X } from 'lucide-react'
 import { canArchiveProject, canDeleteProject } from '@/lib/permissions'
 
@@ -85,7 +86,7 @@ export function ProjectActionsMenu({ projectId, projectName, slackChannelId, sta
       }} />}
       {modal === 'delete' && <ConfirmModal title="Delete project?" body={`"${projectName}" and all its tasks, areas, meters, systems, permits, stakeholders, and documents will be permanently deleted. This cannot be undone.`} confirmLabel="Yes I'm sure — delete" danger onClose={() => setModal(null)} onConfirm={async () => {
         const res = await fetch(`/api/projects/${projectId}`, { method: 'DELETE' })
-        if (res.ok) { setModal(null); router.push('/projects') }
+        if (res.ok) { setModal(null); beginNav(); router.push('/projects') }
         else { const b = await res.json().catch(() => ({})); alert(b?.error || 'Delete failed') }
       }} />}
     </>
@@ -181,6 +182,7 @@ function DuplicateModal({ projectId, projectName, onClose }: { projectId: string
     const res = await fetch(`/api/projects/${projectId}/duplicate`, { method: 'POST' })
     const body = await res.json().catch(() => ({}))
     if (!res.ok) { setErr(body?.error || 'Duplicate failed'); setBusy(false); return }
+    beginNav()
     router.push(`/projects/${body.project.id}`)
   }
   return (

@@ -1,6 +1,6 @@
 'use client'
 import { useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRefresh } from '@/lib/useSubmit'
 import { EditToolbar, ErrorBanner, FieldGrid, Field, FieldInput } from './_editFields'
 import { SystemsTable, type SystemRow } from './SystemsTable'
 import type { Building } from './BuildingsTable'
@@ -20,14 +20,15 @@ export function TechnicalTab({ project, buildings = [], meters = [], systems = [
   const sysDcSum   = systems.reduce((s, x) => s + (x.size_kwdc ?? 0), 0)
   const sysAcSum   = systems.reduce((s, x) => s + (x.size_kwac ?? 0), 0)
   const sysProdSum = systems.reduce((s, x) => s + (x.annual_production_kwh ?? 0), 0)
-  const router = useRouter()
+  const { refresh, refreshing } = useRefresh()
   const p = project as {
     id: string
     system_kwdc?: number; system_kwac?: number; annual_production_kwh?: number
   }
 
   const [editMode, setEditMode] = useState(false)
-  const [saving, setSaving] = useState(false)
+  const [posting, setPosting] = useState(false)
+  const saving = posting || refreshing
   const [error, setError] = useState<string | null>(null)
 
   const [specsForm, setSpecsForm] = useState({
@@ -47,7 +48,7 @@ export function TechnicalTab({ project, buildings = [], meters = [], systems = [
   }
 
   async function save() {
-    setSaving(true); setError(null)
+    setPosting(true); setError(null)
     const payload = {
       system_kwdc: Number(specsForm.system_kwdc) || 0,
       system_kwac: Number(specsForm.system_kwac) || 0,
@@ -59,7 +60,7 @@ export function TechnicalTab({ project, buildings = [], meters = [], systems = [
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       })
-      if (res.ok) { setEditMode(false); router.refresh() }
+      if (res.ok) refresh(() => setEditMode(false)) // exit edit mode once saved values are on screen
       else {
         const body = await res.json().catch(() => ({}))
         setError(body?.error || `Save failed (${res.status})`)
@@ -67,7 +68,7 @@ export function TechnicalTab({ project, buildings = [], meters = [], systems = [
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Network error')
     }
-    setSaving(false)
+    setPosting(false)
   }
 
   const effectiveDc = hasSystems ? sysDcSum : (p.system_kwdc ?? 0)

@@ -10,6 +10,7 @@ import Link from 'next/link'
 import { formatDate } from '@/lib/utils'
 import { Avatar } from '@/components/ui/Avatar'
 import { useRouter, useSearchParams } from 'next/navigation'
+import { useSubmit } from '@/lib/useSubmit'
 import { createClient as createBrowserClient } from '@/lib/supabase/client'
 import { FilterPresets } from '@/components/ui/FilterPresets'
 
@@ -166,6 +167,7 @@ export function TasksClient({ tasks: initialTasks, projects, users, currentUserI
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [comments, setComments] = useState<any[]>([])
   const [newComment, setNewComment] = useState('')
+  const sendingComment = useSubmit()
   const [loadingComments, setLoadingComments] = useState(false)
   // In-place comment editing. Only one message is editable at a time; the
   // draft lives here rather than on the row so cancelling restores cleanly.
@@ -755,18 +757,20 @@ export function TasksClient({ tasks: initialTasks, projects, users, currentUserI
     if (selectedTask === taskId) loadActivity(taskId)
   }
 
-  async function sendComment() {
+  // Guarded: a double-click or double-Enter used to post the comment twice.
+  function sendComment() {
     if (!newComment.trim() || !selectedTask) return
-    const res = await fetch(`/api/tasks/${selectedTask}/comments`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message: newComment }),
-    })
-    if (res.ok) {
+    sendingComment.run(async () => {
+      const res = await fetch(`/api/tasks/${selectedTask}/comments`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: newComment }),
+      })
+      if (!res.ok) return false
       const comment = await res.json()
       setComments(prev => [...prev, comment])
       setNewComment('')
-    }
+    })
   }
 
   // ── Comment edit / delete ──
@@ -1938,7 +1942,7 @@ export function TasksClient({ tasks: initialTasks, projects, users, currentUserI
                   <div className="flex gap-2">
                     <MentionInput value={newComment} onChange={setNewComment} onSubmit={sendComment} users={users}
                       placeholder="Add a message…  (type @ to mention)" className="px-3 py-2 border border-[#cbd5e1] rounded text-[13px] focus:outline-none focus:border-[#70A0D0] focus:ring-2 focus:ring-[#70A0D0]/20" />
-                    <button onClick={sendComment} className="p-2 bg-[#70A0D0] text-white rounded hover:bg-[#2C5485] transition-colors">
+                    <button onClick={sendComment} disabled={sendingComment.busy} className="p-2 bg-[#70A0D0] text-white rounded hover:bg-[#2C5485] transition-colors disabled:opacity-50">
                       <Send size={14} />
                     </button>
                   </div>

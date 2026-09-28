@@ -266,6 +266,14 @@ server route handlers (defense in depth).
   - `src/components/ui/RichTextEditor.tsx` — bold / bulleted / numbered toolbar
   - `src/components/ui/NotesRender.tsx`    — renders HTML notes + legacy plain-text fallback
   Anywhere a new notes/description box is added, use these — don't introduce a fresh textarea.
+- **Save/submit handlers**: use `useSubmit()` from `src/lib/useSubmit.ts`
+  (blocks double-submit, keeps `busy` until the post-save `router.refresh()`
+  has actually rendered), or `useRefresh()` where a component already manages
+  its own saving state — `refresh(onClose)` instead of `onClose(); router.refresh()`,
+  which closes the form seconds before the new data appears. The app-wide
+  progress bar + cursor (`src/lib/busy.ts`, `ActivityIndicator`) picks up link
+  clicks and any non-GET `fetch('/api/…')` automatically; call `beginNav()`
+  before a programmatic `router.push()`.
 - Slack-style mentions / channel refs / URLs in thread messages render via
   `src/components/ui/MessageText.tsx`. Pass the active users list so `<@USERID>`
   tokens resolve to display names.

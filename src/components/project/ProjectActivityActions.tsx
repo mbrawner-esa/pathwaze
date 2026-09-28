@@ -1,6 +1,6 @@
 'use client'
 import { useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useSubmit } from '@/lib/useSubmit'
 import { createClient } from '@/lib/supabase/client'
 import { StickyNote, Calendar, Paperclip, CheckSquare, X } from 'lucide-react'
 import { RichTextEditor } from '@/components/ui/RichTextEditor'
@@ -78,38 +78,39 @@ export function NewTaskModal({
   /** shown in the header so it is clear what the task hangs off */
   milestoneLabel?: string
 }) {
-  const router = useRouter()
+  const { run, busy } = useSubmit()
   const [form, setForm] = useState({
     title: '', description: '', type: 'Administrative', priority: 'Medium',
     assignee_id: '', approver_id: '', requires_approval: false,
     due_date: '',
   })
-  const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
 
-  async function save() {
+  function save() {
     if (!form.title.trim()) { setErr('Title required'); return }
-    setBusy(true); setErr(null)
-    const res = await fetch('/api/tasks', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        project_id: projectId,
-        title: form.title,
-        description: form.description || null,
-        type: form.type,
-        priority: form.priority,
-        assignee_id: form.assignee_id || null,
-        approver_id: form.requires_approval ? (form.approver_id || null) : null,
-        requires_approval: form.requires_approval,
-        due_date: form.due_date || null,
-        status: 'Draft',
-        workstream_milestone_id: milestoneId ?? null,
-      }),
-    })
-    if (res.ok) { onClose(); router.refresh() }
-    else { const b = await res.json().catch(() => ({})); setErr(b?.error || 'Save failed') }
-    setBusy(false)
+    setErr(null)
+    run(async () => {
+      const res = await fetch('/api/tasks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          project_id: projectId,
+          title: form.title,
+          description: form.description || null,
+          type: form.type,
+          priority: form.priority,
+          assignee_id: form.assignee_id || null,
+          approver_id: form.requires_approval ? (form.approver_id || null) : null,
+          requires_approval: form.requires_approval,
+          due_date: form.due_date || null,
+          status: 'Draft',
+          workstream_milestone_id: milestoneId ?? null,
+        }),
+      })
+      if (res.ok) return true
+      const b = await res.json().catch(() => ({})); setErr(b?.error || 'Save failed')
+      return false
+    }, { refresh: true, onDone: onClose })
   }
 
   return (
@@ -229,25 +230,27 @@ function SectionHeader({ children }: { children: React.ReactNode }) {
 
 // ── Note + Event form (shared) ───────────────────────────────────────
 function NoteForm({ projectId, type, users, category, onClose }: { projectId: string; type: 'note' | 'event'; users: User[]; category?: string; onClose: () => void }) {
-  const router = useRouter()
+  const { run, busy } = useSubmit()
   const [title, setTitle] = useState('')
   const [body, setBody] = useState('')
   const [eventDate, setEventDate] = useState('')
-  const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
 
-  async function save() {
+  function save() {
     if (type === 'event' && !eventDate) { setErr('Event date required'); return }
     if (!title.trim() && !body.trim()) { setErr('Add a title or note'); return }
-    setBusy(true); setErr(null)
-    const res = await fetch(`/api/projects/${projectId}/notes`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ type, title, body, event_date: type === 'event' ? eventDate : null, category: category ?? null }),
-    })
-    if (res.ok) { onClose(); router.refresh() }
-    else { const b = await res.json().catch(() => ({})); setErr(b?.error || 'Failed') }
-    setBusy(false)
+    setErr(null)
+    // Form stays open (Saving…) until the new note is actually on screen.
+    run(async () => {
+      const res = await fetch(`/api/projects/${projectId}/notes`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type, title, body, event_date: type === 'event' ? eventDate : null, category: category ?? null }),
+      })
+      if (res.ok) return true
+      const b = await res.json().catch(() => ({})); setErr(b?.error || 'Failed')
+      return false
+    }, { refresh: true, onDone: onClose })
   }
 
   return (
@@ -273,41 +276,42 @@ function NoteForm({ projectId, type, users, category, onClose }: { projectId: st
 
 // ── File upload form ──────────────────────────────────────────────────
 function FileForm({ projectId, category, onClose }: { projectId: string; category?: string; onClose: () => void }) {
-  const router = useRouter()
+  const { run, busy } = useSubmit()
   const supabase = createClient()
   const [file, setFile] = useState<File | null>(null)
   const [title, setTitle] = useState('')
-  const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
 
-  async function save() {
+  function save() {
     if (!file) { setErr('Pick a file'); return }
-    setBusy(true); setErr(null)
-    try {
-      // Upload to Supabase Storage
-      const path = `${projectId}/${Date.now()}-${file.name}`
-      const { error: upErr } = await supabase.storage.from('project-files').upload(path, file, { upsert: false })
-      if (upErr) throw upErr
+    setErr(null)
+    run(async () => {
+      try {
+        // Upload to Supabase Storage
+        const path = `${projectId}/${Date.now()}-${file.name}`
+        const { error: upErr } = await supabase.storage.from('project-files').upload(path, file, { upsert: false })
+        if (upErr) throw upErr
 
-      const res = await fetch(`/api/projects/${projectId}/notes`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          type: 'file',
-          category: category ?? null,
-          title: title || file.name,
-          storage_path: path,
-          file_name: file.name,
-          file_size: file.size,
-          content_type: file.type,
-        }),
-      })
-      if (!res.ok) { const b = await res.json().catch(() => ({})); throw new Error(b?.error || 'Failed') }
-      onClose(); router.refresh()
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Upload failed')
-    }
-    setBusy(false)
+        const res = await fetch(`/api/projects/${projectId}/notes`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            type: 'file',
+            category: category ?? null,
+            title: title || file.name,
+            storage_path: path,
+            file_name: file.name,
+            file_size: file.size,
+            content_type: file.type,
+          }),
+        })
+        if (!res.ok) { const b = await res.json().catch(() => ({})); throw new Error(b?.error || 'Failed') }
+        return true
+      } catch (e) {
+        setErr(e instanceof Error ? e.message : 'Upload failed')
+        return false
+      }
+    }, { refresh: true, onDone: onClose })
   }
 
   return (
