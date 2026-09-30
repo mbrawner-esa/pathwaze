@@ -6,6 +6,7 @@ import { formatDate, isPastDue } from '@/lib/utils'
 import { Avatar } from '@/components/ui/Avatar'
 import { StageBadge } from '@/components/ui/StageBadge'
 import { FocusCard, type FocusItem } from '@/components/dashboard/FocusCard'
+import { messagePreview, type MentionUser } from '@/components/ui/MessageText'
 
 // ── Week helpers (Mon–Sun) ──
 function startOfWeek(d: Date): Date {
@@ -49,11 +50,9 @@ export default async function DashboardPage() {
 
   const now = new Date()
   const today = now.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })
-  const weekStart = startOfWeek(now)
   const weekEnd = endOfWeek(now)
   const sevenDaysAgo = new Date(now.getTime() - 7 * 86400000).toISOString()
   const thirtyDaysAgo = new Date(now.getTime() - 30 * 86400000).toISOString()
-  const weekStartIso = weekStart.toISOString().slice(0, 10)
   const weekEndIso = weekEnd.toISOString().slice(0, 10)
 
   // ─── Parallel data fetch ───────────────────────────────────────
@@ -63,6 +62,8 @@ export default async function DashboardPage() {
     { data: myThreadEntries },
     { data: myProjectThreadEntries },
     { data: recentActivity },
+    { data: myRfisDue },
+    { data: mentionUsers },
   ] = await Promise.all([
     // Tasks due this week (mine, not complete)
     supabase
@@ -99,6 +100,16 @@ export default async function DashboardPage() {
       .gte('created_at', thirtyDaysAgo)
       .order('created_at', { ascending: false })
       .limit(500),
+    // Open RFIs where the ball is in my court, due this week or already overdue
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (supabase.from('rfis') as any)
+      .select('id, rfi_number, subject, due_date, project:projects(name)')
+      .eq('status', 'open')
+      .eq('ball_in_court_user_id', user.id)
+      .not('due_date', 'is', null)
+      .lte('due_date', weekEndIso),
+    // For resolving <@USERID> mentions in thread previews
+    supabase.from('users').select('id, full_name, slack_user_id') as unknown as Promise<{ data: MentionUser[] | null }>,
   ])
 
   // ── This week's focus (migration 072) ──
@@ -115,7 +126,7 @@ export default async function DashboardPage() {
   let focusItems: FocusItem[] = []
 
   if (focusIds.length) {
-    const [{ data: focusMs }, { data: focusDefs }, { data: focusComments }] = await Promise.all([
+    const [{ data: focusMs }, { data: focusDefs }, { data: focusComments }, { data: myMajors }] = await Promise.all([
       supabase
         .from('workstream_milestones')
         .select('id, label, status, end_date, is_critical, major_key, project_id, project:projects(id, name)')
@@ -123,7 +134,13 @@ export default async function DashboardPage() {
       supabase.from('workstream_majors').select('key, label, workstream') as unknown as Promise<{ data: any[] | null }>, // eslint-disable-line @typescript-eslint/no-explicit-any
       supabase.from('workstream_milestone_comments')
         .select('milestone_id').in('milestone_id', focusIds) as unknown as Promise<{ data: any[] | null }>, // eslint-disable-line @typescript-eslint/no-explicit-any
+      // Ownership lives on the major milestone per project (migration 055), not
+      // on the milestone itself — owner or co-owner both count.
+      supabase.from('workstream_major_state')
+        .select('project_id, major_key')
+        .or(`owner_id.eq.${user.id},co_owner_id.eq.${user.id}`) as unknown as Promise<{ data: { project_id: string; major_key: string }[] | null }>,
     ])
+    const ownedMajors = new Set((myMajors ?? []).map(s => `${s.project_id}:${s.major_key}`))
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const defByKey = new Map<string, any>(((focusDefs ?? []) as any[]).map(d => [d.key, d]))
@@ -136,8 +153,10 @@ export default async function DashboardPage() {
     // Completed work drops off the list on its own — a focus that is done is no
     // longer where anyone should be looking, and making someone un-tick it is
     // busywork the status change already implied.
+    // Only the focus items this user owns: the dashboard is "what's on your
+    // plate", so the rest of the team's focus belongs on the Health board.
     focusItems = ((focusMs ?? []) as any[]) // eslint-disable-line @typescript-eslint/no-explicit-any
-      .filter(m => m.status !== 'complete')
+      .filter(m => m.status !== 'complete' && ownedMajors.has(`${m.project_id}:${m.major_key}`))
       .map(m => {
         const def = defByKey.get(m.major_key)
         return {
@@ -162,15 +181,24 @@ export default async function DashboardPage() {
       })
   }
 
-  // Filter tasks client-side (assignee = me AND due_date in week range AND not Complete)
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const myDueThisWeek = ((tasksDueThisWeek ?? []) as any[]).filter(t =>
-    t.assignee_id === user.id &&
-    t.status !== 'Complete' &&
-    t.due_date &&
-    t.due_date >= weekStartIso &&
-    t.due_date <= weekEndIso
-  ).sort((a, b) => (a.due_date || '').localeCompare(b.due_date || ''))
+  // Due this week = my open tasks + ball-in-court RFIs due by the end of this
+  // week. No lower bound: anything overdue stays here until it's complete,
+  // rather than silently dropping off when the week rolls over.
+  type DueItem =
+    | { kind: 'task'; id: string; title: string; due_date: string; projectName: string; type: string; priority: string }
+    | { kind: 'rfi'; id: string; title: string; due_date: string; projectName: string; rfiNumber: number }
+  const myDueThisWeek: DueItem[] = [
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ...((tasksDueThisWeek ?? []) as any[])
+      .filter(t => t.assignee_id === user.id && t.status !== 'Complete' && t.due_date && t.due_date <= weekEndIso)
+      .map(t => ({ kind: 'task' as const, id: t.id, title: t.title, due_date: t.due_date, projectName: t.project?.name ?? 'No project', type: t.type, priority: t.priority })),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ...((myRfisDue ?? []) as any[])
+      .map(r => ({ kind: 'rfi' as const, id: r.id, title: r.subject, due_date: r.due_date, projectName: r.project?.name ?? 'No project', rfiNumber: r.rfi_number ?? 0 })),
+  ].sort((a, b) => a.due_date.localeCompare(b.due_date))
+  const dueTaskCount = myDueThisWeek.filter(d => d.kind === 'task').length
+  const dueRfiCount = myDueThisWeek.length - dueTaskCount
+  const dueOverdueCount = myDueThisWeek.filter(d => isPastDue(d.due_date)).length
 
   // Resolve completed-task details
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -321,25 +349,32 @@ export default async function DashboardPage() {
             <div className="px-6 py-4 flex items-center justify-between border-b border-[#f1f5f9]">
               <div>
                 <h2 className="text-[15px] font-semibold text-[#181818]">Due this week</h2>
-                <p className="text-[12px] text-[#706E6B] mt-0.5">{myDueThisWeek.length} {myDueThisWeek.length === 1 ? 'task' : 'tasks'} assigned to you</p>
+                <p className="text-[12px] text-[#706E6B] mt-0.5">
+                  {dueTaskCount} {dueTaskCount === 1 ? 'task' : 'tasks'}
+                  {dueRfiCount > 0 && ` · ${dueRfiCount} ${dueRfiCount === 1 ? 'RFI' : 'RFIs'}`}
+                  {dueOverdueCount > 0 && <span className="text-[#b91c1c] font-semibold"> · {dueOverdueCount} overdue</span>}
+                </p>
               </div>
               <Link href="/tasks" className="text-[12px] font-medium text-[#2C5485] hover:underline">View all →</Link>
             </div>
             <div className="px-2 py-1 flex-1 overflow-y-auto">
               {myDueThisWeek.length === 0 ? (
-                <EmptyState text="No tasks due this week." />
+                <EmptyState text="Nothing due this week." />
               ) : (
-                myDueThisWeek.slice(0, 6).map((t) => {
-                  const tc = TYPE_BG[t.type] ?? TYPE_BG['Administrative']
+                myDueThisWeek.slice(0, 6).map((d) => {
+                  const overdue = isPastDue(d.due_date)
+                  const badge = d.kind === 'task'
+                    ? { label: d.type, ...(TYPE_BG[d.type] ?? TYPE_BG['Administrative']) }
+                    : { label: `RFI #${String(d.rfiNumber).padStart(3, '0')}`, bg: '#EFF4FA', text: '#2C5485' }
                   return (
-                    <Link key={t.id} href="/tasks" className="flex items-center gap-3 px-4 py-3 rounded-lg hover:bg-[#fafbfc] transition-colors">
-                      <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: PRIORITY_COLOR[t.priority] }} />
+                    <Link key={`${d.kind}-${d.id}`} href={d.kind === 'task' ? `/tasks?id=${d.id}` : `/rfis/${d.id}`} className="flex items-center gap-3 px-4 py-3 rounded-lg hover:bg-[#fafbfc] transition-colors">
+                      <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: d.kind === 'task' ? PRIORITY_COLOR[d.priority] : '#2C5485' }} />
                       <div className="flex-1 min-w-0">
-                        <p className="text-[14px] font-medium text-[#181818] truncate">{t.title}</p>
-                        <p className="text-[11.5px] text-[#706E6B] truncate">{t.project?.name ?? 'No project'}</p>
+                        <p className="text-[14px] font-medium text-[#181818] truncate">{d.title}</p>
+                        <p className="text-[11.5px] text-[#706E6B] truncate">{d.projectName}</p>
                       </div>
-                      <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded flex-shrink-0" style={{ background: tc.bg, color: tc.text }}>{t.type}</span>
-                      <span className="text-[11.5px] text-[#706E6B] flex-shrink-0 w-[60px] text-right">{formatDate(t.due_date)}</span>
+                      <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded flex-shrink-0" style={{ background: badge.bg, color: badge.text }}>{badge.label}</span>
+                      <span className={`text-[11.5px] flex-shrink-0 w-[60px] text-right ${overdue ? 'text-[#b91c1c] font-semibold' : 'text-[#706E6B]'}`} title={overdue ? 'Overdue' : undefined}>{formatDate(d.due_date)}</span>
                     </Link>
                   )
                 })
@@ -467,7 +502,7 @@ export default async function DashboardPage() {
                       <Avatar name={fullName} imageUrl={avatarUrl} size="sm" />
                       <div className="flex-1 min-w-0">
                         <p className="text-[13.5px] font-medium text-[#181818] truncate">{title}</p>
-                        <p className="text-[12px] text-[#3E3E3C] line-clamp-1 mt-0.5">&ldquo;{t.message}&rdquo;</p>
+                        <p className="text-[12px] text-[#3E3E3C] line-clamp-1 mt-0.5">&ldquo;{messagePreview(t.message, mentionUsers ?? [])}&rdquo;</p>
                         <p className="text-[10.5px] text-[#706E6B] mt-1">
                           {subtitle} · {formatDate(t.created_at)}
                         </p>

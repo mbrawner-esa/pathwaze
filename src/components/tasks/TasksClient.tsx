@@ -1684,11 +1684,20 @@ export function TasksClient({ tasks: initialTasks, projects, users, currentUserI
                     )}
                     {loadingTaskLinks ? (
                       <p className="text-xs text-[#706E6B]">Loading...</p>
-                    ) : taskLinks.length === 0 && !showAddLink ? (
-                      <p className="text-xs text-[#706E6B] py-2">No linked records yet — link a building, meter, system, permit, or stakeholder.</p>
                     ) : (
                       <ul className="flex flex-wrap gap-1.5">
-                        {taskLinks.map(l => {
+                        {/* The task's own project is always related — it isn't a
+                            task_links row, so it can't be removed here; change the
+                            task's project instead. */}
+                        <li className="inline-flex items-center gap-1 px-2 py-1 bg-[#F1F5F9] border border-[#cbd5e1] rounded-full text-[12px]">
+                          <Link href={`/projects/${selected.project_id}`} className="inline-flex items-center gap-1.5 text-[#2F3E50] hover:text-[#181818]">
+                            <span className="text-[10px] font-semibold uppercase tracking-wider opacity-70">Project</span>
+                            <span className="font-medium">{selected.project?.name ?? 'Open project'}</span>
+                          </Link>
+                        </li>
+                        {taskLinks
+                          .filter(l => !(l.entity_type === 'project' && l.entity_id === selected.project_id))
+                          .map(l => {
                           const tab = ENTITY_TAB[l.entity_type] ?? 'site'
                           const href = `/projects/${selected.project_id}?tab=${tab}`
                           return (

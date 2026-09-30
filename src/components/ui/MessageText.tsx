@@ -38,6 +38,27 @@ export function MessageText({ text, users = [], className, block = false }: Prop
   return <span className={className}>{parseInline(text ?? '', users, 'm')}</span>
 }
 
+/**
+ * Plain-text version of a message for one-line previews (dashboard, lists),
+ * where the row is itself a link and MessageText's anchors can't nest. Resolves
+ * the same tokens to display text and drops mrkdwn markers instead of styling.
+ */
+export function messagePreview(text: string, users: MentionUser[] = []): string {
+  return (text ?? '')
+    .replace(/<\/?[a-z][a-z0-9]*(\s[^>]*)?\/?>/gi, ' ')    // stray HTML from rich-text posts (not <https://…> tokens)
+    .replace(/<(@|!|#|https?:\/\/)([^>|]*)\|?([^>]*)>/g, (_, kind: string, id: string, label: string) => {
+      if (kind === '@') return `@${label || firstName(lookupUser(id, users)?.full_name)}`
+      if (kind === '!') return `@${label || id}`
+      if (kind === '#') return `#${label || id}`
+      return label || kind + id
+    })
+    .replace(/(^|[\s(])[*_~`]+(?=\S)/g, '$1')                // opening mrkdwn markers
+    .replace(/(\S)[*_~`]+(?=[\s.,;:!?)]|$)/g, '$1')          // closing mrkdwn markers
+    .replace(/&nbsp;/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
 function lookupUser(token: string, users: MentionUser[]): MentionUser | undefined {
   return users.find(u => u.slack_user_id === token) || users.find(u => u.id === token)
 }

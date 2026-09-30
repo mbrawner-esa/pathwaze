@@ -1,9 +1,9 @@
-// This week's focus, on everyone's dashboard.
+// This week's focus, on the dashboard of whoever owns it.
 //
 // The portfolio board is manager-only, so the decisions made there would
 // otherwise be invisible to the people delivering the work. This is the other
-// half: the same shared list, read-only, at the top of the page every team
-// member already opens.
+// half: the shared list, read-only, filtered to the milestones whose major the
+// viewer owns or co-owns (the dashboard filters; this component just renders).
 
 import Link from 'next/link'
 import { formatShortDate } from '@/lib/utils'
@@ -54,7 +54,7 @@ export function FocusCard({ items }: { items: FocusItem[] }) {
         <div>
           <h2 className="text-[15px] font-semibold text-[#181818]">This week&apos;s focus</h2>
           <p className="text-[12px] text-[#706E6B] mt-0.5">
-            {items.length} milestone{items.length === 1 ? '' : 's'} the team is driving
+            {items.length} milestone{items.length === 1 ? '' : 's'} you own
           </p>
         </div>
       </div>
