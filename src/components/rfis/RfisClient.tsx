@@ -1,5 +1,6 @@
 'use client'
 import { useMemo, useState } from 'react'
+import { isManagerOrAbove } from '@/lib/permissions'
 import { useRouter } from 'next/navigation'
 import { beginNav } from '@/lib/busy'
 import { ReceivedFromPicker } from './ReceivedFromPicker'
@@ -27,7 +28,7 @@ function isOverdue(r: Any): boolean {
   return r.status === 'open' && isPastDue(r.due_date)
 }
 
-export function RfisClient({ rfis: initial, projects, users, stakeholders }: { rfis: Any[]; projects: Any[]; users: Any[]; stakeholders: Any[] }) {
+export function RfisClient({ rfis: initial, projects, users, stakeholders, userRole = 'team' }: { rfis: Any[]; projects: Any[]; users: Any[]; stakeholders: Any[]; userRole?: string }) {
   const router = useRouter()
   const [rfis, setRfis] = useState<Any[]>(initial)
   const [tab, setTab] = useState<typeof TABS[number]>('All')
@@ -36,9 +37,16 @@ export function RfisClient({ rfis: initial, projects, users, stakeholders }: { r
   const [sortBy, setSortBy] = useState<'recent' | 'due' | 'days' | 'number'>('recent')
   const [search, setSearch] = useState('')
   const [creating, setCreating] = useState(false)
+  const [showDeleted, setShowDeleted] = useState(false)
+
+  // Only admin and manager are served deleted rows at all (migration 076),
+  // so this chip simply never appears for anyone else.
+  const canManage = isManagerOrAbove(userRole)
+  const deletedCount = useMemo(() => rfis.filter(r => r.deleted_at).length, [rfis])
 
   const filtered = useMemo(() => {
     const rows = rfis.filter(r => {
+      if (!showDeleted && r.deleted_at) return false
       if (tab === 'Open' && r.status !== 'open') return false
       if (tab === 'Draft' && r.status !== 'draft') return false
       if (tab === 'Closed' && r.status !== 'closed') return false
@@ -60,7 +68,7 @@ export function RfisClient({ rfis: initial, projects, users, stakeholders }: { r
       },
     }
     return rows.sort(cmp[sortBy])
-  }, [rfis, tab, projectFilter, assignedFilter, search, sortBy])
+  }, [rfis, tab, projectFilter, assignedFilter, search, sortBy, showDeleted])
 
   return (
     <div className="max-w-[1760px] mx-auto px-8 py-6">
@@ -94,6 +102,15 @@ export function RfisClient({ rfis: initial, projects, users, stakeholders }: { r
           <option value="number">Sort: RFI #</option>
         </select>
         <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search RFIs…" className="flex-1 min-w-[160px] border border-[#DDDBDA] rounded-md px-2.5 py-1.5 text-[12.5px]" />
+        {canManage && deletedCount > 0 && (
+          <button
+            onClick={() => setShowDeleted(v => !v)}
+            className={'px-2.5 py-1.5 text-[12px] font-semibold rounded-md border ' + (showDeleted ? 'bg-[#FEF2F2] border-[#fecaca] text-[#b91c1c]' : 'bg-white border-[#DDDBDA] text-[#706E6B]')}
+            title="Deleted RFIs are hidden from everyone except admins and managers"
+          >
+            {showDeleted ? 'Hide deleted' : `Deleted (${deletedCount})`}
+          </button>
+        )}
       </div>
 
       <div className="card overflow-hidden">
@@ -114,8 +131,11 @@ export function RfisClient({ rfis: initial, projects, users, stakeholders }: { r
               const st = STATUS_PILL[r.status] ?? STATUS_PILL.open
               const d = daysOpen(r)
               return (
-                <tr key={r.id} onClick={() => { beginNav(); router.push(`/rfis/${r.id}`) }} className="hover:bg-[#FBFCFE] cursor-pointer border-b border-[#ECEBEA] last:border-b-0">
-                  <td className="px-3 py-3 font-extrabold text-[#2C5485]">{rfiNo(r.rfi_number)}</td>
+                <tr key={r.id} onClick={() => { beginNav(); router.push(`/rfis/${r.id}`) }} className={'hover:bg-[#FBFCFE] cursor-pointer border-b border-[#ECEBEA] last:border-b-0 ' + (r.deleted_at ? 'opacity-60' : '')}>
+                  <td className="px-3 py-3 font-extrabold text-[#2C5485] whitespace-nowrap">
+                    {rfiNo(r.rfi_number)}
+                    {r.deleted_at && <span className="ml-1.5 text-[9px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-[#FEF2F2] text-[#b91c1c]">Deleted</span>}
+                  </td>
                   <td className="px-3 py-3 font-bold text-[#181818] max-w-[320px]">{r.subject}</td>
                   <td className="px-3 py-3 text-[#3E3E3C] whitespace-nowrap">{r.project?.name ?? '—'}</td>
                   <td className="px-3 py-3">

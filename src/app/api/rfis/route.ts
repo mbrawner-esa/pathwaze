@@ -12,6 +12,7 @@ export async function GET(req: NextRequest) {
   let q = (supabase.from('rfis') as any)
     .select('*, project:projects(id, name, project_number), ball_user:users!ball_in_court_user_id(id, full_name), ball_sh:stakeholders!ball_in_court_stakeholder_id(id, name), manager:users!rfi_manager_id(id, full_name)')
     .order('created_at', { ascending: false })
+    .is('deleted_at', null)
 
   const projectId = req.nextUrl.searchParams.get('project_id')
   const status = req.nextUrl.searchParams.get('status')

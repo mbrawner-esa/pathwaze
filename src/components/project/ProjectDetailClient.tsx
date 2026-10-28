@@ -152,7 +152,7 @@ export function ProjectDetailClient({ project, financials, wsDefs = [], wsMilest
         {activeTab === 'threads' && (
           <>
             <ProjectActivityActions projectId={project.id} projectName={project.name} users={users} />
-            <ThreadsTab threads={threads} notes={notes} channelLinked={!!project.slack_channel_id} users={users} />
+            <ThreadsTab threads={threads} notes={notes} channelLinked={!!project.slack_channel_id} users={users} projectId={project.id} userRole={userRole} />
           </>
         )}
         {activeTab === 'tasks' && (

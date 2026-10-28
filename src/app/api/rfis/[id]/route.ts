@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { NextRequest, NextResponse } from 'next/server'
 import { notifyRfiParties, logActivity, rfiUrl, rfiNo } from '@/lib/rfi-notify'
+import { isManagerOrAbove } from '@/lib/permissions'
 
 // GET /api/rfis/[id] → full detail (with responses + distribution + source finding)
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -79,4 +80,52 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   }
 
   return NextResponse.json(data)
+}
+
+/**
+ * Soft delete (DELETE) and restore (POST) an RFI.
+ *
+ * The row and its number stay put — migration 076 hides it from team and
+ * investor, and admin or manager can bring it back. Responses, attachments and
+ * links ride along untouched, which is the point: an RFI with history is often
+ * the one someone most wants back.
+ */
+async function setDeleted(params: Promise<{ id: string }>, deleted: boolean) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  const { data: me } = await supabase.from('users').select('role').eq('id', user.id).single() as {
+    data: { role?: string } | null
+  }
+  if (!isManagerOrAbove(me?.role)) {
+    return NextResponse.json({ error: 'Only an admin or manager can delete an RFI' }, { status: 403 })
+  }
+
+  const { id } = await params
+  const patch = deleted
+    ? { deleted_at: new Date().toISOString(), deleted_by: user.id }
+    : { deleted_at: null, deleted_by: null }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (supabase.from('rfis') as any)
+    .update(patch).eq('id', id).select('id, rfi_number').maybeSingle()
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (!data) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+
+  logActivity(supabase, {
+    entity_type: 'rfi', entity_id: id,
+    action: deleted ? 'deleted an RFI' : 'restored an RFI',
+    user_id: user.id, metadata: { rfi_id: id },
+  }).catch(() => {})
+
+  return NextResponse.json({ success: true })
+}
+
+export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  return setDeleted(params, true)
+}
+
+export async function POST(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  return setDeleted(params, false)
 }

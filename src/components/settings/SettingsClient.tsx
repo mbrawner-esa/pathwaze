@@ -51,7 +51,7 @@ const OUTLOOK_ERROR_REASONS: Record<string, string> = {
 
 const ALL_TASK_TYPES = TASK_TYPES
 
-/** An app (Claude, etc.) connected to the read-only Pathwaze MCP server. */
+/** An app (Claude, etc.) connected to the Pathwaze MCP server. */
 interface McpConnection {
   id: string
   client_name: string | null
@@ -330,7 +330,7 @@ export function SettingsClient({ user, outlook }: { user: SettingsUser; outlook:
       {canUseMcp && (
         <Section
           title="Claude (MCP)"
-          subtitle="Apps connected to the Pathwaze MCP server. They can read Pathwaze data as you — the same projects, notes, threads and tasks you see here — and cannot change anything."
+          subtitle="Apps connected to the Pathwaze MCP server. They act as you — reading the same projects, notes, threads and tasks you see here, and creating notes, tasks and RFIs on your behalf. They cannot edit or delete anything, and nothing they create is ever emailed outside ESA."
         >
           {mcpLoading ? (
             <p className="text-[12.5px] text-[#706E6B]">Loading…</p>

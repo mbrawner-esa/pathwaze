@@ -41,7 +41,7 @@ export async function GET(req: NextRequest) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: overdue, error } = await (supabase.from('rfis') as any)
     .select('id, rfi_number, subject, due_date, ball_in_court_user_id, ball_in_court_stakeholder_id')
-    .eq('status', 'open').lt('due_date', today)
+    .eq('status', 'open').lt('due_date', today).is('deleted_at', null)
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
   let notified = 0

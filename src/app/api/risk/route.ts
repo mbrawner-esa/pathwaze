@@ -76,7 +76,7 @@ export async function POST(request: NextRequest) {
     supabase.from('tasks')
       .select('id, project_id, status, created_at').in('project_id', ids) as unknown as Promise<{ data: any[] | null }>, // eslint-disable-line @typescript-eslint/no-explicit-any
     supabase.from('rfis')
-      .select('id, project_id, status').in('project_id', ids) as unknown as Promise<{ data: any[] | null }>, // eslint-disable-line @typescript-eslint/no-explicit-any
+      .select('id, project_id, status').in('project_id', ids).is('deleted_at', null) as unknown as Promise<{ data: any[] | null }>, // eslint-disable-line @typescript-eslint/no-explicit-any
     supabase.from('project_threads')
       .select('project_id, message, created_at').in('project_id', ids)
       .gte('created_at', since).order('created_at', { ascending: false }) as unknown as Promise<{ data: any[] | null }>, // eslint-disable-line @typescript-eslint/no-explicit-any

@@ -279,6 +279,23 @@ try {
   if (rawTag.test(html)) bad('unexpected raw tag in stored HTML')
   else ok('no unexpected tags in stored HTML')
 
+  // --- a soft-deleted note must not reach the connector (076) ---
+  // The caller here is an admin, who CAN still see deleted rows in the app so
+  // they can restore one. The connector filters them anyway: a deleted record
+  // is not live data, whoever is asking.
+  await fetch(`${SB}/rest/v1/project_notes?id=eq.${note.id}`, {
+    method: 'PATCH', headers: { ...svcHeaders, 'content-type': 'application/json' },
+    body: JSON.stringify({ deleted_at: new Date().toISOString() }),
+  })
+  const afterDelete = await callTool('get_project_notes', { project: target })
+  const stillListed = JSON.stringify(afterDelete).includes(note.id)
+  stillListed ? bad('DELETED NOTE RETURNED BY MCP', note.id)
+              : ok('soft-deleted note is hidden from the connector')
+  await fetch(`${SB}/rest/v1/project_notes?id=eq.${note.id}`, {
+    method: 'PATCH', headers: { ...svcHeaders, 'content-type': 'application/json' },
+    body: JSON.stringify({ deleted_at: null }),
+  })
+
   // --- idempotency ---
   const replay = await callTool('create_note', {
     project: target, title: `Verification ${stamp}`, body: md, idempotency_key: `verify-note-${stamp}`,

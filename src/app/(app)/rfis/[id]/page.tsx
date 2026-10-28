@@ -41,11 +41,20 @@ export default async function RfiDetailPage({ params }: { params: Promise<{ id: 
     meters = m ?? []
   }
 
+  // Role gates the delete / restore controls; the database gates the action
+  // itself (migration 076).
+  const { data: { user } } = await supabase.auth.getUser()
+  let userRole = 'team'
+  if (user) {
+    const { data: me } = await supabase.from('users').select('role').eq('id', user.id).single() as { data: { role?: string } | null }
+    userRole = me?.role ?? 'team'
+  }
+
   const catalog = {
     building: buildings ?? [], meter: meters, system: systems ?? [],
     stakeholder: stakeholders ?? [], drawing: drawings ?? [],
   }
 
   return <RfiDetailClient rfi={rfi} responses={responses ?? []} distribution={distribution ?? []}
-    users={users ?? []} links={links ?? []} catalog={catalog} attachments={attachments ?? []} />
+    users={users ?? []} links={links ?? []} catalog={catalog} attachments={attachments ?? []} userRole={userRole} />
 }

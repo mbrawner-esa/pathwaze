@@ -38,6 +38,9 @@ type Row = Record<string, any>
  * GET one table as the session user. Table and column names are validated so a
  * tool argument cannot be used to reach a different path.
  */
+/** Tables carrying migration 076's deleted_at. */
+const SOFT_DELETE_TABLES = new Set(['project_notes', 'rfis'])
+
 export async function get(
   session: McpSession,
   table: string,
@@ -47,6 +50,12 @@ export async function get(
 
   const qs = new URLSearchParams()
   qs.set('select', select)
+
+  // Soft-deleted records never reach the connector. RLS already hides them
+  // from team and investor (migration 076), but an admin or manager can see
+  // them so they can restore one in the app — that is a deliberate UI
+  // affordance, not something a session should read back as live data.
+  if (SOFT_DELETE_TABLES.has(table)) qs.append('deleted_at', 'is.null')
 
   for (const f of filters) {
     if (!f) continue

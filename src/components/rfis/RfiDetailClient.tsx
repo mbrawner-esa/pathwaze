@@ -2,13 +2,15 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { ChevronLeft, ChevronDown, Pencil, Paperclip, X } from 'lucide-react'
+import { ChevronLeft, ChevronDown, Pencil, Paperclip, X, Trash2, Undo2 } from 'lucide-react'
 import { createClient as createBrowserClient } from '@/lib/supabase/client'
 import { Avatar } from '@/components/ui/Avatar'
 import { RichTextEditor } from '@/components/ui/RichTextEditor'
 import { NotesRender } from '@/components/ui/NotesRender'
 import { ReceivedFromPicker } from './ReceivedFromPicker'
 import { isPastDue } from '@/lib/utils'
+import { isManagerOrAbove } from '@/lib/permissions'
+import { useSubmit } from '@/lib/useSubmit'
 
 type Any = any // eslint-disable-line @typescript-eslint/no-explicit-any
 
@@ -30,7 +32,7 @@ function entityLabel(catalog: Any, type: string, idv: string): string {
   return e.name || '(unnamed)'
 }
 
-export function RfiDetailClient({ rfi: initial, responses: initialResp, links: initialLinks, catalog, users, attachments: initialAttachments = [] }: { rfi: Any; responses: Any[]; distribution: Any[]; users: Any[]; links: Any[]; catalog: Any; attachments?: Any[] }) {
+export function RfiDetailClient({ rfi: initial, responses: initialResp, links: initialLinks, catalog, users, attachments: initialAttachments = [], userRole = 'team' }: { rfi: Any; responses: Any[]; distribution: Any[]; users: Any[]; links: Any[]; catalog: Any; attachments?: Any[]; userRole?: string }) {
   const router = useRouter()
   const [rfi, setRfi] = useState<Any>(initial)
   const [responses, setResponses] = useState<Any[]>(initialResp)
@@ -45,6 +47,24 @@ export function RfiDetailClient({ rfi: initial, responses: initialResp, links: i
   const [detailsOpen, setDetailsOpen] = useState(false)
   const [linksOpen, setLinksOpen] = useState(true)
   const [editing, setEditing] = useState(false)
+  const { run: runDelete, busy: deleting } = useSubmit()
+
+  const canManage = isManagerOrAbove(userRole)
+  const deleted = !!rfi.deleted_at
+
+  // Soft delete: the row and its number stay, along with every response and
+  // attachment, so a restore brings the whole RFI back intact.
+  const toggleDeleted = () =>
+    runDelete(async () => {
+      if (!deleted && !confirm(`Delete RFI ${rfiNo(rfi.rfi_number)}? An admin or manager can restore it, and its number stays reserved.`)) return false
+      const res = await fetch(`/api/rfis/${rfi.id}`, { method: deleted ? 'POST' : 'DELETE' })
+      if (!res.ok) {
+        const body = await res.json().catch(() => null)
+        alert(body?.error || 'Could not update this RFI.')
+        return false
+      }
+      setRfi((r: Any) => ({ ...r, deleted_at: deleted ? null : new Date().toISOString() }))
+    }, { refresh: true })
 
   async function addLink() {
     if (!linkEntity) return
@@ -135,8 +155,26 @@ export function RfiDetailClient({ rfi: initial, responses: initialResp, links: i
               </span>
               <span className="text-[12px] text-[#706E6B]">· </span>
               <Link href={`/projects/${rfi.project_id}`} className="text-[12px] font-semibold text-[#2C5485] hover:underline">{rfi.project?.name}</Link>
-              <button className="btn-secondary ml-auto" onClick={() => setEditing(true)}><Pencil size={13} /> Edit</button>
+              <div className="ml-auto flex items-center gap-2">
+                <button className="btn-secondary" onClick={() => setEditing(true)}><Pencil size={13} /> Edit</button>
+                {canManage && (
+                  <button
+                    className="btn-secondary"
+                    onClick={toggleDeleted}
+                    disabled={deleting}
+                    title={deleted ? 'Restore this RFI' : 'Delete this RFI (recoverable)'}
+                  >
+                    {deleted ? <><Undo2 size={13} /> Restore</> : <><Trash2 size={13} /> Delete</>}
+                  </button>
+                )}
+              </div>
             </div>
+            {deleted && (
+              <div className="mt-3 flex items-center gap-2 bg-[#FEF2F2] border border-[#fecaca] rounded-lg px-3 py-2">
+                <span className="text-[10.5px] font-extrabold uppercase tracking-wide text-[#b91c1c]">Deleted</span>
+                <span className="text-[12.5px] text-[#7f1d1d]">Hidden from everyone except admins and managers. Nothing has been destroyed — use Restore to bring it back.</span>
+              </div>
+            )}
             <h1 className="text-[20px] font-extrabold text-[#080707] mt-2">{rfi.subject}</h1>
             {rfi.status !== 'closed' && (
               <div className="mt-3 flex items-center gap-2 bg-[#FEF7F0] border border-[#f6d9bf] rounded-lg px-3 py-2">

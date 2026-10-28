@@ -105,6 +105,7 @@ export default async function DashboardPage() {
     (supabase.from('rfis') as any)
       .select('id, rfi_number, subject, due_date, project:projects(name)')
       .eq('status', 'open')
+      .is('deleted_at', null)
       .eq('ball_in_court_user_id', user.id)
       .not('due_date', 'is', null)
       .lte('due_date', weekEndIso),
@@ -274,6 +275,7 @@ export default async function DashboardPage() {
   const { data: myRfis } = await (supabase.from('rfis') as any)
     .select('id, rfi_number, subject, status, due_date, updated_at, project:projects(id, name)')
     .neq('status', 'draft')
+    .is('deleted_at', null)
     .or(rfiOrParts.join(','))
     .order('updated_at', { ascending: false })
     .limit(6) as { data: any[] | null }

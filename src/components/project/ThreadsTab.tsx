@@ -1,10 +1,12 @@
 'use client'
 import { useMemo, useState } from 'react'
 import { Avatar } from '@/components/ui/Avatar'
-import { Slack, Mail, StickyNote, Calendar, Paperclip, Search, ChevronDown } from 'lucide-react'
+import { Slack, Mail, StickyNote, Calendar, Paperclip, Search, ChevronDown, Trash2, Undo2 } from 'lucide-react'
 import { MessageText, type MentionUser } from '@/components/ui/MessageText'
 import { NotesRender } from '@/components/ui/NotesRender'
 import { createClient } from '@/lib/supabase/client'
+import { useSubmit } from '@/lib/useSubmit'
+import { isManagerOrAbove } from '@/lib/permissions'
 
 // Raw project_threads row (Slack mirror + mirrored Outlook email).
 export interface ProjectThread {
@@ -30,6 +32,7 @@ export interface ProjectNote {
   file_name: string | null
   storage_path: string | null
   created_at: string
+  deleted_at?: string | null
   user?: { full_name: string | null; avatar_url: string | null } | null
 }
 
@@ -49,6 +52,8 @@ interface FeedItem {
   event_date?: string | null
   file_name?: string | null
   storage_path?: string | null
+  noteId?: string
+  deleted_at?: string | null
 }
 
 type SortKey = 'date_desc' | 'date_asc' | 'user' | 'type'
@@ -76,16 +81,26 @@ export function ThreadsTab({
   notes = [],
   channelLinked,
   users = [],
+  projectId,
+  userRole = 'team',
 }: {
   threads: ProjectThread[]
   notes?: ProjectNote[]
   channelLinked: boolean
   users?: MentionUser[]
+  projectId?: string
+  userRole?: string
 }) {
   const [query, setQuery] = useState('')
   const [sort, setSort] = useState<SortKey>('date_desc')
   const [filter, setFilter] = useState<FilterKind>('all')
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
+  const [showDeleted, setShowDeleted] = useState(false)
+
+  // Only admin and manager can delete or restore, and only they are served
+  // deleted rows in the first place (migration 076).
+  const canManage = isManagerOrAbove(userRole) && !!projectId
+  const deletedCount = useMemo(() => notes.filter(n => n.deleted_at).length, [notes])
 
   const items = useMemo<FeedItem[]>(() => {
     const fromThreads: FeedItem[] = threads.map(t => ({
@@ -109,6 +124,8 @@ export function ThreadsTab({
       event_date: n.event_date,
       file_name: n.file_name,
       storage_path: n.storage_path,
+      noteId: n.id,
+      deleted_at: n.deleted_at ?? null,
     }))
     return [...fromThreads, ...fromNotes]
   }, [threads, notes])
@@ -121,6 +138,7 @@ export function ThreadsTab({
       : filter === 'email' ? k === 'email'
       : (k === 'note' || k === 'event' || k === 'file')   // 'notes'
     const list = items
+      .filter(f => (showDeleted ? true : !f.deleted_at))
       .filter(f => inFilter(f.kind))
       .filter(f => (q ? searchText(f).includes(q) : true))
     const sorted = [...list]
@@ -129,7 +147,7 @@ export function ThreadsTab({
     else if (sort === 'user') sorted.sort((a, b) => (a.user_name ?? '~').localeCompare(b.user_name ?? '~') || (a.created_at < b.created_at ? 1 : -1))
     else if (sort === 'type') sorted.sort((a, b) => a.kind.localeCompare(b.kind) || (a.created_at < b.created_at ? 1 : -1))
     return sorted
-  }, [items, query, sort, filter])
+  }, [items, query, sort, filter, showDeleted])
 
   const toggle = (id: string) =>
     setExpanded(prev => {
@@ -207,6 +225,15 @@ export function ThreadsTab({
               </button>
             )
           })}
+          {canManage && deletedCount > 0 && (
+            <button
+              onClick={() => setShowDeleted(v => !v)}
+              className={`ml-auto px-2.5 py-1 text-[11.5px] font-semibold rounded-full border transition-colors ${showDeleted ? 'bg-[#FEF2F2] border-[#fecaca] text-[#b91c1c]' : 'bg-white border-[#e2e8f0] text-[#706E6B] hover:bg-[#fafbfc]'}`}
+              title="Deleted notes are hidden from everyone except admins and managers"
+            >
+              {showDeleted ? 'Hide deleted' : `Deleted (${deletedCount})`}
+            </button>
+          )}
         </div>
       </div>
 
@@ -216,7 +243,14 @@ export function ThreadsTab({
       ) : (
         <div className="px-6 py-5 space-y-4">
           {visible.map(f => (
-            <FeedRow key={f.id} item={f} users={users} expanded={expanded.has(f.id)} onToggle={() => toggle(f.id)} />
+            <FeedRow
+              key={f.id}
+              item={f}
+              users={users}
+              expanded={expanded.has(f.id)}
+              onToggle={() => toggle(f.id)}
+              projectId={canManage ? projectId : undefined}
+            />
           ))}
         </div>
       )}
@@ -274,21 +308,30 @@ function SourceBadge({ kind }: { kind: Kind }) {
   )
 }
 
-function FeedRow({ item, users, expanded, onToggle }: { item: FeedItem; users: MentionUser[]; expanded: boolean; onToggle: () => void }) {
+function FeedRow({ item, users, expanded, onToggle, projectId }: { item: FeedItem; users: MentionUser[]; expanded: boolean; onToggle: () => void; projectId?: string }) {
   const isEmail = item.kind === 'email'
   const isSlack = item.kind === 'slack'
   const fallbackName = isEmail ? 'Email' : isSlack ? 'Slack user' : 'Someone'
   const longEmail = isEmail && (item.message?.length ?? 0) > EMAIL_PREVIEW_CHARS
   const longSlack = isSlack && (item.message?.length ?? 0) > SLACK_COLLAPSE_CHARS
 
+  const isNote = item.kind === 'note' || item.kind === 'event' || item.kind === 'file'
+  const deleted = !!item.deleted_at
+
   return (
-    <div className="flex gap-3">
+    <div className={`flex gap-3 group ${deleted ? 'opacity-60' : ''}`}>
       <Avatar name={item.user_name ?? fallbackName} imageUrl={item.user_avatar_url} size="sm" />
       <div className="flex-1 min-w-0">
         <div className="flex items-baseline gap-2 flex-wrap">
           <span className="text-[13px] font-semibold text-[#181818]">{item.user_name ?? fallbackName}</span>
           <span className="text-[10.5px] text-[#706E6B]">{tsToDate(item.created_at)}</span>
           <SourceBadge kind={item.kind} />
+          {deleted && (
+            <span className="text-[9px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-[#FEF2F2] text-[#b91c1c]">Deleted</span>
+          )}
+          {isNote && projectId && item.noteId && (
+            <NoteDeleteButton projectId={projectId} noteId={item.noteId} deleted={deleted} />
+          )}
         </div>
 
         {/* Email — collapsed by default */}
@@ -347,5 +390,36 @@ function FeedRow({ item, users, expanded, onToggle }: { item: FeedItem; users: M
         )}
       </div>
     </div>
+  )
+}
+
+/**
+ * Delete / restore a note. Nothing is destroyed — the row keeps its place and
+ * its attached file, and an admin or manager can bring it back from the
+ * "Deleted" filter above.
+ */
+function NoteDeleteButton({ projectId, noteId, deleted }: { projectId: string; noteId: string; deleted: boolean }) {
+  const { run, busy } = useSubmit()
+
+  const click = () =>
+    run(async () => {
+      if (!deleted && !confirm('Delete this note? An admin or manager can restore it afterwards.')) return false
+      const res = await fetch(`/api/projects/${projectId}/notes/${noteId}`, { method: deleted ? 'POST' : 'DELETE' })
+      if (!res.ok) {
+        const body = await res.json().catch(() => null)
+        alert(body?.error || 'Could not update this note.')
+        return false
+      }
+    }, { refresh: true })
+
+  return (
+    <button
+      onClick={click}
+      disabled={busy}
+      title={deleted ? 'Restore this note' : 'Delete this note'}
+      className={`ml-auto inline-flex items-center gap-1 text-[11px] font-semibold disabled:opacity-50 ${deleted ? 'text-[#1d4ed8] hover:underline' : 'text-[#94a3b8] hover:text-[#b91c1c] opacity-0 group-hover:opacity-100 focus:opacity-100'}`}
+    >
+      {deleted ? <><Undo2 size={11} /> Restore</> : <Trash2 size={12} />}
+    </button>
   )
 }

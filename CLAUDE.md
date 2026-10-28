@@ -34,8 +34,8 @@ would push outdated code. If you're unsure which clone you're in, run
   `supabase/migrations/NNN_*.sql` file must be **run manually on Supabase** by
   the user. Always call out new migration numbers explicitly in the summary.
 - Migrations are numbered sequentially, idempotent (`IF NOT EXISTS` /
-  `DROP POLICY IF EXISTS`). Next free number as of 2026-10-28: **076**
-  (latest applied: **075** — everything through 075 is live).
+  `DROP POLICY IF EXISTS`). Next free number as of 2026-10-28: **077**
+  (latest applied: **076** — everything through 076 is live).
   ⚠️ **Check `ls supabase/migrations` before claiming a number, not this line.**
   Two sessions ran concurrently on 2026-08-26 and both wrote a `066_*`; the
   Workstreams one was renamed to `068` after the fact. This line goes stale the
@@ -62,6 +62,18 @@ would push outdated code. If you're unsure which clone you're in, run
   over MCP** — a deliberate widening that matches what 073 lets them read.
   Adds `created_via` to `project_notes`/`tasks`/`rfis`, the
   `rfis_mcp_no_external_recipients` CHECK constraint, and `mcp_idempotency`.
+  **076 added recoverable delete** for notes and RFIs — `deleted_at` /
+  `deleted_by`, a RESTRICTIVE `"Hide deleted"` SELECT policy (deleted rows are
+  invisible to team and investor; admin and manager still see them so they can
+  restore), admin+manager `UPDATE` on `rfis`, and an
+  `enforce_soft_delete_role()` trigger. It also **drops 020's
+  `"Team project notes"` policy**, which was `FOR ALL` — any team member could
+  hard-delete any note. 073 and 075 already cover their select/insert/update,
+  so they lose nothing but the ability to destroy one.
+  ⚠️ **Nothing is ever hard-deleted**: both the app and the service-role cron
+  filter `deleted_at IS NULL`. A new reader of `project_notes` or `rfis` must
+  add that filter — RLS hides deleted rows from team, but **not** from admin,
+  manager, or anything running as service role.
   ⚠️ 054–063 are the Workstreams series and must run **in order**: 057 purges
   branch test data so 058/060 can retire placeholder majors, and 059 reshapes
   the date columns the rest depend on.
@@ -185,7 +197,9 @@ Site Plans — `systems.design_rev` / `design_rev_at` / `design_rev_by`,
 `drawing_collections.link_target` (`'area_discipline'` | `'system'`), and the
 `drawing_systems` link table (052). MCP: `mcp_clients` / `mcp_auth_codes` /
 `mcp_tokens` (074, service-role-only), and `created_via` on `project_notes` /
-`tasks` / `rfis` plus `mcp_idempotency` (075).
+`tasks` / `rfis` plus `mcp_idempotency` (075). Soft delete: `deleted_at` /
+`deleted_by` on `project_notes` and `rfis` (076) — a deleted RFI keeps its
+number, so restoring one brings it back whole.
 
 See `supabase/migrations/` for the canonical schema — each migration is
 numbered (001…052) and is idempotent (CREATE/ALTER … IF NOT EXISTS).
@@ -220,7 +234,10 @@ server route handlers (defense in depth).
 - /tasks — task list + kanban; visibility + task-type subscription filters.
   `?id=<taskId>` deep-links and opens that task's drawer.
 - /rfis — Procore-style RFI log (master nav); /rfis/[id] — RFI detail
-  (ball-in-court, linkages, responses, official-response-closes)
+  (ball-in-court, linkages, responses, official-response-closes).
+  Admin + manager can **delete** an RFI or a project note; both are soft
+  deletes (076) and both surfaces carry a **Deleted (n)** toggle that reveals
+  them with a Restore action. Team and investor never see a deleted record.
 - /stakeholders — CRM directory
 - /dataroom — health dashboard. ⚠️ **Hidden** — commented out of `NAV_ITEMS`
   (`NavBar.tsx`) and out of the project `TABS` (`ProjectDetailClient.tsx`) until

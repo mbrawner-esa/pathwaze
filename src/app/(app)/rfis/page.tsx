@@ -6,6 +6,15 @@ export const dynamic = 'force-dynamic'
 export default async function RfisPage() {
   const supabase = await createClient()
 
+  // Deleted RFIs are served only to admin and manager (migration 076); the
+  // client hides them behind a toggle so the log reads normally.
+  const { data: { user } } = await supabase.auth.getUser()
+  let userRole = 'team'
+  if (user) {
+    const { data: me } = await supabase.from('users').select('role').eq('id', user.id).single() as { data: { role?: string } | null }
+    userRole = me?.role ?? 'team'
+  }
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [{ data: rfis }, { data: projects }, { data: users }, { data: stakeholders }] = await Promise.all([
     (supabase.from('rfis') as any)
@@ -16,5 +25,5 @@ export default async function RfisPage() {
     supabase.from('stakeholders').select('id, name, project_id').order('name'),
   ])
 
-  return <RfisClient rfis={rfis ?? []} projects={projects ?? []} users={users ?? []} stakeholders={stakeholders ?? []} />
+  return <RfisClient rfis={rfis ?? []} projects={projects ?? []} users={users ?? []} stakeholders={stakeholders ?? []} userRole={userRole} />
 }
