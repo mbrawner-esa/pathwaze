@@ -31,6 +31,7 @@ const SVC = env.SUPABASE_SERVICE_ROLE_KEY
 const svcHeaders = { apikey: SVC, Authorization: `Bearer ${SVC}`, 'content-type': 'application/json' }
 
 let failures = 0
+const NL = String.fromCharCode(10)
 const ok = (label, detail = '') => console.log(`  PASS  ${label}${detail ? ` — ${detail}` : ''}`)
 const bad = (label, detail = '') => { failures++; console.log(`  FAIL  ${label}${detail ? ` — ${detail}` : ''}`) }
 const head = (t) => console.log(`\n${t}\n${'-'.repeat(t.length)}`)
@@ -105,7 +106,7 @@ const insert = await fetch(`${SB}/rest/v1/mcp_auth_codes`, {
     redirect_uri: redirectUri,
     code_challenge: challenge,
     code_challenge_method: 'S256',
-    scope: 'pathwaze:read',
+    scope: 'pathwaze:read pathwaze:write',
     expires_at: new Date(Date.now() + 300000).toISOString(),
   }),
 })
@@ -131,7 +132,7 @@ await fetch(`${SB}/rest/v1/mcp_auth_codes`, {
     redirect_uri: redirectUri,
     code_challenge: challenge,
     code_challenge_method: 'S256',
-    scope: 'pathwaze:read',
+    scope: 'pathwaze:read pathwaze:write',
     expires_at: new Date(Date.now() + 300000).toISOString(),
   }),
 })
@@ -228,8 +229,142 @@ try {
   bad('tool call threw', e.message)
 }
 
-// ------------------------------------------------------------ 5. revocation
-head('5. Revocation')
+// --------------------------------------------------------------- 5. writes
+head('5. Write tools')
+
+const createdIds = { project_notes: [], tasks: [], rfis: [] }
+
+try {
+  const projects = await callTool('list_projects')
+  const target = projects[0].project_number || projects[0].id
+  const me = await callTool('whoami')
+  const stamp = Date.now()
+
+  if (!me.can_write) {
+    bad('token has no write scope', 'reconnect the connector to grant it')
+    throw new Error('skipping write checks')
+  }
+
+  // --- note, with the full formatting surface ---
+  const md = [
+    '## Verification note',
+    '',
+    'Created by scripts/verify-mcp.mjs. Safe to delete.',
+    '',
+    '- Bulleted **bold** item',
+    '- Item with *emphasis* and [a link](https://example.com)',
+    '',
+    '1. First numbered',
+    '2. Second numbered',
+  ].join(NL)
+
+  const note = await callTool('create_note', {
+    project: target, title: `Verification ${stamp}`, body: md, idempotency_key: `verify-note-${stamp}`,
+  })
+  createdIds.project_notes.push(note.id)
+  ok('create_note', `${note.id} on ${note.project}`)
+
+  // Formatting fidelity — the acceptance test for this feature.
+  const [noteRow] = await sbGet(`project_notes?select=body,created_via&id=eq.${note.id}`)
+  const html = noteRow?.body ?? ''
+  const checks = [
+    ['<ul>', 'bulleted list'], ['<ol>', 'numbered list'], ['<b>', 'bold'],
+    ['<i>', 'italic'], ['<a href="https://example.com', 'link'], ['<p>', 'paragraph'],
+  ]
+  const missing = checks.filter(([frag]) => !html.includes(frag)).map(([, name]) => name)
+  missing.length ? bad('note formatting', `missing: ${missing.join(', ')}`)
+                 : ok('note formatting', 'bullets, numbers, bold, italic, link, paragraphs')
+  noteRow?.created_via === 'mcp' ? ok('created_via stamped') : bad('created_via', String(noteRow?.created_via))
+  const rawTag = new RegExp('<(script|img|iframe)', 'i')
+  if (rawTag.test(html)) bad('unexpected raw tag in stored HTML')
+  else ok('no unexpected tags in stored HTML')
+
+  // --- idempotency ---
+  const replay = await callTool('create_note', {
+    project: target, title: `Verification ${stamp}`, body: md, idempotency_key: `verify-note-${stamp}`,
+  })
+  replay.replayed ? ok('idempotency key replays', 'original returned, no duplicate')
+                  : bad('idempotency', 'a second note was created')
+
+  // --- HTML input is refused ---
+  try {
+    await callTool('create_note', { project: target, body: '<script>alert(1)</script><b>hi</b>' })
+    bad('HTML input should be refused')
+  } catch (e) {
+    /markdown/i.test(e.message) ? ok('HTML input refused with guidance') : bad('HTML refusal message', e.message)
+  }
+
+  // --- task with a due date and an assignee ---
+  const due = new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10)
+  const task = await callTool('create_task', {
+    project: target, title: `Verification task ${stamp}`,
+    description: `Created by the verification script.${NL}${NL}- One${NL}- Two`,
+    assignee: me.email, due_date: due, type: 'Engineering', priority: 'Low',
+    idempotency_key: `verify-task-${stamp}`,
+  })
+  createdIds.tasks.push(task.id)
+  task.due_date === due && task.status === 'Draft'
+    ? ok('create_task', `${task.id} due ${task.due_date}, status ${task.status}`)
+    : bad('create_task', JSON.stringify(task))
+
+  try {
+    await callTool('create_task', { project: target, title: 'bad date', due_date: 'next Friday' })
+    bad('loose date should be refused')
+  } catch (e) {
+    /YYYY-MM-DD/.test(e.message) ? ok('loose date refused') : bad('date refusal', e.message)
+  }
+
+  // --- RFI assigned to an internal user ---
+  const rfi = await callTool('create_rfi', {
+    project: target, subject: `Verification RFI ${stamp}`,
+    question: `Created by the **verification** script. Safe to close.${NL}${NL}- Point one${NL}- Point two`,
+    assignee: me.email, idempotency_key: `verify-rfi-${stamp}`,
+  })
+  createdIds.rfis.push(rfi.id)
+  ok('create_rfi', `#${rfi.rfi_number} ${rfi.status}, ball-in-court ${rfi.ball_in_court}`)
+
+  // The RFI question is rendered with whitespace-pre-wrap, not as HTML — so
+  // tags stored here would be visible on the page.
+  const [rfiRow] = await sbGet(`rfis?select=question&id=eq.${rfi.id}`)
+  const q = rfiRow?.question ?? ''
+  const hasMarkup = new RegExp('<[a-zA-Z]').test(q)
+  if (hasMarkup) bad('RFI question contains markup', q.slice(0, 120))
+  else ok('RFI question is plain text', 'no tags stored')
+
+  const readsCleanly = q.includes('• Point one') && q.includes('verification script') && !q.includes('**')
+  if (readsCleanly) ok('RFI question reads cleanly', 'bullets kept, markdown markers stripped')
+  else bad('RFI question formatting', JSON.stringify(q.slice(0, 160)))
+
+  // --- containment: the database must refuse an external recipient ---
+  const [sh] = await sbGet('stakeholders?select=id&limit=1')
+  if (sh) {
+    const r = await fetch(`${SB}/rest/v1/rfis?id=eq.${rfi.id}`, {
+      method: 'PATCH', headers: { ...svcHeaders, Prefer: 'return=representation' },
+      body: JSON.stringify({ ball_in_court_stakeholder_id: sh.id }),
+    })
+    const body = await r.text()
+    !r.ok && /rfis_mcp_no_external_recipients/.test(body)
+      ? ok('containment holds', 'database refused an external ball-in-court on an MCP RFI')
+      : bad('CONTAINMENT BREACH', `expected rejection, got ${r.status} ${body.slice(0, 160)}`)
+  }
+
+  const dist = await sbGet(`rfi_distribution?select=id&rfi_id=eq.${rfi.id}`)
+  dist?.length === 0 ? ok('no distribution rows on MCP RFI') : bad('distribution rows exist', JSON.stringify(dist))
+} catch (e) {
+  if (!/skipping write checks/.test(e.message)) bad('write tool threw', e.message)
+}
+
+// Clean up everything the write checks created.
+for (const [table, ids] of Object.entries(createdIds)) {
+  for (const id of ids) {
+    await fetch(`${SB}/rest/v1/${table}?id=eq.${id}`, { method: 'DELETE', headers: svcHeaders })
+  }
+}
+await fetch(`${SB}/rest/v1/mcp_idempotency?key=like.verify-*`, { method: 'DELETE', headers: svcHeaders })
+console.log('  (verification records deleted)')
+
+// ------------------------------------------------------------ 6. revocation
+head('6. Revocation')
 
 await fetch(`${BASE}/api/mcp/oauth/revoke`, {
   method: 'POST',

@@ -19,7 +19,12 @@
 import crypto from 'crypto'
 import { serviceClient } from '@/lib/supabase/service'
 
-export const MCP_SCOPE = 'pathwaze:read'
+export const MCP_READ_SCOPE = 'pathwaze:read'
+export const MCP_WRITE_SCOPE = 'pathwaze:write'
+
+/** What a new connection asks for. Both scopes; the consent screen says so. */
+export const MCP_SCOPE = `${MCP_READ_SCOPE} ${MCP_WRITE_SCOPE}`
+
 const TOKEN_TTL_DAYS = 30
 const SUPABASE_JWT_TTL_SECONDS = 300
 
@@ -85,6 +90,18 @@ export type McpSession = {
   email: string | null
   /** Short-lived Supabase JWT — pass to query.ts so RLS applies. */
   jwt: string
+  /** Scopes this token was issued with. A read-only token cannot write. */
+  scopes: string[]
+}
+
+/** Throws unless the token carries the write scope. */
+export function requireWriteScope(session: McpSession) {
+  if (!session.scopes.includes(MCP_WRITE_SCOPE)) {
+    throw new Error(
+      'This connection is read-only. Reconnect the Pathwaze connector to grant permission ' +
+        'to create notes, tasks and RFIs.'
+    )
+  }
 }
 
 /**
@@ -99,7 +116,7 @@ export async function sessionFromBearer(header: string | null): Promise<McpSessi
   const svc = serviceClient()
   const { data: row } = await svc
     .from('mcp_tokens')
-    .select('id,user_id,expires_at,revoked_at')
+    .select('id,user_id,expires_at,revoked_at,scope')
     .eq('token_hash', hashToken(match[1]))
     .maybeSingle()
 
@@ -127,7 +144,42 @@ export async function sessionFromBearer(header: string | null): Promise<McpSessi
     fullName: user.full_name,
     email: user.email,
     jwt: mintSupabaseJwt(user.id),
+    // Tokens issued before writes existed carry only the read scope, so they
+    // stay read-only until the user reconnects. Nothing is granted silently.
+    scopes: String(row.scope || MCP_READ_SCOPE).split(/\s+/).filter(Boolean),
   }
+}
+
+/**
+ * Idempotency for write tools.
+ *
+ * A tool call that times out may be retried by the model; without this a retry
+ * creates a second note. The key is scoped to the user, so one person's key
+ * can never return another's record.
+ */
+export async function lookupIdempotency(
+  userId: string,
+  key: string
+): Promise<{ entity_type: string; entity_id: string } | null> {
+  const { data } = await serviceClient()
+    .from('mcp_idempotency')
+    .select('entity_type,entity_id')
+    .eq('user_id', userId)
+    .eq('key', key)
+    .maybeSingle()
+  return data ?? null
+}
+
+export async function recordIdempotency(
+  userId: string,
+  key: string,
+  tool: string,
+  entityType: string,
+  entityId: string
+) {
+  await serviceClient()
+    .from('mcp_idempotency')
+    .insert({ user_id: userId, key, tool, entity_type: entityType, entity_id: entityId })
 }
 
 /** Issue a token for a user and record it. Returns the plaintext once. */

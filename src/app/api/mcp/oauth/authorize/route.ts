@@ -61,8 +61,13 @@ function page(title: string, bodyHtml: string, status = 200) {
   .who { background:#fff; border:1px solid #e2e8f0; border-radius:8px; padding:12px; margin-bottom:16px }
   .who strong { color:#2F3E50; display:block; font-size:13px }
   .who span { color:#6E879E; font-size:12px }
-  ul { margin:0 0 20px; padding-left:18px; color:#2F3E50; font-size:13px }
+  ul { margin:0 0 14px; padding-left:18px; color:#2F3E50; font-size:13px }
   li { margin-bottom:5px }
+  .lbl { font-size:11px; font-weight:700; letter-spacing:.04em; text-transform:uppercase;
+         color:#6E879E; margin:0 0 6px }
+  .fine { font-size:11.5px; color:#6E879E; line-height:1.45; margin:0 0 18px;
+          border-top:1px solid #e2e8f0; padding-top:12px }
+  .fine strong { color:#2F3E50 }
   button { width:100%; padding:12px; border:0; border-radius:8px; font-weight:600; font-size:14px;
            cursor:pointer; background:#E6C87A; color:#5a4413 }
   button:hover { background:#d9b962 }
@@ -142,17 +147,28 @@ export async function GET(req: NextRequest) {
   const res = page(
     'Connect to Pathwaze',
     `<h1>Connect ${esc(client.client_name || 'this app')} to Pathwaze</h1>
-     <p>It will be able to read Pathwaze data as you.</p>
+     <p>It will act as you, and see exactly what you see in Pathwaze.</p>
      <div class="who">
        <strong>${esc(profile.full_name || profile.email || '')}</strong>
        <span>${esc(profile.email || '')} · ${esc(profile.role)}</span>
      </div>
+     <p class="lbl">It will be able to read</p>
      <ul>
-       <li>Read projects, notes, threads, tasks and milestones</li>
-       <li>Read stakeholders, RFIs, permits and site data</li>
-       <li>Sees exactly what you see in Pathwaze — nothing more</li>
-       <li><strong>Cannot change or delete anything</strong></li>
+       <li>Projects, notes, threads, tasks and milestones</li>
+       <li>Stakeholders, RFIs, permits and site data</li>
      </ul>
+     <p class="lbl">And to create</p>
+     <ul>
+       <li>Notes on a project</li>
+       <li>Tasks, which email the person they're assigned to</li>
+       <li>RFIs, assigned to a colleague</li>
+     </ul>
+     <p class="fine">
+       Mentioning a colleague in something it creates emails them, the same as it
+       would in Pathwaze. <strong>Nothing it creates can be sent to anyone outside
+       ESA</strong>, and it cannot edit or delete existing records. You can revoke
+       this at any time from Settings.
+     </p>
      <form method="POST">
        ${hidden}
        <input type="hidden" name="csrf" value="${csrf}">

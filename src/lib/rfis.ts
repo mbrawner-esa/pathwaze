@@ -21,6 +21,15 @@ export interface NewRfiInput {
   schedule_impact?: string
   is_private?: boolean
   status?: 'draft' | 'open'
+  /**
+   * 'mcp' when raised through the MCP connector; null from the app.
+   *
+   * Migration 075 keys a CHECK constraint off this: a row marked 'mcp' may not
+   * carry ball_in_court_stakeholder_id or received_from_stakeholder_id, which
+   * is what guarantees no connector-raised RFI can email outside ESA — at
+   * creation, on a response, or when the daily reminder cron re-reads it.
+   */
+  created_via?: string | null
 }
 
 /**
@@ -58,9 +67,16 @@ export async function createRfiFromFinding(supabase: any, userId: string, input:
     schedule_impact: input.schedule_impact ?? 'tbd',
     is_private: input.is_private ?? false,
     created_by: userId,
+    created_via: input.created_via ?? null,
   }).select('*').single()
 
-  if (error) { console.error('[createRfi] insert failed:', error.message); return null }
+  // Callers that need to distinguish a number collision (the unique constraint
+  // on project_id + rfi_number) from a real failure re-throw on their own, so
+  // surface the message rather than swallowing it.
+  if (error) {
+    console.error('[createRfi] insert failed:', error.message)
+    throw new Error(error.message)
+  }
 
   // Notify (best-effort): log to the feed; email the ball-in-court if the RFI is open.
   const tag = `RFI ${rfiNo(data.rfi_number)}`

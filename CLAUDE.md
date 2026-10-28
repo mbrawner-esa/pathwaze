@@ -34,29 +34,34 @@ would push outdated code. If you're unsure which clone you're in, run
   `supabase/migrations/NNN_*.sql` file must be **run manually on Supabase** by
   the user. Always call out new migration numbers explicitly in the summary.
 - Migrations are numbered sequentially, idempotent (`IF NOT EXISTS` /
-  `DROP POLICY IF EXISTS`). Next free number as of 2026-09-15: **075**
-  (latest applied: **072** — 073 and 074 are written but NOT yet run, see below).
+  `DROP POLICY IF EXISTS`). Next free number as of 2026-10-28: **076**
+  (latest applied: **075** — everything through 075 is live).
   ⚠️ **Check `ls supabase/migrations` before claiming a number, not this line.**
   Two sessions ran concurrently on 2026-08-26 and both wrote a `066_*`; the
   Workstreams one was renamed to `068` after the fact. This line goes stale the
   moment another session adds a file.
   066 raised the `drawings` bucket per-file limit to 2 GB (the project-wide
   Storage → Settings upload limit must also be ≥ 2 GB for it to take effect).
-  ⚠️ **067 is written but NOT run** — adds a `manager`-role SELECT policy on
-  `project_threads` (019 covered only admin/team, so a manager's Threads tab is
-  currently blank). **Superseded by 073**, which folds it in; run 073 and 067
-  becomes a no-op.
-  ⚠️ **073 + 074 are written but NOT run** (added 2026-09-15 with the MCP
-  server). **073 is the significant one**: until now the permission model in
-  this file and in `permissions.ts` ("manager sees everything, team sees all
-  projects") lived only in application code — live RLS still had the 001
-  policies, which predate the manager role entirely, so a manager had *no*
-  policy on any table and team members could only read projects they were
-  assigned to. 073 adds `FOR SELECT` policies for both roles across the ~44
-  read tables. It is additive and read-only, but it genuinely widens what team
-  members can see in the app, not just over MCP. Verify with
-  `node scripts/check-rls-roles.mjs` before and after. 074 adds the OAuth
-  bookkeeping tables (`mcp_clients`, `mcp_auth_codes`, `mcp_tokens`).
+  067 (a `manager` SELECT policy on `project_threads`) was superseded by 073,
+  which folds it in — it is now a no-op.
+  **073 realigned RLS with the documented permission model.** Until it ran, that
+  model ("manager sees everything, team sees all projects") lived only in
+  `permissions.ts`; live RLS still had the 001 policies, which predate the
+  manager role, so a manager had *no* policy on any table and team members could
+  only read projects they were assigned to. 073 adds `FOR SELECT` policies for
+  both roles across the ~44 read tables. Verify role reach any time with
+  `node scripts/check-rls-roles.mjs`. 074 adds the OAuth bookkeeping tables
+  (`mcp_clients`, `mcp_auth_codes`, `mcp_tokens`).
+  **075 opened up writes** (2026-10-28, with the MCP write tools): `INSERT`/
+  `UPDATE` for manager and team on `project_notes`, `tasks`, `task_threads`;
+  `INSERT` on `activity_log` for both roles — until then only admin could write
+  it, so `logActivity` had been silently failing for everyone else and
+  team-created records never reached the activity feed or the bell. It also
+  replaces the restrictive `"Team tasks"` policy with a project-wide one, so
+  **any team member can now create a task on any project, in the app as well as
+  over MCP** — a deliberate widening that matches what 073 lets them read.
+  Adds `created_via` to `project_notes`/`tasks`/`rfis`, the
+  `rfis_mcp_no_external_recipients` CHECK constraint, and `mcp_idempotency`.
   ⚠️ 054–063 are the Workstreams series and must run **in order**: 057 purges
   branch test data so 058/060 can retire placeholder majors, and 059 reshapes
   the date columns the rest depend on.
@@ -178,7 +183,9 @@ drawing-review comments, 048), `email_connections` + email-capable
 `billing_start_year`, `billing_start_month` (051), and system revisions +
 Site Plans — `systems.design_rev` / `design_rev_at` / `design_rev_by`,
 `drawing_collections.link_target` (`'area_discipline'` | `'system'`), and the
-`drawing_systems` link table (052).
+`drawing_systems` link table (052). MCP: `mcp_clients` / `mcp_auth_codes` /
+`mcp_tokens` (074, service-role-only), and `created_via` on `project_notes` /
+`tasks` / `rfis` plus `mcp_idempotency` (075).
 
 See `supabase/migrations/` for the canonical schema — each migration is
 numbered (001…052) and is idempotent (CREATE/ALTER … IF NOT EXISTS).
@@ -239,9 +246,10 @@ server route handlers (defense in depth).
   `project_threads` where the correspondent matches a `stakeholders.email`.
   `CRON_SECRET`-gated; supports `?dry=1` and `?user=<uuid>`; `maxDuration=60`.
 - /api/auth/outlook/{connect,callback,disconnect} — per-user Graph OAuth
-- /api/mcp — **MCP server** (read-only). Remote Streamable-HTTP endpoint that
-  lets Claude (CoWork / Desktop / Code) read Pathwaze data. Org-wide: teammates
-  add it once as a connector and sign in with their normal Pathwaze login.
+- /api/mcp — **MCP server** (16 read tools + 3 write). Remote Streamable-HTTP
+  endpoint that lets Claude (CoWork / Desktop / Code) read Pathwaze data and
+  create notes, tasks and RFIs. Org-wide: teammates add it once as a connector
+  and sign in with their normal Pathwaze login.
   OAuth 2.1 + PKCE + Dynamic Client Registration at
   `/api/mcp/oauth/{register,authorize,token,revoke}`, discovery at
   `/.well-known/oauth-{protected-resource,authorization-server}`.
@@ -256,6 +264,29 @@ server route handlers (defense in depth).
   Investors are refused at the authorize endpoint.
   Tools + data layer live in `src/lib/mcp/`; users manage and revoke their own
   connections from /settings.
+  **Writes** (`create_note`, `create_task`, `create_rfi`) need the
+  `pathwaze:write` scope, so a token issued before writes existed stays
+  read-only until the user reconnects. They go through the same service
+  functions as the app — `createNote` (`src/lib/notes.ts`), `createTask`
+  (`src/lib/tasks.ts`), `createRfiFromFinding` (`src/lib/rfis.ts`) — so
+  notifications and activity entries behave identically. Everything created is
+  stamped `created_via = 'mcp'`, which makes it findable and bulk-revertible.
+  ⚠️ **No connector-created record can email outside ESA.** An MCP RFI may not
+  carry `ball_in_court_stakeholder_id` or `received_from_stakeholder_id`,
+  enforced three times: the tool schema has no such parameter, the handler
+  hard-nulls both, and 075's CHECK constraint rejects the row. This is a
+  *data-level* rule on purpose — `/api/cron/rfi-reminders` re-reads RFI rows
+  days later, so suppressing the mail at creation would only defer it. MCP also
+  never writes `rfi_distribution` and exposes no RFI-response tool.
+  ⚠️ **Tool input is markdown, never HTML.** `src/lib/mcp/richtext.ts` escapes
+  every character of caller input and builds the HTML itself — `NotesRender`
+  uses `dangerouslySetInnerHTML` on the assumption the content came from our own
+  editor, and model-authored content breaks that assumption. `toPathwazeHtml()`
+  emits the editor's exact dialect (including `<span class="mention"
+  data-uid=…>`, so mentions notify); `toPlainText()` is for fields the app
+  stores and renders as plain text — **`rfis.question` is one**, a bare textarea
+  shown with `whitespace-pre-wrap`, so HTML written there appears as literal
+  tags on the page.
 
 ## Conventions
 - All DB queries via Supabase client

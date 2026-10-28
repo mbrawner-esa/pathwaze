@@ -6,7 +6,7 @@
  * itself, so users authenticate with the login they already have.
  */
 import { NextResponse } from 'next/server'
-import { appUrl, MCP_SCOPE } from '@/lib/mcp/auth'
+import { appUrl, MCP_READ_SCOPE, MCP_WRITE_SCOPE } from '@/lib/mcp/auth'
 
 export const dynamic = 'force-dynamic'
 
@@ -15,7 +15,7 @@ export async function GET() {
     {
       resource: appUrl('/api/mcp'),
       authorization_servers: [appUrl('')],
-      scopes_supported: [MCP_SCOPE],
+      scopes_supported: [MCP_READ_SCOPE, MCP_WRITE_SCOPE],
       bearer_methods_supported: ['header'],
       resource_name: 'Pathwaze',
       resource_documentation: appUrl('/settings'),

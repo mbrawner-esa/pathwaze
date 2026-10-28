@@ -4,8 +4,7 @@ import { useSubmit } from '@/lib/useSubmit'
 import { createClient } from '@/lib/supabase/client'
 import { StickyNote, Calendar, Paperclip, CheckSquare, X } from 'lucide-react'
 import { RichTextEditor } from '@/components/ui/RichTextEditor'
-
-const TASK_TYPES = ['Design', 'Engineering', 'Permitting', 'Interconnection', 'Financial', 'Legal', 'Construction', 'Operations', 'Administrative']
+import { TASK_TYPES } from '@/lib/task-types'
 
 interface User { id: string; full_name: string }
 

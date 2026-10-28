@@ -33,7 +33,13 @@ export async function POST(req: NextRequest) {
   if (!body.project_id || !body.subject?.trim()) {
     return NextResponse.json({ error: 'project_id and subject required' }, { status: 400 })
   }
-  const rfi = await createRfiFromFinding(supabase, user.id, { ...body, subject: body.subject.trim() })
-  if (!rfi) return NextResponse.json({ error: 'Failed to create RFI' }, { status: 500 })
-  return NextResponse.json(rfi)
+  try {
+    const rfi = await createRfiFromFinding(supabase, user.id, { ...body, subject: body.subject.trim() })
+    return NextResponse.json(rfi)
+  } catch (e) {
+    return NextResponse.json(
+      { error: e instanceof Error ? e.message : 'Failed to create RFI' },
+      { status: 500 }
+    )
+  }
 }

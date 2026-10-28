@@ -40,6 +40,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     schedule_impact: body.schedule_impact ?? 'tbd',
     drawing_number: body.drawing_number ?? null,
     status: body.status === 'draft' ? 'draft' : 'open',
+  }).catch((e) => {
+    // createRfiFromFinding now throws so the MCP path can tell an RFI-number
+    // collision from a real failure; this caller keeps its original shape.
+    console.error('[review rfi] create failed:', e)
+    return null
   })
   if (!rfi) return NextResponse.json({ error: 'Failed to create RFI' }, { status: 500 })
 

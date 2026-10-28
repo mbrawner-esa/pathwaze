@@ -6,7 +6,7 @@
  * pre-provisioning a client id.
  */
 import { NextResponse } from 'next/server'
-import { appUrl, MCP_SCOPE } from '@/lib/mcp/auth'
+import { appUrl, MCP_READ_SCOPE, MCP_WRITE_SCOPE } from '@/lib/mcp/auth'
 
 export const dynamic = 'force-dynamic'
 
@@ -18,7 +18,7 @@ export async function GET() {
       token_endpoint: appUrl('/api/mcp/oauth/token'),
       registration_endpoint: appUrl('/api/mcp/oauth/register'),
       revocation_endpoint: appUrl('/api/mcp/oauth/revoke'),
-      scopes_supported: [MCP_SCOPE],
+      scopes_supported: [MCP_READ_SCOPE, MCP_WRITE_SCOPE],
       response_types_supported: ['code'],
       grant_types_supported: ['authorization_code'],
       code_challenge_methods_supported: ['S256'],

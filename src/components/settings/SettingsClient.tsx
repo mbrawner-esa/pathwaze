@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/client'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Avatar } from '@/components/ui/Avatar'
 import { Mail, Plug } from 'lucide-react'
+import { TASK_TYPES } from '@/lib/task-types'
 
 export interface SettingsUser {
   id: string
@@ -48,10 +49,7 @@ const OUTLOOK_ERROR_REASONS: Record<string, string> = {
   db: 'The connection couldn’t be saved. Please try again shortly.',
 }
 
-const ALL_TASK_TYPES = [
-  'Design', 'Engineering', 'Permitting', 'Interconnection',
-  'Financial', 'Legal', 'Construction', 'Operations', 'Administrative',
-] as const
+const ALL_TASK_TYPES = TASK_TYPES
 
 /** An app (Claude, etc.) connected to the read-only Pathwaze MCP server. */
 interface McpConnection {

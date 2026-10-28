@@ -8,6 +8,7 @@
  * Ported from the local stdio server's lib.mjs; the one material change is the
  * Authorization header.
  */
+import { createClient as createSbClient } from '@supabase/supabase-js'
 import type { McpSession } from './auth'
 
 export const BIG = 100000
@@ -187,3 +188,40 @@ export async function userMap(session: McpSession): Promise<Record<string, Row>>
 
 export const nameOf = (users: Record<string, Row>, id: string | null | undefined): string | null =>
   id ? users[id]?.full_name || users[id]?.email || id : null
+
+/**
+ * A supabase-js client acting as the session user.
+ *
+ * This is what lets the write tools call the app's own service functions
+ * (createNote, createTask, createRfiFromFinding) rather than reimplementing
+ * their inserts and notifications — the client carries the same per-user JWT
+ * the read path uses, so RLS still decides what is allowed.
+ *
+ * Service-role is deliberately not an option here.
+ */
+export function userClient(session: McpSession) {
+  return createSbClient(SUPABASE_URL, ANON_KEY, {
+    auth: { persistSession: false, autoRefreshToken: false },
+    global: {
+      headers: { Authorization: `Bearer ${session.jwt}` },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      fetch: (input: any, init: any) => fetch(input, { ...init, cache: 'no-store' }),
+    },
+  })
+}
+
+/**
+ * The shape the app's service functions expect for `user`. They only ever read
+ * id / email / user_metadata.full_name.
+ */
+export function sessionUser(session: McpSession) {
+  return {
+    id: session.userId,
+    email: session.email ?? '',
+    user_metadata: { full_name: session.fullName ?? '' },
+    app_metadata: {},
+    aud: 'authenticated',
+    created_at: '',
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  } as any
+}

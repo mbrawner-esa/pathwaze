@@ -4,9 +4,19 @@
  * Every handler takes the caller's session and reads through query.ts, so RLS
  * scopes the result to that user's Pathwaze role. Read-only throughout.
  */
-import { get, describe, tableNames, resolveProject, userMap, nameOf, esc, BIG, type Filter } from './query'
+import {
+  get, describe, tableNames, resolveProject, userMap, nameOf, esc, BIG,
+  userClient, sessionUser, type Filter,
+} from './query'
 import { projectContext, portfolioContext } from './context'
+import { toPathwazeHtml, toPlainText, htmlToText } from './richtext'
 import type { McpSession } from './auth'
+import { MCP_WRITE_SCOPE, requireWriteScope, recordIdempotency, lookupIdempotency } from './auth'
+import { createNote, NOTE_CATEGORIES } from '@/lib/notes'
+import { createTask } from '@/lib/tasks'
+import { TASK_TYPES, TASK_PRIORITIES } from '@/lib/task-types'
+import { createRfiFromFinding } from '@/lib/rfis'
+import { appUrl } from './auth'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Row = Record<string, any>
@@ -173,6 +183,78 @@ export const TOOLS = [
     name: 'whoami',
     description: 'The Pathwaze account this connection is authenticated as, and the role that scopes every other tool.',
     inputSchema: { type: 'object', properties: {} },
+  },
+
+  // ── Write tools ──────────────────────────────────────────────────────────
+  // Bodies are MARKDOWN, converted server-side to the exact HTML the Pathwaze
+  // editor produces, so the result is indistinguishable from something typed
+  // by hand. Nothing here can email anyone outside ESA.
+  {
+    name: 'create_note',
+    description:
+      'Post a note to a project — for example a summary of what this session worked out. The body is MARKDOWN and is converted to Pathwaze rich text: "- " for bullets, "1. " for numbered lists, **bold**, *italic*, [text](url) for links. Write "@Firstname Lastname" to mention a colleague; they get a blue chip in the note and an email. Do NOT send HTML.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        project: projectRef,
+        title: { type: 'string', description: 'Short title for the note, e.g. "Interconnection review — 28 Oct".' },
+        body: { type: 'string', description: 'The note itself, in markdown.' },
+        category: {
+          type: 'string',
+          enum: [...NOTE_CATEGORIES],
+          description: 'Optional project tab to file it under. Omit to keep it on Threads only.',
+        },
+        idempotency_key: {
+          type: 'string',
+          description: 'Optional. Reuse the same key if you retry, and the original note is returned instead of a duplicate.',
+        },
+      },
+      required: ['project', 'body'],
+    },
+  },
+  {
+    name: 'create_task',
+    description:
+      'Create a task on a project, optionally assigned and with a due date. The description is MARKDOWN (see create_note) and supports @mentions. Tasks are created with status "Draft", the first column of the board, exactly as they are when created in the app — promote it in Pathwaze when it is ready to start.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        project: projectRef,
+        title: { type: 'string', description: 'What needs doing, as a short imperative phrase.' },
+        description: { type: 'string', description: 'Detail, in markdown. Optional.' },
+        assignee: { type: 'string', description: 'Full name or email of a Pathwaze user. They are emailed. Use list_users if unsure.' },
+        due_date: {
+          type: 'string',
+          description: 'Strict YYYY-MM-DD. Resolve relative dates ("next Friday") yourself first — see whoami for the account timezone.',
+        },
+        type: { type: 'string', enum: [...TASK_TYPES], description: 'Defaults to Administrative.' },
+        priority: { type: 'string', enum: [...TASK_PRIORITIES], description: 'Defaults to Medium.' },
+        idempotency_key: { type: 'string', description: 'Optional. See create_note.' },
+      },
+      required: ['project', 'title'],
+    },
+  },
+  {
+    name: 'create_rfi',
+    description:
+      'Raise an RFI on a project, assigned to an internal Pathwaze user who is emailed and becomes ball-in-court. RFIs raised this way can only ever be assigned to colleagues — assigning to an external stakeholder is not possible through this connector, so nothing is ever emailed outside ESA.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        project: projectRef,
+        subject: { type: 'string', description: 'One-line summary of what is being asked.' },
+        question: { type: 'string', description: 'The full question with its specifics. Unlike a note or a task description this field is PLAIN TEXT — the RFI form in Pathwaze is a plain textarea and shows it exactly as written. Use line breaks and "- " bullets for structure; do not send HTML, and do not expect **bold** or links to render.' },
+        assignee: { type: 'string', description: 'Full name or email of the Pathwaze user who should answer (ball-in-court).' },
+        due_date: { type: 'string', description: 'Strict YYYY-MM-DD. Optional.' },
+        drawing_number: { type: 'string', description: 'Optional sheet reference, e.g. "E-101".' },
+        spec_section: { type: 'string', description: 'Optional spec section.' },
+        location: { type: 'string', description: 'Optional location on site.' },
+        cost_impact: { type: 'string', enum: ['yes', 'no', 'tbd'], description: 'Defaults to tbd.' },
+        schedule_impact: { type: 'string', enum: ['yes', 'no', 'tbd'], description: 'Defaults to tbd.' },
+        idempotency_key: { type: 'string', description: 'Optional. See create_note.' },
+      },
+      required: ['project', 'subject', 'question'],
+    },
   },
 ]
 
@@ -441,11 +523,229 @@ export const handlers: Record<string, Handler> = {
   },
 
   async whoami(s) {
+    const [me] = await get(s, 'users', {
+      select: 'timezone,timezone_label',
+      filters: [{ column: 'id', value: s.userId }],
+      limit: 1,
+    }).catch(() => [{}] as Row[])
     return {
       name: s.fullName,
       email: s.email,
       role: s.role,
+      timezone: me?.timezone || me?.timezone_label || null,
+      today: new Date().toISOString().slice(0, 10),
+      can_write: s.scopes.includes(MCP_WRITE_SCOPE),
       note: 'Every tool returns only what this Pathwaze role is permitted to see; the database enforces it.',
     }
   },
+
+  // ── Write tools ──────────────────────────────────────────────────────────
+
+  async create_note(s, { project, title, body, category, idempotency_key }) {
+    requireWriteScope(s)
+    const replay = await replayed(s, idempotency_key, 'project_notes')
+    if (replay) return replay
+
+    const p = await resolveProject(s, project, 'id,project_number,name')
+    const users = Object.values(await userMap(s))
+    const rich = toPathwazeHtml(String(body), users)
+
+    const note = await createNote(userClient(s), sessionUser(s), {
+      project_id: p.id,
+      title: title ? String(title).slice(0, 200) : null,
+      body: rich.html,
+      category: category ?? null,
+      created_via: 'mcp',
+    })
+
+    await remember(s, idempotency_key, 'create_note', 'project_notes', note.id)
+    return {
+      created: 'note',
+      id: note.id,
+      project: `${p.project_number || ''} ${p.name}`.trim(),
+      title: note.title,
+      url: appUrl(`/projects/${p.id}?tab=threads`),
+      ...mentionReport(rich),
+      preview: htmlToText(rich.html).slice(0, 400),
+    }
+  },
+
+  async create_task(s, { project, title, description, assignee, due_date, type, priority, idempotency_key }) {
+    requireWriteScope(s)
+    const replay = await replayed(s, idempotency_key, 'tasks')
+    if (replay) return replay
+
+    const p = await resolveProject(s, project, 'id,project_number,name')
+    const users = await userMap(s)
+    const assigneeUser = assignee ? resolveUser(users, String(assignee)) : null
+    const rich = description
+      ? toPathwazeHtml(String(description), Object.values(users))
+      : { html: null, mentionedNames: [], unresolved: [] as string[] }
+
+    const task = await createTask(userClient(s), sessionUser(s), {
+      project_id: p.id,
+      title: String(title).slice(0, 300),
+      description: rich.html,
+      assignee_id: assigneeUser?.id ?? null,
+      due_date: isoDate(due_date),
+      type: type ? String(type) : 'Administrative',
+      priority: priority ? String(priority) : 'Medium',
+      created_via: 'mcp',
+    })
+
+    await remember(s, idempotency_key, 'create_task', 'tasks', task.id)
+    return {
+      created: 'task',
+      id: task.id,
+      project: `${p.project_number || ''} ${p.name}`.trim(),
+      title: task.title,
+      status: task.status,
+      assigned_to: assigneeUser ? assigneeUser.full_name || assigneeUser.email : null,
+      due_date: task.due_date,
+      url: appUrl(`/tasks?id=${task.id}`),
+      ...mentionReport(rich),
+      note: 'Created as Draft, the first column on the board — same as a task created in the app.',
+    }
+  },
+
+  async create_rfi(s, args) {
+    requireWriteScope(s)
+    const replay = await replayed(s, args.idempotency_key, 'rfis')
+    if (replay) return replay
+
+    const p = await resolveProject(s, args.project, 'id,project_number,name')
+    const users = await userMap(s)
+    const assigneeUser = args.assignee ? resolveUser(users, String(args.assignee)) : null
+    // Plain text, not HTML: the RFI question is a bare textarea in the app and
+    // is printed with whitespace-pre-wrap, so tags would be visible on the page.
+    const question = toPlainText(String(args.question))
+
+    const client = userClient(s)
+    // next_rfi_number is max()+1 with no lock, and (project_id, rfi_number) is
+    // unique — so a human creating an RFI at the same moment collides. Retry
+    // rather than surfacing a bare "Failed to create RFI".
+    let rfi = null
+    let lastErr = ''
+    for (let attempt = 0; attempt < 4 && !rfi; attempt++) {
+      try {
+        rfi = await createRfiFromFinding(client, s.userId, {
+          project_id: p.id,
+          subject: String(args.subject).slice(0, 300),
+          question,
+          status: 'open',
+          ball_in_court_user_id: assigneeUser?.id ?? null,
+          // Hard-nulled, never taken from the caller: these are the only two
+          // columns that can route an RFI email outside ESA, and the database
+          // rejects the row if a connector-created RFI carries either
+          // (migration 075, rfis_mcp_no_external_recipients).
+          ball_in_court_stakeholder_id: null,
+          received_from_stakeholder_id: null,
+          due_date: isoDate(args.due_date),
+          drawing_number: args.drawing_number ?? null,
+          spec_section: args.spec_section ?? null,
+          location: args.location ?? null,
+          cost_impact: args.cost_impact ?? 'tbd',
+          schedule_impact: args.schedule_impact ?? 'tbd',
+          created_via: 'mcp',
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        } as any)
+      } catch (e) {
+        lastErr = e instanceof Error ? e.message : String(e)
+        if (!/duplicate key|23505/i.test(lastErr)) throw e
+      }
+    }
+    if (!rfi) throw new Error(`Could not allocate an RFI number after several attempts. ${lastErr}`)
+
+    await remember(s, args.idempotency_key, 'create_rfi', 'rfis', rfi.id)
+    return {
+      created: 'rfi',
+      id: rfi.id,
+      rfi_number: rfi.rfi_number,
+      project: `${p.project_number || ''} ${p.name}`.trim(),
+      subject: rfi.subject,
+      status: rfi.status,
+      ball_in_court: assigneeUser ? assigneeUser.full_name || assigneeUser.email : null,
+      due_date: rfi.due_date,
+      url: appUrl(`/rfis/${rfi.id}`),
+      notified: assigneeUser ? [assigneeUser.full_name || assigneeUser.email] : [],
+      note: 'The question is stored as plain text, the way the RFI form stores it. '
+        + 'An @name in it does not notify anyone — the ball-in-court assignment does.',
+    }
+  },
+}
+
+// ---------------------------------------------------------------- write utils
+
+/**
+ * Resolve "James Wright" / an email to a user, the way resolveProject behaves.
+ *
+ * Disabled accounts are excluded: assigning work to one emails a dead address,
+ * and the database carries at least one disabled duplicate of an active
+ * person's name — which would otherwise make that name permanently ambiguous.
+ */
+function resolveUser(users: Record<string, Row>, ref: string): Row {
+  const q = ref.trim().toLowerCase()
+  const all = Object.values(users).filter((u) => !u.status || u.status === 'active')
+
+  const exact = all.filter((u) => u.full_name?.toLowerCase() === q || u.email?.toLowerCase() === q)
+  if (exact.length === 1) return exact[0]
+
+  const pool = exact.length > 1 ? exact : all.filter(
+    (u) => u.full_name?.toLowerCase().includes(q) || u.email?.toLowerCase().startsWith(q)
+  )
+
+  if (pool.length === 1) return pool[0]
+  if (pool.length > 1) {
+    // Show emails — two people can share a name, and a bare list of identical
+    // names tells the caller nothing.
+    const who = pool.map((u) => `${u.full_name || 'unnamed'} <${u.email}>`).join(', ')
+    throw new Error(`"${ref}" matches ${pool.length} people: ${who}. Use the email address.`)
+  }
+
+  const disabled = Object.values(users).find(
+    (u) => u.full_name?.toLowerCase() === q || u.email?.toLowerCase() === q
+  )
+  if (disabled) {
+    throw new Error(`"${ref}" is a disabled Pathwaze account and cannot be assigned work.`)
+  }
+  throw new Error(`No active Pathwaze user matches "${ref}". Use list_users to see who is available.`)
+}
+
+/** Dates must be unambiguous — the model resolves "next Friday", not the server. */
+function isoDate(v: unknown): string | null {
+  if (!v) return null
+  const s = String(v).trim()
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+    throw new Error(`Due date must be YYYY-MM-DD; got "${s}". Resolve relative dates before calling.`)
+  }
+  return s
+}
+
+function mentionReport(rich: { mentionedNames: string[]; unresolved: string[] }) {
+  const out: Record<string, unknown> = {}
+  if (rich.mentionedNames.length) out.notified = rich.mentionedNames
+  if (rich.unresolved.length) {
+    out.unrecognised_mentions = rich.unresolved
+    out.unrecognised_note = 'Left as plain text — these matched no Pathwaze user, so nobody was notified.'
+  }
+  return out
+}
+
+/** If this idempotency key was already used, return the original record. */
+async function replayed(s: McpSession, key: unknown, table: string) {
+  if (!key) return null
+  const prior = await lookupIdempotency(s.userId, String(key))
+  if (!prior) return null
+  const [row] = await get(s, table, {
+    filters: [{ column: 'id', value: prior.entity_id }],
+    limit: 1,
+  })
+  return { replayed: true, reason: 'This idempotency key was already used; returning the original record.', record: row ?? prior }
+}
+
+async function remember(s: McpSession, key: unknown, tool: string, table: string, id: string) {
+  if (!key) return
+  await recordIdempotency(s.userId, String(key), tool, table, id).catch((e) =>
+    console.error('[mcp] idempotency record failed:', e)
+  )
 }
