@@ -41,6 +41,7 @@ import {
 import { BAND_COLOR, BAND_LABEL, momentumSummary } from '@/lib/momentum'
 import { RISK_BAND_COLOR, RISK_BAND_LABEL } from '@/lib/risk'
 import { MomentumChart } from './MomentumChart'
+import { QuadrantChart } from './QuadrantChart'
 import { CommentThread } from './CommentThread'
 
 const LANE_HUE: Record<string, string> = {
@@ -67,12 +68,18 @@ type EditKey = string
 interface PendingEdit { kind: 'project' | 'milestone'; id: string; field: string; value: string }
 
 export function PriorityBoard({
-  rows, view, manual, heldCount, riskScored, people, currentUserId,
+  rows, heldRows, view, manual, heldCount, riskScored, people, currentUserId,
 }: {
   rows: PriorityRow[]
+  /**
+   * Held projects, kept apart from `rows` so every existing surface keeps rule
+   * 2. Only the Quadrant plots them — it is the one view whose question is
+   * parked-versus-moving.
+   */
+  heldRows: PriorityRow[]
   people: { id: string; name: string; avatarUrl: string | null }[]
   currentUserId: string
-  view: 'table' | 'graph' | 'gantt'
+  view: 'table' | 'graph' | 'gantt' | 'quadrant'
   manual: boolean
   heldCount: number
   /** how many projects already carry a cached risk score */
@@ -117,6 +124,11 @@ export function PriorityBoard({
       : byDimension
   }, [list, filters, focusOnly])
   const groups = useMemo(() => groupRows(filtered, groupBy), [filtered, groupBy])
+  // Held rows take the dimension filters so the quadrant narrows with the rest
+  // of the page, but never "focus only" — a paused project has nothing marked
+  // for this week, and filtering on that would empty the parked cell the view
+  // exists to show.
+  const filteredHeld = useMemo(() => filterRows(heldRows, filters), [heldRows, filters])
   const filtersOn = filters.workstream !== 'all' || filters.pm !== 'all'
     || filters.tranche !== 'all' || focusOnly
 
@@ -335,11 +347,11 @@ export function PriorityBoard({
           </p>
         </div>
         <div className="flex items-center gap-1 bg-white border border-[#D6DEE7] rounded-lg p-1">
-          {(['table', 'graph', 'gantt'] as const).map(v => (
+          {(['table', 'graph', 'gantt', 'quadrant'] as const).map(v => (
             <Link key={v} href={withParam('view', v)}
                   className={'px-3 py-1.5 rounded-md text-[12.5px] font-semibold transition-colors ' +
                     (view === v ? 'bg-[#2F3E50] text-white' : 'text-[#55677A] hover:bg-[#f8fafc]')}>
-              {v === 'table' ? 'Table' : v === 'graph' ? 'Graph' : 'Gantt'}
+              {v === 'table' ? 'Table' : v === 'graph' ? 'Graph' : v === 'gantt' ? 'Gantt' : 'Quadrant'}
             </Link>
           ))}
         </div>
@@ -453,12 +465,14 @@ export function PriorityBoard({
         </p>
       )}
 
-      {filtered.length === 0 ? (
+      {filtered.length === 0 && (view !== 'quadrant' || filteredHeld.length === 0) ? (
         <div className="bg-white rounded-xl border border-[#e2e8f0] px-6 py-14 text-center">
           <p className="m-0 text-[13.5px] text-[#3E3E3C]">
             {list.length === 0 ? 'No active projects. Everything is on hold or archived.' : 'Nothing matches those filters.'}
           </p>
         </div>
+      ) : view === 'quadrant' ? (
+        <QuadrantChart rows={[...filtered, ...filteredHeld]} />
       ) : view === 'graph' ? (
         <MomentumChart rows={filtered} expandable />
       ) : view === 'gantt' ? (
@@ -482,6 +496,8 @@ export function PriorityBoard({
       <p className="mt-3 mb-0 mx-0.5 text-[11.5px] text-[#9AA7B4]">
         {view === 'table'
           ? 'Drag a row by its handle to set the order the team works this week. Click a pencil to edit a field; nothing saves until you press Save.'
+          : view === 'quadrant'
+          ? 'Held projects appear here and nowhere else on this page. Click a dot, or a counted badge, for what produced its scores.'
           : 'Same rows, same order as the table. Hover a marker for its milestone and date.'}
       </p>
 

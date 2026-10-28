@@ -1,0 +1,373 @@
+'use client'
+
+// The portfolio as four states, not one ranking.
+//
+// The Graph view ranks projects by momentum, which answers "who is stuck" but
+// flattens two different kinds of stuck into the same short bar: a site nobody
+// has touched this month, and a site that was deliberately parked. This view
+// separates them, by plotting momentum against how far the plan has actually
+// got.
+//
+// FORM. A classifier, not a distribution. The four cells are named states and a
+// project landing in one is the answer; points clustering inside a cell is the
+// portfolio agreeing with itself, not the chart failing to spread. That is why
+// the vertical axis is labelled with band names rather than a bare scale — it
+// should not imply a precision it does not have (see advancement.ts rule 1).
+//
+// COLOUR. Two fills and one ring. Position already carries both scores, so
+// colour only has to answer "is this live or parked", and the ring only
+// "is something blocked". Blocked is a MARKER rather than a position on
+// purpose: a project can be genuinely advancing and genuinely stuck at the same
+// time, and moving it down the axis would hide the first half of that.
+
+import { useState, useMemo } from 'react'
+import Link from 'next/link'
+import { X } from 'lucide-react'
+import { WINDOW_DAYS, momentumSummary, type Momentum } from '@/lib/momentum'
+import {
+  ADVANCEMENT_LABEL, advancementSummary, type Advancement,
+} from '@/lib/advancement'
+import type { PriorityRow } from '@/lib/portfolio-priority'
+
+const PLOT_H = 560
+const LABEL_W = 76
+
+const DOT_FILL = { active: '#2F3E50', held: '#8095A8' } as const
+
+/** The four named states, placed by their corner. */
+const CELLS = [
+  { key: 'stalled',    label: 'STALLED',    style: 'left-3 top-3' },
+  { key: 'advancing',  label: 'ADVANCING',  style: 'right-3 top-3' },
+  { key: 'parked',     label: 'PARKED',     style: 'left-3 bottom-3' },
+  { key: 'mobilizing', label: 'MOBILIZING', style: 'right-3 bottom-3' },
+] as const
+
+/** A row that actually has both scores — everything below assumes it. */
+type Plotted = PriorityRow & { momentum: Momentum; advancement: Advancement }
+
+interface Point {
+  /** project id, or a synthetic id when several share the spot */
+  key: string
+  x: number
+  y: number
+  rows: Plotted[]
+  blocked: number
+  held: boolean
+}
+
+/**
+ * Strip the prefix every project shares.
+ *
+ * Nineteen names all starting "AdventHealth " is 13 characters of nothing on
+ * every label, and at this density the labels are most of the chart. Computed
+ * from the data rather than hardcoded, so a second customer does not quietly
+ * get the first one's prefix removed.
+ */
+function shortNames(rows: Plotted[]): Map<string, string> {
+  const split = rows.map(r => r.name.trim().split(/\s+/))
+  let shared = 0
+  if (split.length > 1) {
+    const first = split[0]
+    while (shared < first.length - 1
+      && split.every(w => w.length > shared + 1 && w[shared] === first[shared])) shared++
+  }
+  return new Map(rows.map((r, i) => [r.projectId, split[i].slice(shared).join(' ')]))
+}
+
+/**
+ * Collapse points that land on top of each other.
+ *
+ * Held projects that never started all score zero advancement and near-zero
+ * momentum, so they pile onto one spot. Nine individually-labelled dots on one
+ * coordinate is unreadable; one counted badge that opens is not. The bucket is
+ * coarse on purpose — close enough to overlap IS close enough to group.
+ */
+function cluster(rows: Plotted[]): Point[] {
+  const buckets = new Map<string, Plotted[]>()
+  for (const r of rows) {
+    const k = `${Math.round(r.momentum.score / 7)}:${Math.round(r.advancement.score / 7)}`
+    const b = buckets.get(k)
+    if (b) b.push(r)
+    else buckets.set(k, [r])
+  }
+
+  return Array.from(buckets.values()).map(group => {
+    const n = group.length
+    return {
+      key: n === 1 ? group[0].projectId : `g:${group.map(r => r.projectId).join(',')}`,
+      // The group sits at its own centre rather than at one member's spot, so
+      // the badge does not claim a position no project actually holds.
+      x: group.reduce((s, r) => s + r.momentum.score, 0) / n,
+      y: group.reduce((s, r) => s + r.advancement.score, 0) / n,
+      rows: group,
+      blocked: group.reduce((s, r) => s + blockedCount(r), 0),
+      held: group.every(r => r.held),
+    }
+  })
+}
+
+function blockedCount(r: PriorityRow): number {
+  return r.cardMilestones.filter(c => c.milestone.status === 'blocked').length
+}
+
+export function QuadrantChart({ rows }: { rows: PriorityRow[] }) {
+  const [openKey, setOpenKey] = useState<string | null>(null)
+
+  const plotted = useMemo(
+    () => rows.filter((r): r is Plotted => !!r.momentum && !!r.advancement),
+    [rows])
+  const points = useMemo(() => cluster(plotted), [plotted])
+  const names = useMemo(() => shortNames(plotted), [plotted])
+
+  if (plotted.length === 0) return null
+
+  const open = points.find(p => p.key === openKey) ?? null
+  const heldCount = plotted.filter(r => r.held).length
+
+  return (
+    <section className="bg-white rounded-xl border border-[#e2e8f0] px-7 pt-6 pb-6">
+      <div className="flex flex-wrap gap-7 items-start">
+
+        {/* ── plot column ── */}
+        <div className="flex flex-col min-w-0 flex-1">
+
+          {/* Both axes are named flat. A rotated label costs a whole column of
+              width and makes the one piece of orienting text the hardest thing
+              on the page to read. */}
+          <div className="flex items-baseline gap-2 mb-2" style={{ paddingLeft: LABEL_W + 8 }}>
+            <span className="text-[10.5px] font-bold tracking-[0.09em] text-[#55677A]">↑ ADVANCEMENT</span>
+            <span className="text-[10.5px] text-[#55677A]">how far the plan has got</span>
+          </div>
+
+          <div className="flex gap-2">
+            {/* band names, one line each */}
+            <div className="relative shrink-0" style={{ width: LABEL_W, height: PLOT_H }}>
+              <span className="absolute right-0 text-[10px] font-semibold text-[#55677A]" style={{ bottom: '76%' }}>
+                {ADVANCEMENT_LABEL.active}
+              </span>
+              <span className="absolute right-0 text-[10px] font-semibold text-[#8A6519]" style={{ bottom: '36%' }}>
+                {ADVANCEMENT_LABEL.held_started}
+              </span>
+              <span className="absolute right-0 text-[10px] font-semibold text-[#55677A]" style={{ bottom: '1%' }}>
+                {ADVANCEMENT_LABEL.not_started}
+              </span>
+            </div>
+
+            <div className="relative flex-1 min-w-[420px] bg-[#FAFBFC] border border-[#D6DEE7] box-border"
+                 style={{ height: PLOT_H }}>
+
+              {/* the held-with-progress band */}
+              <div className="absolute left-0 right-0 bg-[#FDF8EC]" style={{ bottom: '25%', height: '25%' }} />
+
+              {/* quadrant dividers */}
+              <div className="absolute left-0 right-0 h-px bg-[#B9C6D2]" style={{ bottom: '50%' }} />
+              <div className="absolute top-0 bottom-0 w-px bg-[#B9C6D2]" style={{ left: '50%' }} />
+
+              {CELLS.map(c => (
+                <span key={c.key}
+                      className={'absolute text-[10px] font-bold tracking-[0.09em] text-[#55677A] ' + c.style}>
+                  {c.label}
+                </span>
+              ))}
+
+              {points.map(p => {
+                const many = p.rows.length > 1
+                const label = many ? `${p.rows.length} parked` : names.get(p.rows[0].projectId) ?? p.rows[0].name
+                const isOpen = p.key === openKey
+                return (
+                  <div key={p.key}>
+                    {/* Label above the dot, centred. Above rather than beside
+                        because the x spread is what separates these points —
+                        side labels would run into the next dot along. */}
+                    {/* Truncated, because the shared-prefix strip only fires
+                        when EVERY project shares one — a portfolio split across
+                        two customers keeps its full names, and one of those is
+                        wide enough to cross the chart on its own. */}
+                    <span className="absolute flex items-baseline gap-1 whitespace-nowrap pointer-events-none"
+                          style={{ left: `${p.x}%`, bottom: `calc(${p.y}% + 14px)`, transform: 'translateX(-50%)' }}
+                          title={many ? undefined : p.rows[0].name}>
+                      <span className="inline-block max-w-[150px] overflow-hidden text-ellipsis text-[11.5px] font-semibold text-[#181818]">
+                        {label}
+                      </span>
+                      {p.blocked > 0 && <span className="text-[11.5px] font-bold text-[#B91C1C]">{p.blocked}</span>}
+                    </span>
+
+                    {many ? (
+                      <button
+                        type="button"
+                        onClick={() => setOpenKey(isOpen ? null : p.key)}
+                        aria-label={`${p.rows.length} projects at this point — open the list`}
+                        className="absolute inline-flex items-center justify-center w-[26px] h-[26px] rounded-full border-[1.5px] border-dashed border-[#8095A8] bg-white text-[11px] font-bold text-[#3E3E3C] hover:bg-[#F7F9FA]"
+                        style={{ left: `${p.x}%`, bottom: `${p.y}%`, transform: 'translate(-50%, 50%)' }}
+                      >
+                        {p.rows.length}
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setOpenKey(isOpen ? null : p.key)}
+                        aria-label={`${p.rows[0].name} — momentum ${Math.round(p.x)}, advancement ${Math.round(p.y)}${p.blocked ? `, ${p.blocked} blocked` : ''}`}
+                        className="absolute w-[15px] h-[15px] p-0 border-0 rounded-full cursor-pointer"
+                        style={{
+                          left: `${p.x}%`,
+                          bottom: `${p.y}%`,
+                          transform: 'translate(-50%, 50%)',
+                          background: p.held ? DOT_FILL.held : DOT_FILL.active,
+                          // The ring reads as an alarm around the dot without
+                          // changing where the dot is.
+                          boxShadow: p.blocked > 0
+                            ? '0 0 0 2.5px #FFFFFF, 0 0 0 5.5px #B91C1C'
+                            : isOpen ? '0 0 0 2.5px #FFFFFF, 0 0 0 5.5px #C8963A' : undefined,
+                        }}
+                      />
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+
+          {/* horizontal axis: ticks, then its name, both flat */}
+          <div className="flex justify-between pt-1.5" style={{ marginLeft: LABEL_W + 8 }}>
+            {[0, 25, 50, 75, 100].map(t => (
+              <span key={t} className="text-[9.5px] tabular-nums text-[#55677A]">{t}</span>
+            ))}
+          </div>
+          <div className="flex items-baseline gap-2 pt-1" style={{ marginLeft: LABEL_W + 8 }}>
+            <span className="text-[10.5px] font-bold tracking-[0.09em] text-[#55677A]">MOMENTUM →</span>
+            <span className="text-[10.5px] text-[#55677A]">activity, last {WINDOW_DAYS} days</span>
+          </div>
+        </div>
+
+        {/* ── detail rail ── */}
+        <div className="w-[286px] shrink-0 bg-[#FAFBFC] border border-[#EDF1F5] rounded-[10px] p-[17px] box-border">
+          {open === null ? (
+            <p className="m-0 text-[12px] leading-[1.6] text-[#55677A]">
+              Select a project to see what produced its scores.
+            </p>
+          ) : open.rows.length > 1 ? (
+            <ClusterDetail point={open} names={names} onClose={() => setOpenKey(null)} />
+          ) : (
+            <ProjectDetail row={open.rows[0]} onClose={() => setOpenKey(null)} />
+          )}
+        </div>
+      </div>
+
+      {/* legend — colour never travels without its label */}
+      <div className="flex flex-wrap items-center gap-[18px] mt-5 pt-3.5 border-t border-[#F4F6F8]">
+        <span className="inline-flex items-center gap-[7px] text-[11px] text-[#3E3E3C]">
+          <i className="block w-[11px] h-[11px] rounded-full" style={{ background: DOT_FILL.active }} />
+          Active
+        </span>
+        <span className="inline-flex items-center gap-[7px] text-[11px] text-[#3E3E3C]">
+          <i className="block w-[11px] h-[11px] rounded-full" style={{ background: DOT_FILL.held }} />
+          Held
+        </span>
+        <span className="inline-flex items-center gap-[11px] text-[11px] text-[#3E3E3C]">
+          <i className="block w-[11px] h-[11px] rounded-full"
+             style={{ background: DOT_FILL.active, boxShadow: '0 0 0 2px #FFFFFF, 0 0 0 3.5px #B91C1C' }} />
+          Blocked milestones, with the count
+        </span>
+        <span className="ml-auto text-[10.5px] text-[#55677A]">
+          Archived never plotted · {heldCount} held, shown here only
+        </span>
+      </div>
+    </section>
+  )
+}
+
+/**
+ * What produced one project's two scores.
+ *
+ * The momentum half is the same component breakdown the Graph view opens, so a
+ * number means the same thing wherever you click it.
+ */
+function ProjectDetail({ row, onClose }: { row: Plotted; onClose: () => void }) {
+  const blocked = blockedCount(row)
+  return (
+    <div>
+      <div className="flex items-baseline justify-between gap-2.5">
+        <h3 className="m-0 text-[14px] font-bold text-[#181818]">{row.name}</h3>
+        <button type="button" onClick={onClose} aria-label="Clear selection"
+                className="border-0 bg-transparent text-[#55677A] cursor-pointer p-0 px-0.5">
+          <X size={13} />
+        </button>
+      </div>
+      <p className="mt-0.5 mb-3 text-[11px] text-[#55677A]">
+        {row.held ? 'On Hold' : row.stage}
+      </p>
+
+      <div className="flex gap-2 mb-3">
+        <div className="flex-1 bg-white border border-[#EDF1F5] rounded-[7px] px-2.5 py-2">
+          <p className="m-0 text-[9.5px] font-bold tracking-[0.07em] text-[#55677A]">MOMENTUM</p>
+          <p className="m-0 mt-0.5 text-[19px] font-bold tabular-nums text-[#181818]">{row.momentum.score}</p>
+        </div>
+        <div className="flex-1 bg-white border border-[#EDF1F5] rounded-[7px] px-2.5 py-2">
+          <p className="m-0 text-[9.5px] font-bold tracking-[0.07em] text-[#55677A]">ADVANCEMENT</p>
+          <p className="m-0 mt-0.5 text-[19px] font-bold tabular-nums text-[#181818]">{row.advancement.score}</p>
+        </div>
+      </div>
+
+      <p className="m-0 mb-2.5 text-[11.5px] leading-[1.5] text-[#3E3E3C]">
+        {advancementSummary(row.advancement)}
+      </p>
+
+      {row.momentum.components.length > 0 ? (
+        <table className="w-full border-collapse mb-2.5">
+          <tbody>
+            {row.momentum.components.map(c => (
+              <tr key={c.label}>
+                <td className="py-[3px] text-[11.5px] text-[#3E3E3C]">{c.label}</td>
+                <td className="py-[3px] text-[11.5px] tabular-nums text-[#55677A] text-right w-[40px]">{c.count}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      ) : (
+        <p className="m-0 mb-2.5 text-[11.5px] leading-[1.5] text-[#706E6B]">{momentumSummary(row.momentum)}</p>
+      )}
+
+      {blocked > 0 && (
+        <p className="m-0 mb-2.5 px-2.5 py-2 rounded-md bg-[#FEF2F2] text-[#991B1B] text-[11.5px] leading-[1.5]">
+          {blocked} blocked {blocked === 1 ? 'milestone' : 'milestones'} — moving nothing until they clear.
+        </p>
+      )}
+
+      <Link href={`/projects/${row.projectId}`} className="inline-block text-[11.5px] font-semibold text-[#2F3E50] hover:text-[#C8963A]">
+        Open project →
+      </Link>
+    </div>
+  )
+}
+
+/** The projects sharing one spot, named rather than counted. */
+function ClusterDetail({
+  point, names, onClose,
+}: {
+  point: Point
+  names: Map<string, string>
+  onClose: () => void
+}) {
+  return (
+    <div>
+      <div className="flex items-baseline justify-between gap-2.5">
+        <h3 className="m-0 text-[12.5px] font-bold text-[#181818]">
+          {point.rows.length} projects here
+        </h3>
+        <button type="button" onClick={onClose} aria-label="Close the list"
+                className="border-0 bg-transparent text-[#55677A] cursor-pointer p-0 px-0.5">
+          <X size={13} />
+        </button>
+      </div>
+      <p className="mt-0.5 mb-2.5 text-[10.5px] text-[#55677A]">
+        {ADVANCEMENT_LABEL[point.rows[0].advancement.band]} · momentum {Math.round(point.x)}
+      </p>
+      {point.rows.map(r => (
+        <Link key={r.projectId} href={`/projects/${r.projectId}`}
+              className="block mb-1 text-[11.5px] text-[#3E3E3C] hover:text-[#C8963A]">
+          {names.get(r.projectId) ?? r.name}
+        </Link>
+      ))}
+    </div>
+  )
+}

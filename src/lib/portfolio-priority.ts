@@ -28,6 +28,7 @@ import {
   type WorkstreamKey, type ScheduleHealth,
 } from './workstreams'
 import type { Momentum } from './momentum'
+import { scoreAdvancement, type Advancement } from './advancement'
 import type { RiskBand } from './risk'
 
 /**
@@ -128,8 +129,16 @@ export interface PriorityRow {
   /** the project's whole plan, flattened, for the expanded card */
   cardMilestones: CardMilestone[]
 
+  /**
+   * `projects.on_hold_at` is set. Only ever true on a row built with
+   * `includeHeld` — see rule 2 and buildRows.
+   */
+  held: boolean
+
   // ── scores ──
   momentum: Momentum | null
+  /** how far the plan has got; the quadrant's vertical axis */
+  advancement: Advancement | null
   /** last cached LLM judgement; null until the project has been scored */
   risk: ProjectRisk | null
 }
@@ -261,11 +270,23 @@ export function buildRows(
   focusIds: Set<string> = new Set(),
   /** milestone_id -> comment count */
   commentCounts: Map<string, number> = new Map(),
+  /**
+   * Build rows for held projects too, each flagged `held`.
+   *
+   * Off by default, because rule 2 is still the rule for every list on this
+   * board. The quadrant is the one surface whose entire job is parked-versus-
+   * moving, and a view that exists to show what is paused cannot be fed a row
+   * set that excludes it. Callers that opt in are expected to keep held rows
+   * out of the orderable list — see the health page, which partitions on
+   * `held` immediately.
+   */
+  includeHeld = false,
 ): PriorityRow[] {
   const rows: PriorityRow[] = []
 
   for (const p of projects) {
-    if (p.on_hold_at) continue   // rule 2 — held projects are not on this board
+    const held = !!p.on_hold_at
+    if (held && !includeHeld) continue   // rule 2 — held projects are not on this board
 
     const all = milestonesByProject.get(p.id) ?? []
     const state = stateByProject.get(p.id) ?? []
@@ -287,7 +308,7 @@ export function buildRows(
     let variance: number | null = null
     if (phase) {
       const rollup: MajorRollup = rollUpMajor(
-        phase, all, undefined, completedByKey.get(phase.key) ?? null, false)
+        phase, all, undefined, completedByKey.get(phase.key) ?? null, held)
       health = rollup.health
       variance = rollup.variance
     }
@@ -300,7 +321,7 @@ export function buildRows(
       for (const def of defs.filter(d => d.workstream === ws).sort((a, b) => a.sort_order - b.sort_order)) {
         const mine = all.filter(m => m.major_key === def.key)
         if (!mine.length) continue
-        const rollup = rollUpMajor(def, all, undefined, completedByKey.get(def.key) ?? null, false)
+        const rollup = rollUpMajor(def, all, undefined, completedByKey.get(def.key) ?? null, held)
         groups.push({
           majorKey: def.key,
           majorLabel: def.label,
@@ -351,7 +372,9 @@ export function buildRows(
           comments: commentCounts.get(m.id) ?? 0,
         })))
         .sort(byDueDate),
+      held,
       momentum: momentumByProject.get(p.id) ?? null,
+      advancement: scoreAdvancement(all, held),
       risk: riskByProject.get(p.id) ?? null,
     })
   }

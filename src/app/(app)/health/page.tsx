@@ -38,8 +38,8 @@ export default async function HealthPage({
   const sp = await searchParams
   // Whitelist rather than a chain of ternaries: the previous form silently
   // dropped 'graph' back to 'table', so the tab rendered as a no-op.
-  const view = (['table', 'graph', 'gantt'] as const).includes(sp.view as never)
-    ? (sp.view as 'table' | 'graph' | 'gantt')
+  const view = (['table', 'graph', 'gantt', 'quadrant'] as const).includes(sp.view as never)
+    ? (sp.view as 'table' | 'graph' | 'gantt' | 'quadrant')
     : 'table'
 
   // ── Portfolio fetch ────────────────────────────────────────────────
@@ -216,22 +216,28 @@ export default async function HealthPage({
   // reason the ranks live in their own table rather than a nullable column.
   const manual = ranks.size > 0
 
-  const rows = orderRows(
-    buildRows(
-      (projects ?? []) as Parameters<typeof buildRows>[0],
-      (wsDefs ?? []) as MajorDef[],
-      milestonesByProject as Map<string, Milestone[]>,
-      stateByProject,
-      ranks,
-      pmNames,
-      momentumByProject,
-      riskByProject,
-      teamsByMilestone,
-      focusIds,
-      commentCounts,
-    ),
-    manual,
+  // Built once WITH held projects, then split. Only the Quadrant plots the held
+  // ones; every other view on this page takes `rows`, which still means "active
+  // projects" exactly as it always did (portfolio-priority rule 2).
+  const allRows = buildRows(
+    (projects ?? []) as Parameters<typeof buildRows>[0],
+    (wsDefs ?? []) as MajorDef[],
+    milestonesByProject as Map<string, Milestone[]>,
+    stateByProject,
+    ranks,
+    pmNames,
+    momentumByProject,
+    riskByProject,
+    teamsByMilestone,
+    focusIds,
+    commentCounts,
+    true,
   )
+
+  const rows = orderRows(allRows.filter(r => !r.held), manual)
+  // Name order, not urgency: a paused project has no schedule opinion, so
+  // ranking them by one would be inventing a priority nobody set.
+  const heldRows = allRows.filter(r => r.held).sort((a, b) => a.name.localeCompare(b.name))
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const people = ((users ?? []) as any[]).map(u => ({
@@ -244,6 +250,7 @@ export default async function HealthPage({
   return (
     <PriorityBoard
       rows={rows}
+      heldRows={heldRows}
       people={people}
       view={view}
       manual={manual}
