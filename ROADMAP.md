@@ -42,7 +42,7 @@ for a cycle and the punchlist from real use is clear. W-1…W-3 carry over.
 | **W-0b** | **Stage taxonomy + On Hold** — ✅ **done** (migration 062) | **S** | Eleven lifecycle values (Pre-Planning → Operation, plus On Hold and Archived), now sourced from **`src/lib/stages.ts`** instead of five hardcoded lists that had drifted apart. Archiving still rides on `stage = 'Archived'`. Fixed three paths that were still writing the pre-018 value `'Prospecting'`. ⚠️ The taxonomy has no post-Operation stage; if projects are ever tracked past that, it needs one. |
 | **W-1** | **Reply-from-threads** | M | Outbound replies composed in the Threads tab go back out via email or Slack so conversations continue in-app. Requires adding delegated **`Mail.Send`** to the "Pathwaze Mail" Azure app (today's grant is read-only) — a new tenant admin-consent step. Builds directly on the shipped Outlook→Threads sync. |
 | **W-2** | **Design drift / baseline comparison on Systems** | M | `design_rev` (migration 052) already stamps *that* a system changed and when. This is the other half: retain the prior revision's values so you can see *what* changed between revs — design version history on the Technical tab. |
-| **W-3** | **ClaudeCode → `#Pathwaze_bugs` Slack automation** | M | Route team feature requests / bug reports from Claude Code into the `#Pathwaze_bugs` channel for triage, so intake stops living in ad-hoc sessions. |
+| **W-3** | **`#Pathwaze_bugs` → Claude on-call triage loop** | M | **Re-scoped 2026-10-05.** Originally written as outbound (Claude Code → Slack); the direction that actually matters is **inbound**, and Claude's on-call feature now covers it. Claude watches `#Pathwaze_bugs`, triages every report in-thread, DMs Morgan for approval, opens a **draft PR** per fix, and posts back to the reporter when it ships. Design decisions: **no bug tracker** — the Slack thread is the report and the PR is the queue (an issue is opened only for approved-but-deferred work); **two gates** for P1–P3 (approve the fix by DM, then merge the PR), **one gate** for P4/P5 polish, which goes straight to a draft PR; **never push to `main`**, since `main` auto-deploys. The reporter gets three messages — received, approved, shipped. Channel instructions live in `docs/ONCALL.md`. Shipped alongside: `.github/workflows/ci.yml` (lint + `tsc --noEmit` on every PR, plus a migration flag), since with no tracker the PR is the only gate. ⚠️ Open gap: a GitHub merge is not a Slack event, so the "shipped" reply is fired by the daily digest run rather than on merge — latency up to 24h. An on-merge Action posting to the thread would close it. |
 
 ---
 
@@ -86,6 +86,24 @@ for a cycle and the punchlist from real use is clear. W-1…W-3 carry over.
 | # | Item | Notes |
 |---|------|-------|
 | **P-1** | **Graph webhooks instead of delta polling** | The Outlook email sync currently polls via a daily Vercel cron. Microsoft Graph change notifications (webhooks) would make ingestion near-real-time and drop the cron dependency. Deliberately deferred at scoping time; revisit when polling latency actually bites. |
+
+---
+
+## 🐞 Open bugs from `#pathwaze_bugs`
+
+Reported in Slack, **no `CHANGELOG.md` entry** — verified open on 2026-10-05 by
+reconciling the full channel history against the changelog. Each needs a
+go/no-go before any fix starts (B-1…B-4 are P1–P3; B-5 and B-6 are low-risk and
+can go straight to a draft PR under the W-3 rules).
+
+| # | Bug | Sev | Reported | Notes |
+|---|-----|-----|----------|-------|
+| **B-1** | **As-built review comments overwritten** | **P1** | Morgan Ruston, 2026-07-17 | Two drawing sets uploaded to the same Area with the same trade overwrite each other's comments — e.g. two vintages of electrical on "Main Hospital". **Silent data loss on work already done**, and the oldest open item here. Reporter's own workaround was more specific Area names; they explicitly asked for no overrides instead. Warn anyone heading into this until it's fixed. |
+| **B-2** | **Outlook sync unconfirmed** | **P2** | Morgan Ruston, 2026-09-08 | "Email isn't syncing", reported *after* the 2026-08-27 connection fix. Never confirmed either way. Could be the same root cause returning, a per-mailbox token issue, or the daily cron — needs a look at the sync job before it's called a bug. |
+| **B-3** | **"Add Note" truncates past ~40 words** | **P3** | Morgan Ruston, 2026-07-16 | Note posts, but the body is cut off and can't be expanded afterwards, so longer notes are effectively lost. Note that notes-on-project-tab visibility was fixed 2026-08-26 — this is a *different* defect on the same feature and was not covered by it. |
+| **B-4** | **"Add File" attachments aren't clickable** | **P3** | Morgan Ruston, 2026-07-17 | A file attached via "Add File" inside a project doesn't save as a clickable or downloadable link, so the upload succeeds but the file can't be retrieved. |
+| **B-5** | **`&nbsp;` rendered literally in text fields** | P4 | Dave Click, 2026-09-08 | The 2026-08-26 fix covered task-assignment **emails** only. This is the in-app surface and is still open. |
+| **B-6** | **Slack ↔ Pathwaze linking** | P4 | Morgan Ruston 2026-07-07; Isabella De La Rosa 2026-07-15; Dave Click 2026-10-02 | Three separate reports: messages don't auto-link to a project (people type `/pathwaze project <name>`, which was never the intent), sending through the linking feature has errored, and `@`-mentions don't always render on the Slack side. Probably one underlying integration issue rather than three. |
 
 ---
 

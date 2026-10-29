@@ -1,0 +1,78 @@
+name: CI
+
+# Gate on every pull request into main. `main` auto-deploys to production on
+# Vercel, so a merge is a release — these checks are the last thing between a
+# proposed fix and the live app. CLAUDE.md requires `next lint` and
+# `tsc --noEmit` to be clean before committing; this enforces it rather than
+# relying on anyone remembering.
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Lint & typecheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npx next lint
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+  migration-guard:
+    name: Flag migrations
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    # Deploys do NOT run database migrations — they are applied by hand on
+    # Supabase. A PR that adds one is therefore not complete on merge, and the
+    # app can break until it is run (adding a note failed outright until
+    # migration 064 was applied). This job does not fail the PR; it makes the
+    # manual step impossible to miss.
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check for new migrations
+        run: |
+          files=$(git diff --name-only --diff-filter=A \
+            "origin/${{ github.base_ref }}"...HEAD -- supabase/migrations/)
+
+          if [ -z "$files" ]; then
+            echo "No new migrations in this PR."
+            echo "### ✅ No migrations in this PR" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          {
+            echo "### ⚠️ This PR adds database migrations"
+            echo
+            echo "Merging alone will **not** complete this change. Run these on"
+            echo "Supabase by hand, in order, then confirm in the Slack thread:"
+            echo
+            echo '```'
+            echo "$files"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          echo "::warning title=Migration required::This PR adds migrations that must be run manually on Supabase after merge."

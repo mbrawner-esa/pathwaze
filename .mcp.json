@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "pathwaze": {
+      "type": "http",
+      "url": "https://pathwaze.esa-solar.com/api/mcp"
+    }
+  }
+}
