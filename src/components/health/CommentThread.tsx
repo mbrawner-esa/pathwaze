@@ -173,7 +173,7 @@ export function CommentThread({
                         </div>
                       </div>
                     ) : (
-                      <p className="text-[12.5px] text-[#181818] mt-0.5">
+                      <p className="text-[12.5px] text-[#181818] mt-0.5 whitespace-pre-wrap">
                         <MessageText text={c.body} users={users} />
                       </p>
                     )}
