@@ -38,8 +38,14 @@ import {
 } from '@/lib/advancement'
 import type { PriorityRow } from '@/lib/portfolio-priority'
 
-/** Square, and as large as the window allows. The chart IS the page. */
-const PLOT_SIZE = 'clamp(340px, calc(100vh - 430px), 660px)'
+/**
+ * The plot fills the page's width and takes what height the window allows.
+ *
+ * Landscape rather than square, and deliberately so: the horizontal axis is
+ * where this portfolio actually spreads, and width is what separates marks that
+ * would otherwise have to be merged into a counted badge.
+ */
+const PLOT_H = 'clamp(320px, calc(100vh - 430px), 580px)'
 
 const AXIS_W = 78
 
@@ -53,15 +59,19 @@ const AXIS_W = 78
 const PAD = 5
 
 /**
- * How close two marks may come, in mapped percent, before they are drawn as one
- * counted badge.
+ * How close two marks may come before they are drawn as one counted badge.
+ *
+ * Derived from the plot's measured pixel size rather than fixed in percent,
+ * because whether two marks collide is a question about pixels: the same 2.6%
+ * gap hides one project on a 600px plot and separates two cleanly on a 1400px
+ * one. Widening the chart therefore un-merges marks on its own.
  *
  * Merging rather than nudging is deliberate. A nudge big enough to separate two
  * marks is big enough to carry one across a divider, which would put a project
  * in a cell it is not in — the one thing this chart must never do.
  */
-const MERGE_X = 5
-const MERGE_Y = 6
+const MERGE_GAP = 26
+const MERGE_FALLBACK = 5
 
 const DOT = 18
 const BADGE = 34
@@ -195,6 +205,12 @@ function shortNames(rows: Plotted[]): Map<string, string> {
   }))
 }
 
+/** Which of the four cells a mark sits in, for the card it opens. */
+function cellFor(x: number, y: number, split: number): string {
+  if (y >= 50) return x >= split ? 'ADVANCING' : 'STARTING'
+  return x >= split ? 'STALLED' : 'DORMANT'
+}
+
 function blockedCount(r: PriorityRow): number {
   return r.cardMilestones.filter(c => c.milestone.status === 'blocked').length
 }
@@ -279,10 +295,13 @@ export function QuadrantChart({ rows }: { rows: PriorityRow[] }) {
       }))
       .sort((a, b) => a.x - b.x || a.y - b.y)
 
+    const mx = box.w ? (MERGE_GAP / box.w) * 100 : MERGE_FALLBACK
+    const my = box.h ? (MERGE_GAP / box.h) * 100 : MERGE_FALLBACK
+
     const groups: { x: number; y: number; rows: Plotted[] }[] = []
     for (const p of placed) {
       const hit = groups.find(g =>
-        Math.abs(g.x - p.x) < MERGE_X && Math.abs(g.y - p.y) < MERGE_Y)
+        Math.abs(g.x - p.x) < mx && Math.abs(g.y - p.y) < my)
       if (hit) {
         hit.rows.push(p.row)
         hit.x = (hit.x * (hit.rows.length - 1) + p.x) / hit.rows.length
@@ -304,7 +323,7 @@ export function QuadrantChart({ rows }: { rows: PriorityRow[] }) {
         : groupLabel(g.rows),
       r: (g.rows.length === 1 ? DOT : BADGE) / 2,
     }))
-  }, [plotted, domain, names])
+  }, [plotted, domain, names, box])
 
   const labels = useMemo(() => placeLabels(points, box.w, box.h), [points, box])
 
@@ -316,7 +335,7 @@ export function QuadrantChart({ rows }: { rows: PriorityRow[] }) {
   const ticks = [0, 0.25, 0.5, 0.75, 1].map(f => ({ at: map(f * 100), label: Math.round(domain * f) }))
 
   return (
-    <section className="bg-white rounded-xl border border-[#e2e8f0] px-8 pt-6 pb-5 w-fit mx-auto max-w-full">
+    <section className="bg-white rounded-xl border border-[#e2e8f0] px-8 pt-6 pb-5 w-full">
 
       {/* vertical axis, named flat — a rotated label costs a column of width and
           is the hardest text on the page to read */}
@@ -327,7 +346,7 @@ export function QuadrantChart({ rows }: { rows: PriorityRow[] }) {
 
       <div className="flex gap-2">
         {/* recency reference points */}
-        <div className="relative shrink-0" style={{ width: AXIS_W - 8, height: PLOT_SIZE }}>
+        <div className="relative shrink-0" style={{ width: AXIS_W - 8, height: PLOT_H }}>
           {/* `top` grows downward and recency does not: 100 is today and belongs
               at the TOP, which is the same inversion the marks apply. */}
           <span className="absolute right-0 -translate-y-1/2 text-[10.5px] font-semibold text-[#55677A]" style={{ top: `${100 - map(100)}%` }}>
@@ -342,8 +361,8 @@ export function QuadrantChart({ rows }: { rows: PriorityRow[] }) {
         </div>
 
         <div ref={plotRef}
-             className="relative bg-white border border-[#D6DEE7] box-border"
-             style={{ width: PLOT_SIZE, height: PLOT_SIZE }}>
+             className="relative flex-1 min-w-0 bg-white border border-[#D6DEE7] box-border"
+             style={{ height: PLOT_H }}>
 
           {/* The good corner, marked with the lightest possible wash. Anything
               stronger and the fill competes with the marks it exists to frame. */}
@@ -431,7 +450,11 @@ export function QuadrantChart({ rows }: { rows: PriorityRow[] }) {
 
           {/* Detail opens over the plot, anchored to its mark — a panel parked
               beside the chart would reserve half the card to show nothing. */}
-          {open && <Detail point={open} onClose={() => setOpenKey(null)} />}
+          {open && (
+            <Detail point={open}
+                    cell={cellFor(open.x, open.y, medianPct)}
+                    onClose={() => setOpenKey(null)} />
+          )}
         </div>
       </div>
 
@@ -480,17 +503,20 @@ export function QuadrantChart({ rows }: { rows: PriorityRow[] }) {
  * Anchored to its own mark and flipped to whichever side has room, so it never
  * covers the thing you just clicked and never leaves the plot.
  */
-function Detail({ point, onClose }: { point: Point; onClose: () => void }) {
+function Detail({ point, cell, onClose }: { point: Point; cell: string; onClose: () => void }) {
   const many = point.rows.length > 1
   const right = point.x > 55
   const low = point.y < 45
 
   return (
     <div
-      className="absolute z-20 w-[250px] rounded-lg border border-[#D6DEE7] bg-white shadow-lg px-3.5 py-3"
+      className="absolute z-20 rounded-lg border border-[#D6DEE7] bg-white shadow-lg px-4 py-3.5"
       style={{
         left: `${point.x}%`,
         top: `${100 - point.y}%`,
+        width: many ? 310 : 274,
+        maxHeight: 'calc(100% - 16px)',
+        overflowY: 'auto',
         transform: `translate(${right ? 'calc(-100% - 18px)' : '18px'}, ${low ? '-100%' : '0'})`,
       }}
     >
@@ -498,8 +524,45 @@ function Detail({ point, onClose }: { point: Point; onClose: () => void }) {
               className="absolute right-2 top-2 border-0 bg-transparent text-[#55677A] cursor-pointer p-0.5">
         <X size={13} />
       </button>
+      <p className="m-0 mb-2 text-[9px] font-bold tracking-[0.11em] text-[#8A97A5]">{cell}</p>
       {many ? <ClusterBody point={point} /> : <ProjectBody row={point.rows[0]} />}
     </div>
+  )
+}
+
+/** One line of the breakdown. */
+function Line({ label, value, alarm = false }: { label: string; value: string; alarm?: boolean }) {
+  return (
+    <tr>
+      <td className="py-[3px] text-[11px] text-[#55677A]">{label}</td>
+      <td className="py-[3px] text-[11px] font-semibold tabular-nums text-right"
+          style={{ color: alarm ? '#b91c1c' : '#181818' }}>
+        {value}
+      </td>
+    </tr>
+  )
+}
+
+/**
+ * Every number behind the two axes, for one project.
+ *
+ * Both scores are derived, so showing only the derived value invites the
+ * argument rather than settling it — the counts they came from are what make
+ * the position defensible in a room.
+ */
+function Breakdown({ row }: { row: Plotted }) {
+  const a = row.advancement
+  const blocked = blockedCount(row)
+  return (
+    <table className="w-full border-collapse">
+      <tbody>
+        <Line label="Milestones complete" value={`${a.doneCount} of ${a.totalCount}`} />
+        <Line label="Advancement" value={`${a.score}%`} />
+        <Line label="Last advanced"
+              value={a.daysSinceAdvance === null ? 'Never' : `${a.daysSinceAdvance}d ago`} />
+        <Line label="Blocked" value={String(blocked)} alarm={blocked > 0} />
+      </tbody>
+    </table>
   )
 }
 
@@ -524,7 +587,9 @@ function ProjectBody({ row }: { row: Plotted }) {
         </div>
       </div>
 
-      <p className="m-0 mb-2 text-[11px] leading-[1.5] text-[#3E3E3C]">{advancementSummary(a)}</p>
+      <div className="mb-2 pb-2 border-b border-[#F1F5F9]">
+        <Breakdown row={row} />
+      </div>
 
       {blocked > 0 && (
         <p className="m-0 mb-2 px-2 py-1.5 rounded bg-[#FEF2F2] text-[#991B1B] text-[11px] leading-[1.45]">
@@ -540,21 +605,32 @@ function ProjectBody({ row }: { row: Plotted }) {
   )
 }
 
+/**
+ * A group's card.
+ *
+ * Every member gets its full breakdown, not just its name. The marks are merged
+ * because they overlap on screen, which says nothing about the projects being
+ * interchangeable — clicking the badge is how you tell them apart, so a list of
+ * names alone would leave you no better off than the badge did.
+ */
 function ClusterBody({ point }: { point: Point }) {
   return (
     <div>
       <h3 className="m-0 pr-5 text-[13px] font-bold text-[#181818]">{point.label}</h3>
-      <p className="mt-0.5 mb-2 text-[10.5px] text-[#55677A]">
-        {lastAdvanceLabel(point.rows[0].advancement)}
+      <p className="mt-0.5 mb-2.5 text-[10.5px] text-[#55677A]">
+        {lastAdvanceLabel(point.rows[0].advancement)} · same position on both axes
       </p>
-      <div className="max-h-[220px] overflow-y-auto">
-        {point.rows.map(r => (
-          <Link key={r.projectId} href={`/projects/${r.projectId}`}
-                className="block mb-1 text-[11px] text-[#3E3E3C] hover:text-[#C8963A]">
+      {point.rows.map((r, i) => (
+        <div key={r.projectId}
+             className={i > 0 ? 'mt-2.5 pt-2.5 border-t border-[#F1F5F9]' : ''}>
+          <Link href={`/projects/${r.projectId}`}
+                className="block text-[12px] font-semibold text-[#2F3E50] hover:text-[#C8963A] leading-snug">
             {r.name}
           </Link>
-        ))}
-      </div>
+          <p className="m-0 mt-0.5 mb-1 text-[10px] text-[#55677A]">{r.held ? 'On Hold' : r.stage}</p>
+          <Breakdown row={r} />
+        </div>
+      ))}
     </div>
   )
 }
