@@ -1936,7 +1936,7 @@ export function TasksClient({ tasks: initialTasks, projects, users, currentUserI
                                 </div>
                               </div>
                             ) : (
-                              <p className="text-[13px] text-[#181818] mt-0.5"><MessageText text={c.message} users={users} /></p>
+                              <p className="text-[13px] text-[#181818] mt-0.5 whitespace-pre-wrap"><MessageText text={c.message} users={users} /></p>
                             )}
                           </div>
                         </div>

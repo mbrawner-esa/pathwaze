@@ -105,6 +105,19 @@ export function MentionInput({
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); onSubmit?.() }
   }
 
+  // The composer's value is plain text, so rich clipboard content is flattened
+  // on the way in rather than left in the DOM for serialize() to untangle on
+  // send. Pasting as text also keeps a paste from Outlook from dragging Word's
+  // fonts and colours into the box.
+  function onPaste(e: React.ClipboardEvent) {
+    const html = e.clipboardData.getData('text/html')
+    const text = html ? clipboardToText(html) : e.clipboardData.getData('text/plain')
+    if (!text) return
+    e.preventDefault()
+    document.execCommand('insertText', false, text)
+    emit()
+  }
+
   return (
     <div className="relative flex-1">
       <div
@@ -117,6 +130,7 @@ export function MentionInput({
         onKeyUp={detectMention}
         onClick={detectMention}
         onKeyDown={onKeyDown}
+        onPaste={onPaste}
         onBlur={() => setTimeout(() => setMenu(null), 150)}
         className={'w-full min-h-[38px] whitespace-pre-wrap break-words leading-normal [&_.mention]:text-[#2C5485] [&_.mention]:font-semibold [&_.mention]:bg-[#EFF4FA] [&_.mention]:rounded [&_.mention]:px-1 empty:before:content-[attr(data-placeholder)] empty:before:text-[#A8A8A8] ' + (className ?? '')}
       />
@@ -139,19 +153,56 @@ export function MentionInput({
 }
 
 // ── plain-text serialization ──────────────────────────────────────────────
-// Walk the editable DOM → plain string. Text passes through; each mention span
-// collapses back to its <@uuid> token; <br> → newline.
+// Block-level tags the browser leaves behind: one per line after Shift+Enter,
+// and one per paragraph or bullet in anything pasted from Outlook or Word.
+// Without a newline between them every line runs into the next with no space
+// at all — "…same comment for all sheetsC-001 Map all obstructions…".
+const BLOCK = /^(ADDRESS|ARTICLE|BLOCKQUOTE|DD|DIV|DL|DT|FIGURE|FOOTER|H[1-6]|HEADER|HR|LI|OL|P|PRE|SECTION|TABLE|TBODY|THEAD|TR|UL)$/
+// Cells separate with a space, not a newline: Word leans on tables for layout,
+// and a line break per cell would shred a pasted paragraph into single words.
+const CELL = /^(TD|TH)$/
+
+// Walk an editable (or pasted) DOM → plain string. Text passes through; each
+// mention span collapses back to its <@uuid> token; <br> and block boundaries
+// become newlines; list items keep a "• " marker so MessageText can render the
+// list back out.
 function serialize(root: HTMLElement): string {
   let out = ''
-  root.childNodes.forEach(n => {
-    if (n.nodeType === Node.TEXT_NODE) out += n.textContent ?? ''
-    else if (n.nodeName === 'BR') out += '\n'
-    else if (n instanceof HTMLElement) {
+  const walk = (parent: Node) => {
+    parent.childNodes.forEach(n => {
+      if (n.nodeType === Node.TEXT_NODE) { out += n.textContent ?? ''; return }
+      if (n.nodeName === 'BR') { out += '\n'; return }
+      if (!(n instanceof HTMLElement)) return
       const uid = n.getAttribute('data-uid')
-      out += uid ? `<@${uid}>` : serialize(n)
-    }
-  })
+      if (uid) { out += `<@${uid}>`; return }
+      if (BLOCK.test(n.nodeName)) {
+        // A block that follows content starts a new line — unless a <br> at the
+        // end of the previous block already ended it (Chrome's trailing filler).
+        if (out && !out.endsWith('\n')) out += '\n'
+        if (n.nodeName === 'LI') out += '• '
+      } else if (CELL.test(n.nodeName)) {
+        if (out && !/[\s]$/.test(out)) out += ' '
+      }
+      walk(n)
+    })
+  }
+  walk(root)
   return out
+}
+
+/**
+ * Flatten pasted clipboard HTML into the composer's plain-text form.
+ *
+ * Parsed with DOMParser rather than innerHTML so the markup stays inert — it is
+ * never attached to this document, so nothing in it runs or loads.
+ */
+function clipboardToText(html: string): string {
+  const doc = new DOMParser().parseFromString(html, 'text/html')
+  return serialize(doc.body)
+    .replace(/\u00a0/g, ' ')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
 }
 
 // Render a stored plain-text value (with <@uuid> tokens) back into chip HTML,
