@@ -35,8 +35,7 @@ would push outdated code. If you're unsure which clone you're in, run
   the user. Always call out new migration numbers explicitly in the summary.
 - Migrations are numbered sequentially, idempotent (`IF NOT EXISTS` /
   `DROP POLICY IF EXISTS`). Next free number as of 2026-10-29: **078**
-  (latest applied: **076** — everything through 076 is live; **077 is written
-  but NOT yet run**).
+  (latest applied: **077** — everything through 077 is live).
   ⚠️ **Check `ls supabase/migrations` before claiming a number, not this line.**
   Two sessions ran concurrently on 2026-08-26 and both wrote a `066_*`; the
   Workstreams one was renamed to `068` after the fact. This line goes stale the
@@ -71,17 +70,19 @@ would push outdated code. If you're unsure which clone you're in, run
   `"Team project notes"` policy**, which was `FOR ALL` — any team member could
   hard-delete any note. 073 and 075 already cover their select/insert/update,
   so they lose nothing but the ability to destroy one.
-  **077 makes project System Size derived** and is the one migration the app
-  now depends on: `projects.system_kwdc` / `system_kwac` /
-  `annual_production_kwh` are no longer typed in anywhere — a BEFORE trigger on
-  `projects` overwrites them with the sum over that project's `systems` rows
-  where `design_status = 'Approved'`, and an AFTER trigger on `systems`
-  re-totals on every design change. The manual inputs (project summary card,
-  Technical tab specs card, new-project modal) and the API write paths (POST
-  /api/projects, the PATCH whitelist) were removed in the same change, so
-  **until 077 runs those three columns are frozen at whatever they hold now**.
-  `node scripts/preview-system-totals.mjs` prints stored-vs-derived per project
-  before you run it; `supabase/seed.ts` still sets a size and is now ignored.
+  **077 makes project System Size derived** (applied 2026-10-29):
+  `projects.system_kwdc` / `system_kwac` / `annual_production_kwh` are not
+  typed in anywhere — a BEFORE trigger on `projects` overwrites them with the
+  sum over that project's `systems` rows where `design_status = 'Approved'`,
+  and an AFTER trigger on `systems` re-totals on every design change. The
+  manual inputs (project summary card, Technical tab specs card, new-project
+  modal) and the API write paths (POST /api/projects, the PATCH whitelist) are
+  gone with it, so **a project's size moves only by adding, editing or
+  approving a design** — there is no role that can type one, service role
+  included. A project with no approved design reads 0; four archived ones and
+  Bolingbrook sit there now. `node scripts/preview-system-totals.mjs` prints
+  stored-vs-derived per project (every row should read `same`);
+  `supabase/seed.ts` still sets a size and is now ignored.
   ⚠️ **Nothing is ever hard-deleted**: both the app and the service-role cron
   filter `deleted_at IS NULL`. A new reader of `project_notes` or `rfis` must
   add that filter — RLS hides deleted rows from team, but **not** from admin,
