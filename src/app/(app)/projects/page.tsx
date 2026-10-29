@@ -18,8 +18,7 @@ export default async function ProjectsPage() {
         id, project_number, name, stage, deal_health, system_kwdc,
         city, state, tranche, region, assignee_id,
         utility, target_cod,
-        users!assignee_id(full_name, avatar_url),
-        systems(size_kwdc)
+        users!assignee_id(full_name, avatar_url)
       `)
       // Archived projects are hidden program-wide. Admins can view them at /admin/archived.
       .neq('stage', 'Archived')
@@ -85,19 +84,13 @@ export default async function ProjectsPage() {
       (milestonesByProject.get(p.id) ?? []) as Milestone[],
       stateByProject.get(p.id) ?? [],
     )
-    // Mirror the Technical tab's rollup: sum the systems' size_kwdc when any exist,
-    // otherwise fall back to the project's manually-entered system_kwdc.
-    const systems = (p.systems ?? []) as { size_kwdc: number | null }[]
-    const rollup_kwdc = systems.length > 0
-      ? systems.reduce((s, x) => s + (x.size_kwdc ?? 0), 0)
-      : (p.system_kwdc ?? 0)
     return {
       id: p.id,
       project_number: p.project_number,
       name: p.name,
       stage: p.stage,
       deal_health: p.deal_health,
-      system_kwdc: rollup_kwdc,
+      system_kwdc: p.system_kwdc ?? 0,
       city: p.city,
       state: p.state,
       tranche: p.tranche,

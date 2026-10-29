@@ -21,8 +21,9 @@ export async function POST(req: NextRequest) {
     customer: body.customer || 'AdventHealth',
     stage: body.stage || DEFAULT_STAGE,
     deal_health: body.deal_health || 'TBD',
-    system_kwdc: body.system_kwdc || 0,
-    system_kwac: body.system_kwac || 0,
+    // system_kwdc / system_kwac / annual_production_kwh are not settable: they
+    // are the sum of the project's approved systems, held there by migration
+    // 077's trigger. A new project has no systems, so it starts at 0.
     // NOT NULL text columns — must use '' (sending null overrides the DB default and fails)
     address: body.address || '',
     city: body.city || '',
