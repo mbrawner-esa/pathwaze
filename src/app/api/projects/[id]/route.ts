@@ -44,9 +44,8 @@ const FIELD_META: Record<string, { category: string; label: string }> = {
   interconnection_feasibility: { category: 'utility', label: 'interconnection feasibility' },
   interconnection_cost_estimate: { category: 'utility', label: 'interconnection cost' },
   // Technical
-  system_kwdc: { category: 'technical', label: 'system kWdc' },
-  system_kwac: { category: 'technical', label: 'system kWac' },
-  annual_production_kwh: { category: 'technical', label: 'annual production' },
+  // (system_kwdc / system_kwac / annual_production_kwh are absent on purpose —
+  // they are derived from the project's approved systems and cannot be patched.)
   modules: { category: 'technical', label: 'modules' },
   inverters: { category: 'technical', label: 'inverters' },
   monitoring: { category: 'technical', label: 'monitoring' },
@@ -66,7 +65,6 @@ const FIELD_META: Record<string, { category: string; label: string }> = {
 // Keeps the endpoint safe from accidental writes to id, project_number, etc.
 const ALLOWED_FIELDS = new Set([
   'name', 'customer', 'stage', 'deal_health',
-  'system_kwdc', 'system_kwac', 'annual_production_kwh',
   'address', 'city', 'state', 'zip', 'lat', 'lng',
   'utility', 'rate_schedule', 'rate_schedule_type',
   'annual_usage_kwh', 'peak_demand_kw',

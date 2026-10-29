@@ -102,7 +102,6 @@ export function ProjectSummaryCard({
   const [error, setError] = useState<string | null>(null)
   const [form, setForm] = useState({
     project_number: project.project_number ?? '',
-    system_kwdc: project.system_kwdc ?? 0,
     tranche: project.tranche ?? '',
     stage: project.stage ?? 'Pre-Planning',
     address: project.address ?? '',
@@ -119,7 +118,6 @@ export function ProjectSummaryCard({
   function startEdit() {
     setForm({
       project_number: project.project_number ?? '',
-      system_kwdc: project.system_kwdc ?? 0,
       tranche: project.tranche ?? '',
       stage: project.stage ?? 'Pre-Planning',
       address: project.address ?? '',
@@ -144,7 +142,6 @@ export function ProjectSummaryCard({
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          system_kwdc: Number(form.system_kwdc) || 0,
           tranche: form.tranche || null,
           primary_stakeholder_id: form.primary_stakeholder_id || null,
           stage: form.stage,
@@ -203,11 +200,9 @@ export function ProjectSummaryCard({
             ? <FieldInput value={form.project_number} onChange={v => setForm(f => ({ ...f, project_number: v }))} placeholder="Project number" />
             : (project.project_number || '—')}
         </Field>
-        <Field label="System Size kWdc">
-          {editing
-            ? <FieldInput type="number" value={form.system_kwdc} onChange={v => setForm(f => ({ ...f, system_kwdc: v as unknown as number }))} />
-            : formatNumber(project.system_kwdc)}
-        </Field>
+        {/* Derived from the Technical tab's approved designs (migration 077) —
+            never typed in, so it stays read-only even in edit mode. */}
+        <Field label="System Size kWdc">{formatNumber(project.system_kwdc)}</Field>
 
         <Field label="Tranche">
           {editing

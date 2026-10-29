@@ -154,7 +154,6 @@ export function ProjectsClient({ projects, users = [] }: ProjectsClientProps) {
     project_number: '',
     customer: 'AdventHealth',
     stage: DEFAULT_STAGE,
-    system_kwdc: '',
     address: '',
     city: '',
     state: 'FL',
@@ -208,9 +207,9 @@ export function ProjectsClient({ projects, users = [] }: ProjectsClientProps) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          // No system size here: it is the sum of the project's approved
+          // designs, so it starts at 0 and moves on the Technical tab.
           ...form,
-          system_kwdc: form.system_kwdc ? Number(form.system_kwdc) : 0,
-          system_kwac: 0,
           assignee_id: form.assignee_id || null,
         }),
       })
@@ -506,12 +505,6 @@ export function ProjectsClient({ projects, users = [] }: ProjectsClientProps) {
                       className="w-full px-3 py-2 border border-[#cbd5e1] rounded text-[13px] text-[#181818] bg-white focus:outline-none focus:border-[#70A0D0] focus:ring-2 focus:ring-[#70A0D0]/20 transition-all">
                       {STAGES.filter(s => s !== 'All').map(s => <option key={s}>{s}</option>)}
                     </select>
-                  </div>
-                  <div>
-                    <label className="block text-[12px] font-medium text-[#3E3E3C] mb-1.5">System Size (kWdc)</label>
-                    <input type="number" value={form.system_kwdc} onChange={e => setForm(f => ({ ...f, system_kwdc: e.target.value }))}
-                      className="w-full px-3 py-2 border border-[#cbd5e1] rounded text-[13px] text-[#181818] focus:outline-none focus:border-[#70A0D0] focus:ring-2 focus:ring-[#70A0D0]/20 transition-all"
-                      placeholder="0" />
                   </div>
                 </div>
               </div>
