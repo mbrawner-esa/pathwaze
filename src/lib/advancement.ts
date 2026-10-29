@@ -1,100 +1,119 @@
-// Advancement — how far has this project actually got?
+// Advancement — how far has this project got, and when did it last move?
 //
-// Momentum says whether anyone is DOING anything. Advancement says whether the
-// project has got ANYWHERE. The two are independent, which is the whole reason
-// the quadrant exists: a site can be busy and nowhere (mobilizing), or a long
-// way along and silent (stalled), and no single score separates those.
+// Both numbers come from ONE place: `workstream_milestones.completed_at`. That
+// is deliberate, and it is the whole reason this module exists rather than the
+// quadrant reusing momentum.
 //
-// Three rules shape this file:
-//   1. THE BAND IS THE FACT, THE NUMBER IS A PLACEMENT. Whether a project is
-//      active, held-with-progress, or held-and-never-started is read straight
-//      off the record. The 0-100 score only decides where inside its band the
-//      dot sits, so the thresholds below are tunable without changing what any
-//      project IS.
-//   2. FINISHING SOMETHING IS THE GATE. An active project that has completed
-//      nothing is mobilizing, not advancing, however busy it looks. That is the
-//      one discontinuity in the scale and it is deliberate — see ACTIVE_NONE.
-//   3. HELD PROJECTS KEEP WHAT THEY EARNED. Pausing a site does not undo its
-//      plan. A held project with real progress sits above one that never
-//      started, because those are different situations and the board's job is
-//      to tell them apart.
+// Momentum is derived from `activity_log`, which cannot answer either question
+// honestly:
+//   · it holds no completion events at all — zero `major_completed` rows in the
+//     table's history — so milestones finished by an import, a backfill, or any
+//     path other than the API are invisible to it;
+//   · a target date moving later scores NEGATIVE there, so a planning session
+//     that re-dates a dozen milestones drives the score down. A project can be
+//     penalised for planning.
+// The result was three projects reading zero momentum three days after they
+// completed milestones. A plan's own completion records have none of those
+// failure modes: they are right regardless of how the work was recorded.
+//
+// Two rules shape this file:
+//   1. COMPLETION IS THE ONLY EVIDENCE. Not events, not edits, not traffic —
+//      a milestone marked complete, with the date it happened.
+//   2. RECENCY IS BANDED, NOT LINEAR. The difference between 2 days and 9 days
+//      is noise; the difference between 9 days and 9 weeks is the whole story.
+//      See recencyScore.
 //
 // Nothing here writes.
 
 import type { Milestone } from './workstreams'
 
-export type AdvancementBand = 'active' | 'held_started' | 'not_started'
-
-export const ADVANCEMENT_LABEL: Record<AdvancementBand, string> = {
-  active: 'Active',
-  held_started: 'Held, started',
-  not_started: 'Not started',
-}
+/**
+ * Past this many days without finishing anything, a project has stopped rather
+ * than slowed. Matches STALE_DAYS in momentum.ts on purpose — two surfaces
+ * disagreeing about when "quiet" begins would be worse than either threshold
+ * being slightly wrong.
+ */
+export const RECENT_DAYS = 21
 
 /**
- * Band floors and spans.
- *
- * ACTIVE_FLOOR sits above the quadrant's own midline (50) so an advancing
- * project reads as advancing. ACTIVE_NONE sits below it: an active project that
- * has finished nothing belongs in the lower half, which is what "mobilizing"
- * means. The held band spans the lower-middle so a paused site with progress is
- * visibly distinct from the floor without ever being mistaken for live work.
+ * Past this, the exact age stops carrying information: nine weeks and nine
+ * months are the same answer. Points below it compress rather than running off
+ * the bottom of the chart.
  */
-const ACTIVE_FLOOR = 55
-const ACTIVE_SPAN = 45
-const ACTIVE_NONE = 42
-const HELD_FLOOR = 25
-const HELD_SPAN = 25
+export const COLD_DAYS = 63
+
+const MS_PER_DAY = 86_400_000
 
 export interface Advancement {
-  /** 0-100; a placement inside the band, not a measurement */
+  /** 0-100: share of the plan's milestones complete. The horizontal axis. */
   score: number
-  band: AdvancementBand
   doneCount: number
   totalCount: number
-  /** share of the plan complete, 0-1 */
-  progress: number
+  /** days since the most recent completion; null when nothing ever completed */
+  daysSinceAdvance: number | null
+  /** 0-100 placement for the vertical axis; 100 is today, 0 is cold or never */
+  recency: number
 }
 
 /**
- * Score one project's advancement from its plan.
+ * Place a gap in days on the 0-100 recency axis.
  *
- * `milestones` is the project's full set — every discipline, not the open ones,
- * because the question is how much of the plan is behind it. `held` is
- * `projects.on_hold_at`, which is the only thing that moves a project out of
- * the active band.
+ * Piecewise rather than linear so the midline lands exactly on RECENT_DAYS —
+ * the chart's horizontal divider then means something nameable ("finished
+ * something in the last three weeks") instead of an arbitrary halfway point.
  */
-export function scoreAdvancement(milestones: Milestone[], held: boolean): Advancement {
-  const totalCount = milestones.length
-  const doneCount = milestones.filter(m => m.status === 'complete').length
-  const progress = totalCount > 0 ? doneCount / totalCount : 0
-
-  let band: AdvancementBand
-  let score: number
-
-  if (!held) {
-    // Rule 2 — nothing finished yet is a different state from early progress,
-    // so it gets a fixed placement rather than the bottom of the active band.
-    band = 'active'
-    score = doneCount === 0 ? ACTIVE_NONE : ACTIVE_FLOOR + ACTIVE_SPAN * progress
-  } else if (doneCount > 0) {
-    band = 'held_started'
-    score = HELD_FLOOR + HELD_SPAN * progress
-  } else {
-    band = 'not_started'
-    score = 0
-  }
-
-  return { score: Math.round(score), band, doneCount, totalCount, progress }
+export function recencyScore(days: number | null): number {
+  if (days === null) return 0
+  if (days <= 0) return 100
+  if (days <= RECENT_DAYS) return 100 - (days / RECENT_DAYS) * 50
+  if (days >= COLD_DAYS) return 0
+  return 50 - ((days - RECENT_DAYS) / (COLD_DAYS - RECENT_DAYS)) * 50
 }
 
-/** One-line explanation, for a tooltip or the detail panel. */
+/**
+ * Score one project's advancement from its own plan.
+ *
+ * `milestones` is the project's full set across every discipline — the question
+ * is how much of the plan is behind it, so open work counts in the denominator.
+ */
+export function scoreAdvancement(milestones: Milestone[], now: number = Date.now()): Advancement {
+  const totalCount = milestones.length
+  const done = milestones.filter(m => m.status === 'complete')
+  const doneCount = done.length
+
+  // The most recent completion with a recorded date. A milestone marked
+  // complete but carrying no `completed_at` still counts toward progress; it
+  // just cannot date the advance.
+  const latest = done.reduce<number | null>((max, m) => {
+    if (!m.completed_at) return max
+    const t = new Date(m.completed_at).getTime()
+    return max === null || t > max ? t : max
+  }, null)
+
+  const daysSinceAdvance = latest === null
+    ? null
+    : Math.max(0, Math.floor((now - latest) / MS_PER_DAY))
+
+  return {
+    score: totalCount > 0 ? Math.round((doneCount / totalCount) * 100) : 0,
+    doneCount,
+    totalCount,
+    daysSinceAdvance,
+    recency: Math.round(recencyScore(daysSinceAdvance)),
+  }
+}
+
+/** How long ago it last moved, in words. */
+export function lastAdvanceLabel(a: Advancement): string {
+  if (a.daysSinceAdvance === null) return 'Never advanced'
+  if (a.daysSinceAdvance === 0) return 'Advanced today'
+  if (a.daysSinceAdvance === 1) return 'Advanced yesterday'
+  return `Last advanced ${a.daysSinceAdvance} days ago`
+}
+
+/** One-line explanation, for the detail panel. */
 export function advancementSummary(a: Advancement): string {
   if (a.totalCount === 0) return 'No plan milestones on this project.'
-  const plan = `${a.doneCount} of ${a.totalCount} milestones complete`
-  if (a.band === 'not_started') return `Held. Nothing started — ${plan}.`
-  if (a.band === 'held_started') return `Held, with progress behind it — ${plan}.`
-  return a.doneCount === 0
-    ? `Active, nothing completed yet — ${a.totalCount} milestones planned.`
-    : `Active — ${plan}.`
+  if (a.doneCount === 0) return `Nothing completed yet — ${a.totalCount} milestones planned.`
+  return `${a.doneCount} of ${a.totalCount} milestones complete. ${lastAdvanceLabel(a)}.`
 }

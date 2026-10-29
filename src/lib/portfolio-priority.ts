@@ -137,7 +137,7 @@ export interface PriorityRow {
 
   // ── scores ──
   momentum: Momentum | null
-  /** how far the plan has got; the quadrant's vertical axis */
+  /** how far the plan has got and when it last moved; both quadrant axes */
   advancement: Advancement | null
   /** last cached LLM judgement; null until the project has been scored */
   risk: ProjectRisk | null
@@ -374,7 +374,7 @@ export function buildRows(
         .sort(byDueDate),
       held,
       momentum: momentumByProject.get(p.id) ?? null,
-      advancement: scoreAdvancement(all, held),
+      advancement: scoreAdvancement(all),
       risk: riskByProject.get(p.id) ?? null,
     })
   }
