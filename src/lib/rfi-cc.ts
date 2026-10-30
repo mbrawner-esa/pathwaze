@@ -66,11 +66,12 @@ export async function notifyRfiCcAdded(
   const msg = {
     subject: `You were CC'd on ${tag}`,
     heading: `You were CC'd on ${tag}`,
-    message: `You were copied on <b>${rfi.subject}</b> for visibility.${rfi.status === 'closed' ? '' : ' You will be notified when it is closed.'}`,
+    message: `You were copied on <b>${rfi.subject}</b> for visibility.${rfi.status === 'closed' ? '' : ' You will be emailed when a response is posted and when it is closed.'}`,
     ctaLabel: 'View RFI', ctaUrl: rfiUrl(rfi.id),
   }
   for (const uid of userIds) {
     if (uid === actorId) continue
-    await emailUser(supabase, uid, msg)
+    try { await emailUser(supabase, uid, msg) }
+    catch (e) { console.error('[notifyRfiCcAdded]', e) }
   }
 }

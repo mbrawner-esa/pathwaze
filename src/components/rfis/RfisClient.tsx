@@ -197,7 +197,7 @@ function CreateRfiModal({ projects, users, stakeholders: initialStakeholders, on
             <Field label="Cost impact"><select value={f.cost_impact} onChange={e => set('cost_impact', e.target.value)} className="inp"><option value="tbd">TBD</option><option value="yes">Yes</option><option value="no">No</option></select></Field>
             <Field label="Schedule impact"><select value={f.schedule_impact} onChange={e => set('schedule_impact', e.target.value)} className="inp"><option value="tbd">TBD</option><option value="yes">Yes</option><option value="no">No</option></select></Field>
           </div>
-          <Field label="CC (notified when closed)"><CcPicker users={users} value={f.cc_user_ids} onChange={ids => set('cc_user_ids', ids)} /></Field>
+          <Field label="CC (notified on responses and close)"><CcPicker users={users} value={f.cc_user_ids} onChange={ids => set('cc_user_ids', ids)} /></Field>
           {err && <div className="text-[12px] text-[#b91c1c]">{err}</div>}
         </div>
         <div className="px-5 py-3.5 border-t border-[#ECEBEA] bg-[#FBFCFE] flex justify-end gap-2">

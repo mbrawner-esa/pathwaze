@@ -33,7 +33,7 @@ export function ProjectRfisTab({ rfis = [], projectId }: { rfis: ProjectRfi[]; p
     <div className="card overflow-hidden">
       <div className="px-6 py-4 border-b border-[#f1f5f9] flex items-center gap-3 flex-wrap">
         <h3 className="text-[14px] font-bold text-[#181818]">RFIs</h3>
-        <span className="text-[11px] text-[#94a3b8]">({live.length} open{closed.length ? ` · ${closed.length} closed` : ''})</span>
+        <span className="text-[11px] text-[#94a3b8]">({live.length} open or draft{closed.length ? ` · ${closed.length} closed` : ''})</span>
         <div className="ml-auto flex items-center gap-3">
           {closed.length > 0 && (
             <label className="flex items-center gap-1.5 text-[12px] text-[#3E3E3C] cursor-pointer select-none">

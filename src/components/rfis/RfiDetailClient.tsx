@@ -83,6 +83,9 @@ export function RfiDetailClient({ rfi: initial, responses: initialResp, distribu
 
   // Replace the CC list (editable at any time, any status). Saved immediately.
   const saveCc = (ids: string[]) => {
+    // useSubmit drops a call made while one is in flight, so bail before the
+    // optimistic setCcIds rather than showing a list that was never saved.
+    if (savingCc) return
     const prev = ccIds
     setCcIds(ids)
     return runCc(async () => {
@@ -349,7 +352,7 @@ export function RfiDetailClient({ rfi: initial, responses: initialResp, distribu
               CC <span className="text-[#706E6B] font-medium">{ccIds.length + ccExternal.length}</span>
             </div>
             <div className="p-4 flex flex-col gap-2">
-              <div className="text-[11.5px] text-[#706E6B]">CC&apos;d people can view this RFI and are notified when it is closed.</div>
+              <div className="text-[11.5px] text-[#706E6B]">CC&apos;d people can view this RFI and are emailed when a response is posted and when it is closed.</div>
               <CcPicker users={users} value={ccIds} onChange={saveCc} disabled={savingCc} />
               {ccExternal.length > 0 && (
                 <div className="text-[11.5px] text-[#706E6B]">Also sent to: {ccExternal.map(d => d.stakeholder.name).join(', ')}</div>

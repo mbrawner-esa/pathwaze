@@ -54,6 +54,12 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     // Opening a draft stamps the initiated date if not already set.
     if (cur && !cur.date_initiated) patch.date_initiated = new Date().toISOString().slice(0, 10)
   }
+  // Only an actual array counts as a CC update. Without this check a malformed
+  // payload (`cc_user_ids: null`, a bare string) would normalise to [] and
+  // silently clear the whole CC list.
+  if ('cc_user_ids' in body && !Array.isArray(body.cc_user_ids)) {
+    return NextResponse.json({ error: 'cc_user_ids must be an array of user ids' }, { status: 400 })
+  }
   const ccIds = 'cc_user_ids' in body ? cleanCcIds(body.cc_user_ids) : null
   if (Object.keys(patch).length === 0 && ccIds === null) return NextResponse.json({ error: 'nothing to update' }, { status: 400 })
 
