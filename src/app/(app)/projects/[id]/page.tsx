@@ -35,7 +35,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
     supabase.from('meters').select('*').eq('project_id', id).order('created_at'),
     supabase.from('systems').select('*, system_buildings(building_id)').eq('project_id', id).order('created_at'),
     supabase.from('project_threads').select('*').eq('project_id', id).order('created_at', { ascending: true }),
-    supabase.from('project_notes').select('*, user:users(full_name, avatar_url)').eq('project_id', id).order('created_at', { ascending: false }),
+    supabase.from('project_notes').select('*, user:users!user_id(full_name, avatar_url)').eq('project_id', id).order('created_at', { ascending: false }),
     supabase.from('offtaker_pricing').select('*').eq('project_id', id).order('created_at', { ascending: true }),
     supabase.from('tasks').select('id, title, type, status, priority, due_date, parent_task_id, assignee:users!assignee_id(id, full_name, avatar_url)').eq('project_id', id).order('created_at', { ascending: false }),
     supabase.from('workstream_milestones').select('*').eq('project_id', id).order('sort_order'),
@@ -58,6 +58,10 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
     { data: wsMilestones }, { data: wsGates }, { data: wsMajorState },
     { data: wsUpdates }, { data: wsDepartments }, { data: wsTasks },
   ] = results
+
+  // project_notes has two FKs to users (user_id, deleted_by — migration 076), so an
+  // unhinted embed fails with PGRST201 and `notes` silently comes back null.
+  if (results[11].error) console.error('project_notes query failed', results[11].error.message)
 
   if (!project) notFound()
 
