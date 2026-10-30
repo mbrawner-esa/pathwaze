@@ -1,5 +1,6 @@
 // Shared helpers for the RFI module.
 import { logActivity, emailUser, emailStakeholder, rfiUrl, rfiNo } from './rfi-notify'
+import { cleanCcIds, setRfiCc } from './rfi-cc'
 
 export interface NewRfiInput {
   project_id: string
@@ -21,6 +22,8 @@ export interface NewRfiInput {
   schedule_impact?: string
   is_private?: boolean
   status?: 'draft' | 'open'
+  /** Users to CC (rows in rfi_distribution). App-only: the MCP tool never passes this. */
+  cc_user_ids?: string[]
   /**
    * 'mcp' when raised through the MCP connector; null from the app.
    *
@@ -78,6 +81,13 @@ export async function createRfiFromFinding(supabase: any, userId: string, input:
     throw new Error(error.message)
   }
 
+  // CC list. A failure here must not lose the RFI that was just created.
+  const ccIds = cleanCcIds(input.cc_user_ids)
+  if (ccIds.length) {
+    try { await setRfiCc(supabase, data.id, ccIds) }
+    catch (e) { console.error('[createRfi] cc insert failed:', e instanceof Error ? e.message : e) }
+  }
+
   // Notify (best-effort): log to the feed; email the ball-in-court if the RFI is open.
   const tag = `RFI ${rfiNo(data.rfi_number)}`
   await logActivity(supabase, { entity_type: 'rfi', entity_id: data.id, action: status === 'open' ? 'opened an RFI' : 'drafted an RFI', user_id: userId, metadata: { rfi_id: data.id } })
@@ -85,6 +95,12 @@ export async function createRfiFromFinding(supabase: any, userId: string, input:
     const msg = { subject: `${tag} needs your input`, heading: `${tag} assigned to you`, message: `<b>${data.subject}</b>`, ctaLabel: 'Open RFI', ctaUrl: rfiUrl(data.id) }
     if (data.ball_in_court_user_id) await emailUser(supabase, data.ball_in_court_user_id, msg)
     else if (data.ball_in_court_stakeholder_id) await emailStakeholder(supabase, data.ball_in_court_stakeholder_id, msg)
+    // CC'd users get the same heads-up (skip the creator and anyone already mailed above).
+    const cc = ccIds.filter(u => u !== userId && u !== data.ball_in_court_user_id)
+    if (cc.length) {
+      const ccMsg = { ...msg, subject: `${tag} opened — you were CC'd`, heading: `You were CC'd on ${tag}`, message: `You were copied on <b>${data.subject}</b> for visibility.`, ctaLabel: 'View RFI' }
+      for (const uid of cc) await emailUser(supabase, uid, ccMsg)
+    }
   }
   return data
 }

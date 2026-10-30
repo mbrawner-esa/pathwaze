@@ -8,6 +8,7 @@ import { Avatar } from '@/components/ui/Avatar'
 import { RichTextEditor } from '@/components/ui/RichTextEditor'
 import { NotesRender } from '@/components/ui/NotesRender'
 import { ReceivedFromPicker } from './ReceivedFromPicker'
+import { CcPicker } from './CcPicker'
 import { isPastDue } from '@/lib/utils'
 import { isManagerOrAbove } from '@/lib/permissions'
 import { useSubmit } from '@/lib/useSubmit'
@@ -32,7 +33,7 @@ function entityLabel(catalog: Any, type: string, idv: string): string {
   return e.name || '(unnamed)'
 }
 
-export function RfiDetailClient({ rfi: initial, responses: initialResp, links: initialLinks, catalog, users, attachments: initialAttachments = [], userRole = 'team' }: { rfi: Any; responses: Any[]; distribution: Any[]; users: Any[]; links: Any[]; catalog: Any; attachments?: Any[]; userRole?: string }) {
+export function RfiDetailClient({ rfi: initial, responses: initialResp, distribution = [], links: initialLinks, catalog, users, attachments: initialAttachments = [], userRole = 'team' }: { rfi: Any; responses: Any[]; distribution?: Any[]; users: Any[]; links: Any[]; catalog: Any; attachments?: Any[]; userRole?: string }) {
   const router = useRouter()
   const [rfi, setRfi] = useState<Any>(initial)
   const [responses, setResponses] = useState<Any[]>(initialResp)
@@ -47,6 +48,11 @@ export function RfiDetailClient({ rfi: initial, responses: initialResp, links: i
   const [detailsOpen, setDetailsOpen] = useState(false)
   const [linksOpen, setLinksOpen] = useState(true)
   const [editing, setEditing] = useState(false)
+  // CC list = the user rows of rfi_distribution; stakeholder rows are external
+  // recipients managed elsewhere, shown read-only.
+  const [ccIds, setCcIds] = useState<string[]>(() => distribution.filter(d => d.user_id).map(d => d.user_id as string))
+  const ccExternal = distribution.filter(d => !d.user_id && d.stakeholder?.name)
+  const { run: runCc, busy: savingCc } = useSubmit()
   const { run: runDelete, busy: deleting } = useSubmit()
 
   const canManage = isManagerOrAbove(userRole)
@@ -73,6 +79,24 @@ export function RfiDetailClient({ rfi: initial, responses: initialResp, links: i
   }
   async function removeLink(linkId: string) {
     if ((await fetch(`/api/rfis/${rfi.id}/links/${linkId}`, { method: 'DELETE' })).ok) setLinks(prev => prev.filter(l => l.id !== linkId))
+  }
+
+  // Replace the CC list (editable at any time, any status). Saved immediately.
+  const saveCc = (ids: string[]) => {
+    // useSubmit drops a call made while one is in flight, so bail before the
+    // optimistic setCcIds rather than showing a list that was never saved.
+    if (savingCc) return
+    const prev = ccIds
+    setCcIds(ids)
+    return runCc(async () => {
+      const res = await fetch(`/api/rfis/${rfi.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ cc_user_ids: ids }) })
+      if (!res.ok) {
+        const body = await res.json().catch(() => null)
+        setCcIds(prev)
+        alert(body?.error || 'Could not update the CC list.')
+        return false
+      }
+    }, { refresh: true })
   }
 
   async function patch(body: Any) {
@@ -321,6 +345,19 @@ export function RfiDetailClient({ rfi: initial, responses: initialResp, links: i
                 <button className="btn-secondary" disabled={!linkEntity} onClick={addLink}>Add</button>
               </div>
             </div>}
+          </div>
+
+          <div className="card overflow-hidden">
+            <div className="px-4 py-3 font-bold text-[12px] text-[#080707] border-b border-[#ECEBEA]">
+              CC <span className="text-[#706E6B] font-medium">{ccIds.length + ccExternal.length}</span>
+            </div>
+            <div className="p-4 flex flex-col gap-2">
+              <div className="text-[11.5px] text-[#706E6B]">CC&apos;d people can view this RFI and are emailed when a response is posted and when it is closed.</div>
+              <CcPicker users={users} value={ccIds} onChange={saveCc} disabled={savingCc} />
+              {ccExternal.length > 0 && (
+                <div className="text-[11.5px] text-[#706E6B]">Also sent to: {ccExternal.map(d => d.stakeholder.name).join(', ')}</div>
+              )}
+            </div>
           </div>
 
           {rfi.drawing && (

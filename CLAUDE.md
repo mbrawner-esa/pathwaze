@@ -233,7 +233,7 @@ server route handlers (defense in depth).
 - /dashboard — portfolio KPIs + tasks-due + recent threads + active projects
 - /projects — project list with filters (archived projects hidden by default)
 - /projects/[id] — project detail (Threads / Workstreams / Tasks / Site /
-  Utility / Stakeholders / Permitting / Technical / Financial / Drawings tabs;
+  Utility / Stakeholders / Permitting / Technical / Financial / Drawings / RFIs tabs;
   tab is honored via ?tab=)
   **Workstreams** went live 2026-08-26. Milestone-oriented planning: fixed major
   milestones (catalog) → user-created milestones carrying target + baseline dates,
@@ -247,7 +247,9 @@ server route handlers (defense in depth).
 - /tasks — task list + kanban; visibility + task-type subscription filters.
   `?id=<taskId>` deep-links and opens that task's drawer.
 - /rfis — Procore-style RFI log (master nav); /rfis/[id] — RFI detail
-  (ball-in-court, linkages, responses, official-response-closes).
+  (ball-in-court, linkages, responses, official-response-closes). The **CC**
+  list is the user rows of `rfi_distribution` (`src/lib/rfi-cc.ts`); it is set
+  at creation and editable any time, and `notifyRfiParties` fans out to it.
   Admin + manager can **delete** an RFI or a project note; both are soft
   deletes (076) and both surfaces carry a **Deleted (n)** toggle that reveals
   them with a Restore action. Team and investor never see a deleted record.

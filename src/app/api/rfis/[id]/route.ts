@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { NextRequest, NextResponse } from 'next/server'
 import { notifyRfiParties, logActivity, rfiUrl, rfiNo } from '@/lib/rfi-notify'
 import { isManagerOrAbove } from '@/lib/permissions'
+import { cleanCcIds, setRfiCc, notifyRfiCcAdded } from '@/lib/rfi-cc'
 
 // GET /api/rfis/[id] → full detail (with responses + distribution + source finding)
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -27,7 +28,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   return NextResponse.json({ rfi, responses: responses ?? [], distribution: distribution ?? [] })
 }
 
-// PATCH /api/rfis/[id] → update fields / status
+// PATCH /api/rfis/[id] → update fields / status / CC list (cc_user_ids replaces the CC'd users)
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -53,11 +54,29 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     // Opening a draft stamps the initiated date if not already set.
     if (cur && !cur.date_initiated) patch.date_initiated = new Date().toISOString().slice(0, 10)
   }
-  if (Object.keys(patch).length === 0) return NextResponse.json({ error: 'nothing to update' }, { status: 400 })
+  // Only an actual array counts as a CC update. Without this check a malformed
+  // payload (`cc_user_ids: null`, a bare string) would normalise to [] and
+  // silently clear the whole CC list.
+  if ('cc_user_ids' in body && !Array.isArray(body.cc_user_ids)) {
+    return NextResponse.json({ error: 'cc_user_ids must be an array of user ids' }, { status: 400 })
+  }
+  const ccIds = 'cc_user_ids' in body ? cleanCcIds(body.cc_user_ids) : null
+  if (Object.keys(patch).length === 0 && ccIds === null) return NextResponse.json({ error: 'nothing to update' }, { status: 400 })
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data, error } = await (supabase.from('rfis') as any).update(patch).eq('id', id).select('*').single()
+  const q = (supabase.from('rfis') as any)
+  const { data, error } = Object.keys(patch).length
+    ? await q.update(patch).eq('id', id).select('*').single()
+    : await q.select('*').eq('id', id).single()
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+  // CC list: sync before the status notifications below so a user added in the
+  // same save as a close is mailed once, by the status fan-out.
+  let ccAdded: string[] = []
+  if (ccIds !== null) {
+    try { ccAdded = (await setRfiCc(supabase, id, ccIds)).added }
+    catch (e) { return NextResponse.json({ error: e instanceof Error ? e.message : 'Could not update CC list' }, { status: 500 }) }
+  }
 
   // ── Notifications on status transitions (best-effort, fire-and-forget) ──
   try {
@@ -74,6 +93,9 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       }
       notifyRfiParties(supabase, id, user.id, msg).catch(e => console.error('[rfi PATCH] notify failed:', e))
       logActivity(supabase, { entity_type: 'rfi', entity_id: id, action: `${verb} an RFI`, user_id: user.id, metadata: { rfi_id: id } }).catch(() => {})
+    } else if (ccAdded.length && data.status !== 'draft') {
+      // Newly CC'd on a live RFI: tell them (drafts notify everyone when sent).
+      notifyRfiCcAdded(supabase, data, ccAdded, user.id).catch(e => console.error('[rfi PATCH] cc notify failed:', e))
     }
   } catch (e) {
     console.warn('[rfi PATCH] status-notify failed:', e)
