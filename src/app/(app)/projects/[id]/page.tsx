@@ -59,9 +59,12 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
     { data: wsUpdates }, { data: wsDepartments }, { data: wsTasks },
   ] = results
 
-  // project_notes has two FKs to users (user_id, deleted_by — migration 076), so an
-  // unhinted embed fails with PGRST201 and `notes` silently comes back null.
-  if (results[11].error) console.error('project_notes query failed', results[11].error.message)
+  // A failed query here comes back as { data: null } and renders as an empty tab
+  // rather than an error — project_notes did exactly that, because it has two FKs
+  // to users (user_id, deleted_by — migration 076) and the unhinted embed above
+  // failed with PGRST201. Log any of them rather than one index that drifts as
+  // queries are added to the list.
+  for (const r of results) if (r?.error) console.error('[project page] query failed:', r.error.message)
 
   if (!project) notFound()
 
