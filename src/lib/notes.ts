@@ -9,8 +9,14 @@ import { logActivity } from './activity'
 import { parseMentions, emailUser } from './rfi-notify'
 import { appUrl } from './slack'
 
-/** Project tabs a note can be scoped to. A note with no category stays Threads-only. */
+/**
+ * Project tabs a note can be scoped to. A note with no category stays Threads-only.
+ * Every tab that renders the note composer with a `category` must be listed here:
+ * an unlisted one is coerced to null below, and the tab's own feed (which filters
+ * on `category === activeTab`) then never shows the note.
+ */
 export const NOTE_CATEGORIES = [
+  'workstreams',
   'site',
   'utility',
   'stakeholders',
