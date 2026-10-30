@@ -3,7 +3,8 @@ import { RfisClient } from '@/components/rfis/RfisClient'
 
 export const dynamic = 'force-dynamic'
 
-export default async function RfisPage() {
+export default async function RfisPage({ searchParams }: { searchParams: Promise<{ project?: string }> }) {
+  const { project: initialProjectId } = await searchParams
   const supabase = await createClient()
 
   // Deleted RFIs are served only to admin and manager (migration 076); the
@@ -25,5 +26,5 @@ export default async function RfisPage() {
     supabase.from('stakeholders').select('id, name, project_id').order('name'),
   ])
 
-  return <RfisClient rfis={rfis ?? []} projects={projects ?? []} users={users ?? []} stakeholders={stakeholders ?? []} userRole={userRole} />
+  return <RfisClient rfis={rfis ?? []} projects={projects ?? []} users={users ?? []} stakeholders={stakeholders ?? []} userRole={userRole} initialProjectId={initialProjectId} />
 }

@@ -38,6 +38,12 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
     supabase.from('project_notes').select('*, user:users(full_name, avatar_url)').eq('project_id', id).order('created_at', { ascending: false }),
     supabase.from('offtaker_pricing').select('*').eq('project_id', id).order('created_at', { ascending: true }),
     supabase.from('tasks').select('id, title, type, status, priority, due_date, parent_task_id, assignee:users!assignee_id(id, full_name, avatar_url)').eq('project_id', id).order('created_at', { ascending: false }),
+    // RFIs tab. deleted_at filter is explicit: RLS hides deleted rows from team
+    // only, and admin/manager would otherwise see them listed as live.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (supabase.from('rfis') as any)
+      .select('id, rfi_number, subject, status, priority, due_date, ball_user:users!ball_in_court_user_id(id, full_name), ball_sh:stakeholders!ball_in_court_stakeholder_id(id, name)')
+      .eq('project_id', id).is('deleted_at', null).order('rfi_number', { ascending: false }),
     supabase.from('workstream_milestones').select('*').eq('project_id', id).order('sort_order'),
     supabase.from('workstream_gates').select('*').eq('project_id', id).order('sort_order'),
     supabase.from('workstream_major_state').select('*').eq('project_id', id),
@@ -48,13 +54,13 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
     supabase.from('tasks')
       .select('id, title, status, assignee_id, due_date, completed_at, workstream_milestone_id')
       .eq('project_id', id).not('workstream_milestone_id', 'is', null),
-  ]) as unknown as [any, any, any, any, any, any, any, any, any, any, any, any, any, any, any, any, any, any, any, any]
+  ]) as unknown as [any, any, any, any, any, any, any, any, any, any, any, any, any, any, any, any, any, any, any, any, any]
   const [
     { data: project }, { data: financials }, { data: wsDefs },
     { data: stakeholders }, { data: permits }, { data: docs }, { data: users },
     { data: buildings }, { data: meters }, { data: systems },
     { data: threads }, { data: notes },
-    { data: pricingRows }, { data: tasks },
+    { data: pricingRows }, { data: tasks }, { data: rfis },
     { data: wsMilestones }, { data: wsGates }, { data: wsMajorState },
     { data: wsUpdates }, { data: wsDepartments }, { data: wsTasks },
   ] = results
@@ -416,6 +422,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
         threads={threads ?? []}
         notes={notes ?? []}
         tasks={tasks ?? []}
+        rfis={rfis ?? []}
         activity={activity}
         users={users ?? []}
         pricingRows={pricingRows ?? []}

@@ -6,6 +6,20 @@
 
 ---
 
+## 2026-10-30
+
+- **CC people on an RFI, and an RFIs tab on every project** — an RFI now has a
+  **CC** list (any Pathwaze users) you can set when creating it and change any
+  time from the RFI's side panel. CC'd people are emailed when the RFI is opened
+  and closed (and on official responses), and are told when they're added to a
+  live RFI; they also see it under "your conversations" on the dashboard. Every
+  project page has a new **RFIs** tab listing that project's RFIs (number,
+  subject, status, ball-in-court, due date), each linking to its detail page;
+  "Open in RFI log" jumps to /rfis pre-filtered to the project. No migration:
+  the CC list reuses the existing `rfi_distribution` table.
+
+---
+
 ## 2026-09-28
 
 - **"Working…" feedback on navigation and saves** — moving between pages or

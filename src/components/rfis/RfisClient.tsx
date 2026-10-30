@@ -4,6 +4,7 @@ import { isManagerOrAbove } from '@/lib/permissions'
 import { useRouter } from 'next/navigation'
 import { beginNav } from '@/lib/busy'
 import { ReceivedFromPicker } from './ReceivedFromPicker'
+import { CcPicker } from './CcPicker'
 import { isPastDue } from '@/lib/utils'
 
 type Any = any // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -28,11 +29,11 @@ function isOverdue(r: Any): boolean {
   return r.status === 'open' && isPastDue(r.due_date)
 }
 
-export function RfisClient({ rfis: initial, projects, users, stakeholders, userRole = 'team' }: { rfis: Any[]; projects: Any[]; users: Any[]; stakeholders: Any[]; userRole?: string }) {
+export function RfisClient({ rfis: initial, projects, users, stakeholders, userRole = 'team', initialProjectId }: { rfis: Any[]; projects: Any[]; users: Any[]; stakeholders: Any[]; userRole?: string; initialProjectId?: string }) {
   const router = useRouter()
   const [rfis, setRfis] = useState<Any[]>(initial)
   const [tab, setTab] = useState<typeof TABS[number]>('All')
-  const [projectFilter, setProjectFilter] = useState('')
+  const [projectFilter, setProjectFilter] = useState(initialProjectId && projects.some(p => p.id === initialProjectId) ? initialProjectId : '')
   const [assignedFilter, setAssignedFilter] = useState('')   // ball-in-court user id
   const [sortBy, setSortBy] = useState<'recent' | 'due' | 'days' | 'number'>('recent')
   const [search, setSearch] = useState('')
@@ -164,7 +165,7 @@ export function RfisClient({ rfis: initial, projects, users, stakeholders, userR
 
 function CreateRfiModal({ projects, users, stakeholders: initialStakeholders, onClose, onCreated }: { projects: Any[]; users: Any[]; stakeholders: Any[]; onClose: () => void; onCreated: (r: Any) => void }) {
   const [stakeholders, setStakeholders] = useState<Any[]>(initialStakeholders)
-  const [f, setF] = useState<Any>({ project_id: '', subject: '', question: '', received_from_user_id: '', received_from_stakeholder_id: '', ball_in_court_user_id: '', due_date: '', cost_impact: 'tbd', schedule_impact: 'tbd', status: 'open' })
+  const [f, setF] = useState<Any>({ project_id: '', subject: '', question: '', received_from_user_id: '', received_from_stakeholder_id: '', ball_in_court_user_id: '', due_date: '', cost_impact: 'tbd', schedule_impact: 'tbd', status: 'open', cc_user_ids: [] as string[] })
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState<string | null>(null)
   const set = (k: string, v: Any) => setF((p: Any) => ({ ...p, [k]: v }))
@@ -196,6 +197,7 @@ function CreateRfiModal({ projects, users, stakeholders: initialStakeholders, on
             <Field label="Cost impact"><select value={f.cost_impact} onChange={e => set('cost_impact', e.target.value)} className="inp"><option value="tbd">TBD</option><option value="yes">Yes</option><option value="no">No</option></select></Field>
             <Field label="Schedule impact"><select value={f.schedule_impact} onChange={e => set('schedule_impact', e.target.value)} className="inp"><option value="tbd">TBD</option><option value="yes">Yes</option><option value="no">No</option></select></Field>
           </div>
+          <Field label="CC (notified when closed)"><CcPicker users={users} value={f.cc_user_ids} onChange={ids => set('cc_user_ids', ids)} /></Field>
           {err && <div className="text-[12px] text-[#b91c1c]">{err}</div>}
         </div>
         <div className="px-5 py-3.5 border-t border-[#ECEBEA] bg-[#FBFCFE] flex justify-end gap-2">

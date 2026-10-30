@@ -12,6 +12,7 @@ import { DataRoomTab } from './DataRoomTab'
 import { DrawingsTab } from './DrawingsTab'
 import { ThreadsTab } from './ThreadsTab'
 import { ProjectTasksTab } from './ProjectTasksTab'
+import { ProjectRfisTab } from './ProjectRfisTab'
 import { ProjectActivityFeed, type ActivityEntry } from './ProjectActivityFeed'
 import { ProjectActivityActions } from './ProjectActivityActions'
 
@@ -19,6 +20,7 @@ const TABS = [
   { id: 'threads', label: 'Threads' },
   { id: 'workstreams', label: 'Workstreams' },
   { id: 'tasks', label: 'Tasks' },
+  { id: 'rfis', label: 'RFIs' },
   { id: 'site', label: 'Site' },
   { id: 'utility', label: 'Utility' },
   { id: 'stakeholders', label: 'Stakeholders' },
@@ -46,7 +48,7 @@ const TAB_ACTIVITY_ENTITIES: Record<string, string[]> = {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function ProjectDetailClient({ project, financials, wsDefs = [], wsMilestones = [], wsDeps = [], wsGates = [], wsMajorState = [], wsUpdates = [], wsTasks = [], wsActivity = [], wsGateLinks = [], wsDepartments = [], wsDepartmentTags = [], userRole = 'team', stakeholders, permits, docs, buildings, meters, systems, threads = [], notes = [], tasks = [], activity = [], users = [], pricingRows = [], drawings = [], collections = [], reviewTypes = [], sitePlans = [] }: any) {
+export function ProjectDetailClient({ project, financials, wsDefs = [], wsMilestones = [], wsDeps = [], wsGates = [], wsMajorState = [], wsUpdates = [], wsTasks = [], wsActivity = [], wsGateLinks = [], wsDepartments = [], wsDepartmentTags = [], userRole = 'team', stakeholders, permits, docs, buildings, meters, systems, threads = [], notes = [], tasks = [], rfis = [], activity = [], users = [], pricingRows = [], drawings = [], collections = [], reviewTypes = [], sitePlans = [] }: any) {
   const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
@@ -161,13 +163,14 @@ export function ProjectDetailClient({ project, financials, wsDefs = [], wsMilest
             <ProjectTasksTab tasks={tasks} projectId={project.id} />
           </>
         )}
+        {activeTab === 'rfis' && <ProjectRfisTab rfis={rfis} projectId={project.id} />}
           </div>
         </div>
       </div>
 
-      {/* Activity feed — bottom of every project page, except Threads and Tasks
-          (those tabs render their own composer + content). Scoped to the active tab. */}
-      {activeTab !== 'threads' && activeTab !== 'tasks' && (
+      {/* Activity feed — bottom of every project page, except Threads, Tasks and
+          RFIs (those tabs render their own content). Scoped to the active tab. */}
+      {activeTab !== 'threads' && activeTab !== 'tasks' && activeTab !== 'rfis' && (
         <div className="px-8 pt-6 pb-10 mx-auto w-full" style={{ maxWidth: 1760 }}>
           <ProjectActivityActions projectId={project.id} projectName={project.name} users={users} category={activeTab} />
           <ProjectActivityFeed
