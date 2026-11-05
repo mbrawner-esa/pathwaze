@@ -3,6 +3,8 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js'
 
+import { richTextToPlainText } from '@/lib/html-text'
+
 const SLACK_API = 'https://slack.com/api'
 
 interface SlackBlock { type: string; [k: string]: unknown }
@@ -138,6 +140,9 @@ export function taskAssignedBlocks(args: {
   taskPath: string  // e.g. /tasks?id=xxx
 }): { text: string; blocks: SlackBlock[] } {
   const fallback = `New task: ${args.title}`
+  // The description is RichTextEditor HTML; Slack renders mrkdwn, so flatten
+  // it to text — otherwise the DM shows raw <div> tags and literal &nbsp;.
+  const descriptionText = richTextToPlainText(args.description || '')
   const fieldsRow: { type: string; text: string }[] = []
   if (args.projectName) fieldsRow.push({ type: 'mrkdwn', text: `*Project*\n${args.projectName}` })
   if (args.dueDate)     fieldsRow.push({ type: 'mrkdwn', text: `*Due*\n${args.dueDate}` })
@@ -150,7 +155,7 @@ export function taskAssignedBlocks(args: {
       { type: 'header', text: { type: 'plain_text', text: '✅ New task assigned to you' } },
       { type: 'section', text: { type: 'mrkdwn', text: `*${args.title}*${args.assignedBy ? `\n_from ${args.assignedBy}_` : ''}` } },
       ...(fieldsRow.length ? [{ type: 'section', fields: fieldsRow }] : []),
-      ...(args.description ? [{ type: 'section', text: { type: 'mrkdwn', text: args.description.slice(0, 280) } }] : []),
+      ...(descriptionText ? [{ type: 'section', text: { type: 'mrkdwn', text: descriptionText.slice(0, 280) } }] : []),
       {
         type: 'actions',
         elements: [

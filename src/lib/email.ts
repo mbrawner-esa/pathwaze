@@ -1,5 +1,6 @@
 // Resend wrapper. Lazily imports the SDK so we don't crash when RESEND_API_KEY
 // isn't set — caller can decide whether to surface that to the user.
+import { decodeHtmlEntities } from '@/lib/html-text'
 
 // Dev/test override: set EMAIL_NOTIFY_SELF=true to let the app email YOU for
 // actions you took (assigning a task to yourself, completing your own task).
@@ -326,7 +327,9 @@ function richTextToEmailHtml(raw: string): string {
   const src = raw.trim()
   if (!src) return ''
   if (!/<(p|ul|ol|li|br|b|strong|i|em|div|span|a)\b/i.test(src)) {
-    return escapeHtml(src).replace(/\r?\n/g, '<br />')
+    // Tagless — but contentEditable still escapes a plain line on the way
+    // out, so decode first or the recipient reads a literal &nbsp;.
+    return escapeHtml(decodeHtmlEntities(src)).replace(/\r?\n/g, '<br />')
   }
 
   return src

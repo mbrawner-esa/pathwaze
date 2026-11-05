@@ -7,6 +7,7 @@
  * This component detects the format and renders both correctly.
  */
 import React from 'react'
+import { decodeHtmlEntities } from '@/lib/html-text'
 
 export function NotesRender({ source, className }: { source: string; className?: string }) {
   const trimmed = source.trim()
@@ -22,8 +23,12 @@ export function NotesRender({ source, className }: { source: string; className?:
       />
     )
   }
-  // Plain text — preserve markdown-style list lines for legacy notes.
-  return <LegacyNotesRender source={source} className={className} />
+  // No tags. Either a legacy plain-text note, or a single unformatted line
+  // from the editor — which the browser still escaped on the way out, so it
+  // can carry &nbsp; / &amp; that would otherwise print literally. Decode
+  // before rendering as text; React escapes the result, so this is safe.
+  // Preserve markdown-style list lines for legacy notes.
+  return <LegacyNotesRender source={decodeHtmlEntities(source)} className={className} />
 }
 
 function LegacyNotesRender({ source, className }: { source: string; className?: string }) {
