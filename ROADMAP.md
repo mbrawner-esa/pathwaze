@@ -93,8 +93,9 @@ for a cycle and the punchlist from real use is clear. W-1…W-3 carry over.
 
 Reported in Slack, **no `CHANGELOG.md` entry** — verified open on 2026-10-05 by
 reconciling the full channel history against the changelog. Each needs a
-go/no-go before any fix starts (B-1…B-4 are P1–P3; B-5 and B-6 are low-risk and
-can go straight to a draft PR under the W-3 rules).
+go/no-go before any fix starts (B-1…B-4 are P1–P3; B-6 is low-risk and can go
+straight to a draft PR under the W-3 rules). A row stays here once it ships,
+marked done, so the Slack bug IDs keep resolving.
 
 | # | Bug | Sev | Reported | Notes |
 |---|-----|-----|----------|-------|
@@ -102,7 +103,7 @@ can go straight to a draft PR under the W-3 rules).
 | **B-2** | **Outlook sync unconfirmed** | **P2** | Morgan Ruston, 2026-09-08 | "Email isn't syncing", reported *after* the 2026-08-27 connection fix. Never confirmed either way. Could be the same root cause returning, a per-mailbox token issue, or the daily cron — needs a look at the sync job before it's called a bug. |
 | **B-3** | **"Add Note" truncates past ~40 words** | **P3** | Morgan Ruston, 2026-07-16 | Note posts, but the body is cut off and can't be expanded afterwards, so longer notes are effectively lost. Note that notes-on-project-tab visibility was fixed 2026-08-26 — this is a *different* defect on the same feature and was not covered by it. |
 | **B-4** | **"Add File" attachments aren't clickable** | **P3** | Morgan Ruston, 2026-07-17 | A file attached via "Add File" inside a project doesn't save as a clickable or downloadable link, so the upload succeeds but the file can't be retrieved. |
-| **B-5** | **`&nbsp;` rendered literally in text fields** | P4 | Dave Click, 2026-09-08 | The 2026-08-26 fix covered task-assignment **emails** only. This is the in-app surface and is still open. |
+| **B-5** | **`&nbsp;` rendered literally in text fields** — ✅ **fixed 2026-11-06** | P4 | Dave Click, 2026-09-08 | The 2026-08-26 fix covered task-assignment **emails** only; this was the in-app surface. `src/lib/html-text.ts` now decodes entities before editor content is rendered as text, so the app, the notification email and the Slack assignment DM are all covered — the DM had been posting raw `<div>` markup too. |
 | **B-6** | **Slack ↔ Pathwaze linking** | P4 | Morgan Ruston 2026-07-07; Isabella De La Rosa 2026-07-15; Dave Click 2026-10-02 | Three separate reports: messages don't auto-link to a project (people type `/pathwaze project <name>`, which was never the intent), sending through the linking feature has errored, and `@`-mentions don't always render on the Slack side. Probably one underlying integration issue rather than three. |
 
 ---

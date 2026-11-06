@@ -6,6 +6,30 @@
 
 ---
 
+## 2026-11-06
+
+- **`&nbsp;` and raw markup no longer show in descriptions and notes** — a
+  description typed as a single unformatted line is saved by the rich-text
+  editor with no tags at all, but the browser still escapes it on the way out,
+  so a double space became `&nbsp;` and an ampersand became `&amp;`. Every
+  surface that rendered such a value as plain text printed those literally
+  ("Dave has created&nbsp; a new helioscope"). Notes, descriptions and
+  notification emails now decode them, and the Slack task-assignment DM — which
+  had been posting raw editor HTML, `<div>` tags and all — now sends readable
+  text. This is the in-app half of the 2026-08-26 email fix (`#pathwaze_bugs`
+  B-5, reported by Dave Click). No migration.
+
+- **Line breaks survive in thread messages** — text pasted from Outlook or Word
+  arrives as `<p>` blocks, and the composer dropped every block boundary, so
+  lines ran straight into each other ("…for all sheetsC-001 Map all
+  obstructions…"). Shift+Enter had the same problem. Breaks are now kept both
+  on the way in and on the way out, list items come through as bullets, and
+  table cells are separated by a space rather than broken onto their own lines.
+  ⚠️ Messages already stored glued together cannot be recovered — the breaks
+  were never saved in the first place. No migration.
+
+---
+
 ## 2026-10-30
 
 - **CC people on an RFI, and an RFIs tab on every project** — an RFI now has a
